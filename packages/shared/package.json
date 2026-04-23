@@ -25,6 +25,10 @@
     "./text-normalize": {
       "types": "./dist/text-normalize.d.ts",
       "default": "./dist/text-normalize.js"
+    },
+    "./credential-store": {
+      "types": "./dist/credential-store/index.d.ts",
+      "default": "./dist/credential-store/index.js"
     }
   },
   "files": [
@@ -44,6 +48,7 @@
     "zod": "4.3.6"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.4.4",
     "@types/node": "^22.10.5",
     "drizzle-kit": "0.31.10",
     "typescript": "~5.7.2",

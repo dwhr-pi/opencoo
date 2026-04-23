@@ -132,6 +132,46 @@ Fenced code blocks (``` or ~~~, CommonMark rules) are preserved verbatim — the
 
 **IMPORTANT: 4-space indented code blocks are NOT preserved** — converters must emit fenced blocks per architecture §6.3. A line with 4+ leading spaces is collapsed like any other prose line; only `` ``` `` or `~~~` with 0-3 leading spaces opens a fence.
 
+## Credential store
+
+`@opencoo/shared/credential-store` is the single sanctioned path for persisting integration secrets (Drive OAuth refresh tokens, Asana tokens, webhook HMAC keys, etc). AES-256-GCM with a 12-byte random IV per write, AAD bound to `(credential_id, schemaRef)` so a cross-row substitution can't decrypt, stamped with `encryption_version` for forward migration. THREAT-MODEL §3.6 governs every detail.
+
+```ts
+import {
+  DrizzleCredentialStore,
+  loadEncryptionKey,
+} from "@opencoo/shared/credential-store";
+
+const store = new DrizzleCredentialStore({
+  db,
+  key: loadEncryptionKey(process.env),
+  logger,
+});
+
+const id = await store.write({
+  name: "drive-primary",
+  schemaRef: "source-drive/v1",
+  plaintext: Buffer.from(refreshToken),
+});
+// ...
+const record = await store.read(id);
+// record.plaintext is a Buffer; never logged, never serialised.
+```
+
+Key source of truth: `ENCRYPTION_KEY_FILE` (Docker secrets) > `ENCRYPTION_KEY` (inline base64). Both are validated at boot to decode to exactly 32 bytes; a misconfigured env fails `loadEncryptionKey` with a `ConfigError` before any write runs.
+
+**Invariants enforced (code + tests):**
+- Unique IV per write — 100-encrypt property test against identical plaintext.
+- AAD binding — a cross-row ciphertext+iv+aad substitution throws `IntegrityError` before decryption is attempted.
+- Version dispatch — `decryptVersion(1, …)` handles `encryption_version = 1`; anything else throws `UnsupportedEncryptionVersionError`. Writes always stamp `CURRENT_VERSION`.
+- **Never log plaintext.** Every `credential.{write,read,rotate,delete,read_failed}` event carries only `credential_id` and `schema_ref` (public metadata). `credential-store-never-logs-plaintext.test.ts` runs a byte-scan of the captured log stream against sentinel plaintexts on every CI run — a regression anywhere in the pipeline flips it Red.
+
+**KMS-swappable by design.** The `CredentialStore` interface is four methods (`write/read/rotate/delete`). A future KMS-backed implementation drops in by constructor substitution; no call-site changes.
+
+**Fixture.** `InMemoryCredentialStore` satisfies the same interface with a `Map<id, row>`, for use-case tests that don't need to spin up Postgres. Row shape mirrors the `credentials` pgTable byte-for-byte.
+
+**Testing with pglite.** `DrizzleCredentialStore` unit tests use `@electric-sql/pglite` (real Postgres, WASM, in-process) rather than pg-mem — the latter's bytea adapter re-encodes through UTF-8 text and destroys binary fidelity. pglite gives us true round-trip integrity at test time.
+
 ## Migrations
 
 `drizzle-kit generate` is idempotent — `tests/generate-idempotent.test.ts` asserts this by running it twice into temp dirs and byte-diffing the outputs (with volatile `when`/`id` fields normalized). A regression means the schema code has picked up nondeterminism — investigate and fix, do not delete the test.
