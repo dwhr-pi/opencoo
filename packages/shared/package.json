@@ -41,6 +41,14 @@
     "./cost-tracker": {
       "types": "./dist/cost-tracker/index.d.ts",
       "default": "./dist/cost-tracker/index.js"
+    },
+    "./wiki-write": {
+      "types": "./dist/wiki-write/index.d.ts",
+      "default": "./dist/wiki-write/index.js"
+    },
+    "./wiki-write/testing": {
+      "types": "./dist/wiki-write/testing/in-memory-adapter.d.ts",
+      "default": "./dist/wiki-write/testing/in-memory-adapter.js"
     }
   },
   "files": [

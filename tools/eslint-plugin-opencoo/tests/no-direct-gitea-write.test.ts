@@ -16,8 +16,9 @@ const ruleTester = new RuleTester({
 ruleTester.run("no-direct-gitea-write", noDirectGiteaWrite, {
   valid: [
     {
-      name: "default allowed path: packages/shared/wiki-write can import gitea client",
-      filename: "/repo/packages/shared/wiki-write/src/client.ts",
+      name: "default allowed path: packages/shared/src/wiki-write can import gitea client (PR 09 path)",
+      filename:
+        "/repo/packages/shared/src/wiki-write/testing/gitea-adapter.ts",
       code: `import { createClient } from '@opencoo/gitea-client';`,
     },
     {
@@ -72,6 +73,12 @@ ruleTester.run("no-direct-gitea-write", noDirectGiteaWrite, {
       name: "fixtures-mode: custom allowedPaths scoping keeps fixtures flagged",
       filename:
         "/repo/tests/eslint-fixtures/no-direct-gitea-write.fixture.ts",
+      code: `import { createClient } from '@opencoo/gitea-client';`,
+      errors: [{ messageId: "directGiteaWrite" }],
+    },
+    {
+      name: "non-src variant 'packages/shared/wiki-write/' is NOT allowed (no such path)",
+      filename: "/repo/packages/shared/wiki-write/src/client.ts",
       code: `import { createClient } from '@opencoo/gitea-client';`,
       errors: [{ messageId: "directGiteaWrite" }],
     },

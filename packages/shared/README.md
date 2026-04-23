@@ -227,6 +227,63 @@ const mtd = await computeMonthToDateCost(db, domainId);
 
 `computeMonthToDateCost(db, domainId)` runs a single `SELECT COALESCE(SUM(cost_usd), 0) FROM llm_usage WHERE domain_id = ? AND timestamp >= date_trunc('month', now())`. NULL `domain_id` rows are never counted — they exist for bootstrap-time pings that don't belong to any cap.
 
+## Wiki write
+
+`@opencoo/shared/wiki-write` is the sole sanctioned path for writing to a Karpathy-wiki Gitea repo. Everything else is forbidden by the `opencoo/no-direct-gitea-write` ESLint rule — compilers, lints, review-apply, builder-deploy all route through this function. THREAT-MODEL §2 invariant 2 + §3.5 govern every detail.
+
+```ts
+import {
+  wikiWrite,
+  InMemoryWikiWriteQueue,
+  InMemoryDeleteCap,
+} from "@opencoo/shared/wiki-write";
+import { InMemoryWikiAdapter } from "@opencoo/shared/wiki-write/testing";
+
+const adapter = new InMemoryWikiAdapter(); // real impl (PR 11) swaps in
+const deps = {
+  adapter,
+  queue: new InMemoryWikiWriteQueue(),
+  deleteCap: new InMemoryDeleteCap(),
+  logger, clock: () => new Date(), instanceId: "prod-a",
+};
+
+const { sha } = await wikiWrite(deps, {
+  domainSlug: "wiki-executive",
+  tag: "[compiler]",
+  description: "compile strategy.md",
+  author: { name: "opencoo-engine", email: "engine@opencoo.local" },
+  caller: { kind: "engine" },
+  operations: [
+    { mode: "replace", path: "strategy.md", content: "# Strategy\n..." },
+  ],
+});
+```
+
+**Enforcement order per call (fail-fast):**
+1. Zod-parse the input — bad shape → `WikiWriteInputError` (preserves ZodError via `cause`).
+2. `validatePath` each op.path — belt-and-suspenders regex + `wiki-` prefix + `..` component + control-char check. Bad path → `WikiPathError`.
+3. Delete-cap `reserve` for engine callers (admin bypasses) — breach → `WikiWriteCapExceededError`.
+4. Only then `queue.enqueue(domainSlug, …)` — per-domain promise-chain means two calls on the same domain serialise; different domains run concurrently.
+5. Up to 3 adapter retries on `status: "stale"` — past that → `WikiWriteStaleError`.
+
+**Commit message shape** (CONVENTIONS §4.2 + §3.5):
+```
+${tag} ${description}
+
+${body?}
+
+${Co-authored-by?*}
+Opencoo-Instance: ${instanceId}
+```
+
+First line is always `${tag} ${description}` — downstream audit tooling keys on the literal tag prefixes from the 8-entry Zod enum. `Opencoo-Instance` trailer is always last; `Co-authored-by` trailers (one per entry) sit before it when provided.
+
+**Delete cap.** In-memory per-(domain, YYYY-MM-DD) counter; default 10 deletes/day per domain for engine callers. Admin callers bypass with explicit `{ kind: "admin", userId }` — the `userId` provides audit alongside the git commit author. Reserve-at-entry semantics: retries don't refund budget. Counter resets on date change via injected `clock`; v0.1 state does NOT survive process restart (PR 17 may promote to Postgres).
+
+**Queue memory behaviour (v0.1 caveat).** `InMemoryWikiWriteQueue` keeps a `Map<DomainSlug, Promise>` and never clears entries after a task resolves. Memory grows proportional to distinct domains touched (not call count) — acceptable for single-process deployments that restart daily. PR 13 replaces with BullMQ for horizontal scale.
+
+**InMemoryWikiAdapter fixture.** Use-case tests under `@opencoo/shared/wiki-write/testing` pass this in place of the real Gitea adapter. `writeAtomic` derives `sha256(prevHead || serialisedOps)` so SHA chaining is deterministic and testable. The `@internal inject(domainSlug, path, content)` method is the backdoor that tests use to simulate external writes for stale-retry scenarios — production code must never touch it.
+
 ## Migrations
 
 `drizzle-kit generate` is idempotent — `tests/generate-idempotent.test.ts` asserts this by running it twice into temp dirs and byte-diffing the outputs (with volatile `when`/`id` fields normalized). A regression means the schema code has picked up nondeterminism — investigate and fix, do not delete the test.

@@ -9,7 +9,7 @@ export interface NoDirectGiteaWriteOptions {
 type MessageIds = "directGiteaWrite";
 
 const DEFAULT_ALLOWED_PATHS = [
-  "packages/shared/wiki-write/**",
+  "packages/shared/src/wiki-write/**",
   "packages/cli/src/provision/**",
 ];
 

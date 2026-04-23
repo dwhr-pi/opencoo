@@ -5,6 +5,7 @@ export type Branded<T, B extends string> = T & {
 };
 
 export type DomainId = Branded<string, "DomainId">;
+export type DomainSlug = Branded<string, "DomainSlug">;
 export type SourceBindingId = Branded<string, "SourceBindingId">;
 export type UserId = Branded<string, "UserId">;
 export type CredentialId = Branded<string, "CredentialId">;

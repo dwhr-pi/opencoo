@@ -192,6 +192,10 @@ Every PR:
 - If the reviewer says "this should use X pattern instead," and you've already implemented Y — delete Y, re-do with X. Keeping Y "as reference" is the sunk-cost fallacy (TDD skill's "Common Rationalizations" table). Don't adapt; re-implement.
 - If the reviewer says "where's the test for this?" — the answer is never "I'll add it after merge." Add it, verify Red, then re-request review.
 
+### 6.2 Amend vs follow-up commit
+
+Pre-push tool-glitch recovery that involves adding forgotten files SHOULD land as a follow-up `chore(...)` commit rather than an amend. Amend is reserved for the rare case of correcting commit message text on the most-recent commit. Preserving `git bisect` granularity — one commit per logical change — consistently beats preserving atomicity. A repeat of this pattern across multiple PRs would be elevated to a blocker.
+
 ---
 
 ## 7. Quick-reference pointers
