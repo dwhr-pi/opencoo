@@ -1,0 +1,32 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "globalDependencies": [
+    "tsconfig.base.json",
+    "eslint.config.js",
+    ".env.example"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "lint": {
+      "dependsOn": ["@opencoo/eslint-plugin#build"],
+      "inputs": [
+        "**/*.{ts,tsx,js,jsx,mjs,cjs}",
+        "eslint.config.js",
+        "tools/eslint-plugin-opencoo/dist/**"
+      ],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "@opencoo/eslint-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Custom ESLint rules enforcing opencoo boundary invariants (architecture.md §2.5, THREAT-MODEL.md §2).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@typescript-eslint/utils": "^8.21.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^8.21.0",
+    "@typescript-eslint/rule-tester": "^8.21.0",
+    "typescript": "~5.7.2",
+    "vitest": "^3.0.5"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0"
+  }
+}

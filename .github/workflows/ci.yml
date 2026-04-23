@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  toolchain:
+    name: toolchain (lint / typecheck / test / fixtures)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @opencoo/eslint-plugin
+        run: pnpm --filter @opencoo/eslint-plugin build
+
+      - name: Lint root
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: "Fixtures must fail the expected rules"
+        shell: bash
+        run: |
+          set +e
+          output=$(pnpm lint:fixtures 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "::error::pnpm lint:fixtures exited 0; the fixtures must fail to prove the rules are wired."
+            exit 1
+          fi
+          for rule in \
+            "opencoo/no-cross-engine-import" \
+            "opencoo/no-direct-gitea-write" \
+            "opencoo/no-direct-llm-sdk" \
+            "opencoo/no-feature-env-vars"; do
+            if ! echo "$output" | grep -q "$rule"; then
+              echo "::error::Expected rule id '$rule' to appear in lint:fixtures output."
+              exit 1
+            fi
+          done
+          echo "All four boundary rules fired on the negative fixtures."
