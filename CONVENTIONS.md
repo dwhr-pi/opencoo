@@ -156,7 +156,7 @@ Configured in `eslint.config.js` at repo root:
 - `no-cross-engine-import` — `packages/engine-ingestion/*` cannot import from `packages/engine-self-operating/*` and vice versa. Coordination is via Postgres / BullMQ / Gitea (`architecture.md` §2.5).
 - `no-direct-gitea-write` — non-provisioning code cannot import the Gitea API client directly. Must go through `packages/shared/wiki-write` (THREAT-MODEL §2 invariant 2).
 - `no-direct-llm-sdk` — adapter and engine code cannot import `@ai-sdk/*` or the Vercel AI SDK entrypoint directly. Must go through `packages/shared/llm-router` (THREAT-MODEL §2 invariant 5).
-- `no-feature-env-vars` — any new `process.env.*` outside the allowed list (`DATABASE_URL`, `ENCRYPTION_KEY`, `PORT`, `ADMIN_BOOTSTRAP_TOKEN`, each with `_FILE` variant, plus `NODE_ENV`, `LLM_DEBUG_LOG`, `TELEMETRY_ENDPOINT`) fails lint (THREAT-MODEL §2 invariant 9).
+- `no-feature-env-vars` — any new `process.env.*` outside the allowed list (`DATABASE_URL`, `ENCRYPTION_KEY`, `PORT`, `ADMIN_BOOTSTRAP_TOKEN`, each with `_FILE` variant, plus `NODE_ENV`, `LLM_DEBUG_LOG`, `LOG_LEVEL`, `TELEMETRY_ENDPOINT`) fails lint (THREAT-MODEL §2 invariant 9).
 - `import/no-cycle` — no circular imports.
 
 A PR that disables one of these rules is a `DECISIONS.md` item, not a local decision.

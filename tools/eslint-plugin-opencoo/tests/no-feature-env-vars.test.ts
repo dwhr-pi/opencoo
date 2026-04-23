@@ -52,6 +52,14 @@ ruleTester.run("no-feature-env-vars", noFeatureEnvVars, {
       name: "destructuring from an unrelated object is untouched",
       code: `const source = { GITEA_URL: 'x' }; const { GITEA_URL } = source;`,
     },
+    {
+      name: "LOG_LEVEL member access is in the default allow-list",
+      code: `const l = process.env.LOG_LEVEL;`,
+    },
+    {
+      name: "destructured LOG_LEVEL is in the default allow-list",
+      code: `const { LOG_LEVEL } = process.env;`,
+    },
   ],
   invalid: [
     {
