@@ -68,10 +68,11 @@ jobs:
             "opencoo/no-cross-engine-import" \
             "opencoo/no-direct-gitea-write" \
             "opencoo/no-direct-llm-sdk" \
-            "opencoo/no-feature-env-vars"; do
+            "opencoo/no-feature-env-vars" \
+            "opencoo/no-update-append-only"; do
             if ! echo "$output" | grep -q "$rule"; then
               echo "::error::Expected rule id '$rule' to appear in lint:fixtures output."
               exit 1
             fi
           done
-          echo "All four boundary rules fired on the negative fixtures."
+          echo "All five boundary rules fired on the negative fixtures."

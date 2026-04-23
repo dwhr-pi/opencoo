@@ -35,3 +35,12 @@ export const restrictFk = (name: string, target: () => PgColumn) =>
 /** `NOT NULL` variant of `restrictFk`. */
 export const requiredRestrictFk = (name: string, target: () => PgColumn) =>
   uuid(name).notNull().references(target, { onDelete: "restrict" });
+
+/**
+ * Nullable `ON DELETE SET NULL` foreign-key column. Used when audit
+ * history must outlive the referenced row: e.g. `llm_usage.run_id` and
+ * `page_citations.compiled_by_run_id` keep attribution intact even
+ * after Cleanup prunes the `agent_runs` row per retention policy.
+ */
+export const setNullFk = (name: string, target: () => PgColumn) =>
+  uuid(name).references(target, { onDelete: "set null" });

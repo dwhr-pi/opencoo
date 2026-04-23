@@ -20,3 +20,12 @@ export type CatalogCandidateId = Branded<string, "CatalogCandidateId">;
 export type MinerSuppressionId = Branded<string, "MinerSuppressionId">;
 export type RedactionEventId = Branded<string, "RedactionEventId">;
 export type ErasureLogId = Branded<string, "ErasureLogId">;
+
+// --- self-op branded IDs (PR 04) ---
+
+export type AgentDefinitionId = Branded<string, "AgentDefinitionId">;
+export type AgentInstanceId = Branded<string, "AgentInstanceId">;
+export type AgentRunId = Branded<string, "AgentRunId">;
+export type AutomationCandidateId = Branded<string, "AutomationCandidateId">;
+export type AutomationDeploymentId = Branded<string, "AutomationDeploymentId">;
+export type MarketplaceUpdateId = Branded<string, "MarketplaceUpdateId">;

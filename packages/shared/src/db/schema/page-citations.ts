@@ -1,6 +1,12 @@
-import { index, pgTable, text, uuid } from "drizzle-orm/pg-core";
+import { index, pgTable, text } from "drizzle-orm/pg-core";
 
-import { createdAt, primaryKeyId, requiredRestrictFk } from "./columns.js";
+import { agentRuns } from "./agent-runs.js";
+import {
+  createdAt,
+  primaryKeyId,
+  requiredRestrictFk,
+  setNullFk,
+} from "./columns.js";
 import { sourcesBindings } from "./sources-bindings.js";
 
 // APPEND-ONLY per THREAT-MODEL §2 invariant 8: no updated_at, no $onUpdate,
@@ -17,9 +23,11 @@ export const pageCitations = pgTable(
       () => sourcesBindings.id,
     ),
     sourceRef: text("source_ref").notNull(),
-    // FK to agent_runs(id) is declared without .references() — the target
-    // table lands in PR 04, which adds the FK via its own migration.
-    compiledByRunId: uuid("compiled_by_run_id"),
+    // FK to agent_runs(id) is ON DELETE SET NULL — audit history
+    // (which page got compiled when + from which source) outlives the
+    // run row after Cleanup prunes `agent_runs` per retention policy.
+    // Nulling the ref is safe; losing the citation would not be.
+    compiledByRunId: setNullFk("compiled_by_run_id", () => agentRuns.id),
     promptVersion: text("prompt_version"),
     createdAt: createdAt(),
   },

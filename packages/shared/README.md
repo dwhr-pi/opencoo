@@ -59,12 +59,14 @@ Certain tables must never grow an `updated_at` column because their *purpose* is
 - `redaction_events` — one row per guard-triggered redaction, metadata only (§3.3).
 - `erasure_log` — one row per admin-triggered erasure verb (§15).
 - `miner_suppressions` — operator "don't propose this again" decisions.
-
-`agent_runs` joins this list in PR 04.
+- `agent_runs` — one row per agent harness invocation (architecture §7.1); `started_at`/`ended_at` are the run's open/close markers, not mutation history.
 
 These tables have no `updated_at`, no `$onUpdate`, and no mutation-path writes from engine code. The only DELETE source is retention pruning in the Cleanup pipeline.
 
-`packages/shared/tests/append-only-invariant.test.ts` is the mechanical enforcement — it introspects each table via `getTableConfig()` and fails CI if any sneaks in an `updated_at`, `modified_at`, `edited_at`, or other `*_at` column that isn't `created_at`. Adding to the invariant set means adding a row to `APPEND_ONLY_TABLES` there plus the §2 invariant-8 list in `THREAT-MODEL.md`.
+### Two lines of enforcement
+
+1. **Schema-level** — `packages/shared/tests/append-only-invariant.test.ts` introspects each table via `getTableConfig()` and fails CI if any sneaks in an `updated_at`, `modified_at`, `edited_at`, or other `*_at` column that isn't in the allow-list (`created_at`, plus `started_at`/`ended_at` on `agent_runs`).
+2. **Query-level** — `opencoo/no-update-append-only` (ESLint) rejects `db.update(tbl)` and `db.delete(tbl)` calls where `tbl` is in the hard-coded set of append-only table symbols. Handles chain forms like `db.with(cte).update(pageCitations)`. See the rule file's top-of-file comment for the "how to add a table" pointer — append the Drizzle symbol name to `TABLES` there AND to `APPEND_ONLY_TABLES` in the test AND to the §2 invariant-8 list in `THREAT-MODEL.md`.
 
 ## Mutation-adjacent tables
 

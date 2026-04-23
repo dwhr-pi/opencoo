@@ -38,6 +38,7 @@ const boundaryRules = {
   "opencoo/no-direct-gitea-write": "error",
   "opencoo/no-direct-llm-sdk": "error",
   "opencoo/no-feature-env-vars": "error",
+  "opencoo/no-update-append-only": "error",
 };
 
 export default tseslint.config(

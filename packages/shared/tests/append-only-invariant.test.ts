@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 
 import {
+  agentRuns,
   erasureLog,
   minerSuppressions,
   pageCitations,
@@ -9,15 +10,14 @@ import {
 } from "../src/db/schema/index.js";
 
 // The tables named in THREAT-MODEL §2 invariant 8 as "append-only".
-// `agent_runs` is intentionally NOT in this set yet — the table lands
-// in PR 04 and will be appended to this list in that PR's matching
-// test extension. `catalog_candidate` is MUTATION-ADJACENT and
-// explicitly excluded from this invariant.
+// `catalog_candidate` is MUTATION-ADJACENT (sanctioned status/reviewed_*
+// UPDATE targets) and explicitly excluded from this invariant.
 const APPEND_ONLY_TABLES: ReadonlyArray<{ name: string; table: PgTable }> = [
   { name: "page_citations", table: pageCitations },
   { name: "redaction_events", table: redactionEvents },
   { name: "erasure_log", table: erasureLog },
   { name: "miner_suppressions", table: minerSuppressions },
+  { name: "agent_runs", table: agentRuns },
 ];
 
 // Any column name matching this regex is a potential mutation-timestamp
@@ -25,11 +25,16 @@ const APPEND_ONLY_TABLES: ReadonlyArray<{ name: string; table: PgTable }> = [
 const TIMESTAMP_RE = /_at$/;
 
 // `created_at` is the insertion timestamp every table carries and is
-// not a mutation record. Everything else ending in `_at` on an append-
-// only table is a smell: those tables should not be tracking when a
-// row was last touched.
+// not a mutation record. `started_at` + `ended_at` on `agent_runs` are
+// the run's open/close markers — the row is INSERTed at start with
+// `ended_at` NULL, and one-shot UPDATEd at close to set `ended_at` +
+// `status`/`output`. That single terminal update is the sanctioned
+// close transition (not a mutation-history column) and is enforced
+// separately by the `opencoo/no-update-append-only` ESLint rule.
 const APPEND_ONLY_TIMESTAMP_ALLOW_LIST: ReadonlySet<string> = new Set([
   "created_at",
+  "started_at",
+  "ended_at",
 ]);
 
 describe("append-only invariant (THREAT-MODEL §2 invariant 8)", () => {

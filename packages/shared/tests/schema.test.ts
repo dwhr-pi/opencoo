@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 
 import {
+  agentDefinitions,
+  agentInstances,
+  agentRuns,
+  agentRunStatus,
+  agentTrigger,
+  automationCandidates,
+  automationCandidateStatus,
+  automationDeployments,
+  automationDeploymentStatus,
   catalogCandidate,
   catalogCandidateStatus,
   catalogClass,
@@ -18,6 +27,8 @@ import {
   llmEngine,
   llmTier,
   llmUsage,
+  marketplaceUpdates,
+  marketplaceUpdateStatus,
   minerRuns,
   minerSuppressions,
   pageCitations,
@@ -98,12 +109,16 @@ function hasIndexOn(
   );
 }
 
-// Assert that `cfg` has an `ON DELETE RESTRICT` foreign key pointing at
-// `target`. When a table has two FKs to the same target, pass the
-// source column name to disambiguate.
-function expectRestrictFkTo(
+// Shared FK-find helper. Matches the foreign key on `cfg` whose
+// foreign table is `target` (optionally disambiguated by the source
+// column name when a table has multiple FKs to the same target), then
+// asserts its `onDelete` action. The two thin wrappers below are the
+// public API so call sites read as "this FK drops refs on delete" or
+// "this FK refuses deletes" rather than "this FK has onDelete='set null'".
+function expectFkTo(
   cfg: ReturnType<typeof getTableConfig>,
   target: PgTable,
+  onDelete: "restrict" | "set null",
   fromColumn?: string,
 ): void {
   const fk = cfg.foreignKeys.find((f) => {
@@ -112,12 +127,33 @@ function expectRestrictFkTo(
     return f.reference().columns.some((c) => c.name === fromColumn);
   });
   expect(fk).toBeDefined();
-  expect(fk?.onDelete).toBe("restrict");
+  expect(fk?.onDelete).toBe(onDelete);
 }
 
-// Assert that `column` carries no foreign-key constraint (used for the
-// compiled_by_run_id / run_id columns whose FK to agent_runs is
-// deferred to PR 04).
+// Assert an `ON DELETE RESTRICT` FK on `cfg` pointing at `target`.
+function expectRestrictFkTo(
+  cfg: ReturnType<typeof getTableConfig>,
+  target: PgTable,
+  fromColumn?: string,
+): void {
+  expectFkTo(cfg, target, "restrict", fromColumn);
+}
+
+// Assert an `ON DELETE SET NULL` FK on `cfg` pointing at `target`.
+// Used on the two columns backfilled by migration 0002
+// (page_citations.compiled_by_run_id and llm_usage.run_id) — audit
+// history survives Cleanup pruning of the referenced agent_runs row.
+function expectSetNullFkTo(
+  cfg: ReturnType<typeof getTableConfig>,
+  target: PgTable,
+  fromColumn?: string,
+): void {
+  expectFkTo(cfg, target, "set null", fromColumn);
+}
+
+// Assert that `column` carries no foreign-key constraint. Used for
+// logical-reference columns like `agent_instances.definition_slug`
+// that name a TypeScript-defined agent rather than a DB row.
 function expectNoFkOn(
   cfg: ReturnType<typeof getTableConfig>,
   column: string,
@@ -783,12 +819,12 @@ describe("page_citations table (APPEND-ONLY)", () => {
     expect(col.notNull).toBe(true);
   });
 
-  it("has nullable compiled_by_run_id uuid (FK to agent_runs deferred to PR 04)", () => {
+  it("has nullable compiled_by_run_id uuid with FK to agent_runs(id) ON DELETE SET NULL", () => {
     const cfg = tableCfg(pageCitations);
     const col = columnByName(cfg, "compiled_by_run_id");
     expect(col.getSQLType()).toBe("uuid");
     expect(col.notNull).toBe(false);
-    expectNoFkOn(cfg, "compiled_by_run_id");
+    expectSetNullFkTo(cfg, agentRuns, "compiled_by_run_id");
   });
 
   it("has nullable prompt_version text", () => {
@@ -868,12 +904,12 @@ describe("llm_usage table", () => {
     expect(col.notNull).toBe(false);
   });
 
-  it("has nullable run_id uuid (FK to agent_runs deferred to PR 04)", () => {
+  it("has nullable run_id uuid with FK to agent_runs(id) ON DELETE SET NULL", () => {
     const cfg = tableCfg(llmUsage);
     const col = columnByName(cfg, "run_id");
     expect(col.getSQLType()).toBe("uuid");
     expect(col.notNull).toBe(false);
-    expectNoFkOn(cfg, "run_id");
+    expectSetNullFkTo(cfg, agentRuns, "run_id");
   });
 
   it("has tokens_in / tokens_out integer NOT NULL", () => {
@@ -1300,5 +1336,608 @@ describe("erasure_log table (APPEND-ONLY)", () => {
   it("has NO updated_at column (append-only)", () => {
     const cfg = tableCfg(erasureLog);
     expect(cfg.columns.map((c) => c.name)).not.toContain("updated_at");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PR 04 — self-op schema (6 tables)
+// ---------------------------------------------------------------------------
+
+describe("pg enums (self-op)", () => {
+  it("agent_trigger has three values", () => {
+    expect(agentTrigger.enumName).toBe("agent_trigger");
+    expect([...agentTrigger.enumValues]).toEqual([
+      "scheduled",
+      "http",
+      "mcp",
+    ]);
+  });
+
+  it("agent_run_status has four values", () => {
+    expect(agentRunStatus.enumName).toBe("agent_run_status");
+    expect([...agentRunStatus.enumValues]).toEqual([
+      "running",
+      "success",
+      "failed",
+      "timeout",
+    ]);
+  });
+
+  it("automation_candidate_status has five values", () => {
+    expect(automationCandidateStatus.enumName).toBe(
+      "automation_candidate_status",
+    );
+    expect([...automationCandidateStatus.enumValues]).toEqual([
+      "proposed",
+      "approved",
+      "rejected",
+      "built",
+      "skipped",
+    ]);
+  });
+
+  it("automation_deployment_status has four values", () => {
+    expect(automationDeploymentStatus.enumName).toBe(
+      "automation_deployment_status",
+    );
+    expect([...automationDeploymentStatus.enumValues]).toEqual([
+      "deployed",
+      "activated",
+      "deactivated",
+      "removed",
+    ]);
+  });
+
+  it("marketplace_update_status has three values", () => {
+    expect(marketplaceUpdateStatus.enumName).toBe("marketplace_update_status");
+    expect([...marketplaceUpdateStatus.enumValues]).toEqual([
+      "pending",
+      "accepted",
+      "skipped",
+    ]);
+  });
+});
+
+describe("agent_definitions table", () => {
+  it("is named 'agent_definitions'", () => {
+    expect(tableCfg(agentDefinitions).name).toBe("agent_definitions");
+  });
+
+  it("has uuid PK id with gen_random_uuid() default", () => {
+    const cfg = tableCfg(agentDefinitions);
+    const id = columnByName(cfg, "id");
+    expect(id.getSQLType()).toBe("uuid");
+    expect(id.notNull).toBe(true);
+    expect(id.hasDefault).toBe(true);
+    expect(primaryKeyColumnNames(cfg)).toContain("id");
+  });
+
+  it("has slug text UNIQUE NOT NULL", () => {
+    const cfg = tableCfg(agentDefinitions);
+    const col = columnByName(cfg, "slug");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+    expect(uniqueColumnNames(cfg)).toContain("slug");
+  });
+
+  it("has version text NOT NULL", () => {
+    const col = columnByName(tableCfg(agentDefinitions), "version");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has description text NOT NULL", () => {
+    const col = columnByName(tableCfg(agentDefinitions), "description");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has output_schema_name text NOT NULL", () => {
+    const col = columnByName(tableCfg(agentDefinitions), "output_schema_name");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has default_memory jsonb NOT NULL DEFAULT '{}'", () => {
+    const col = columnByName(tableCfg(agentDefinitions), "default_memory");
+    expect(col.getSQLType()).toBe("jsonb");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+  });
+
+  it("has registered_at timestamptz NOT NULL DEFAULT now()", () => {
+    const col = columnByName(tableCfg(agentDefinitions), "registered_at");
+    expect(col.getSQLType()).toBe("timestamp with time zone");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+  });
+
+  it("has created_at + updated_at timestamptz NOT NULL DEFAULT now()", () => {
+    const cfg = tableCfg(agentDefinitions);
+    const created = columnByName(cfg, "created_at");
+    const updated = columnByName(cfg, "updated_at");
+    expect(created.notNull).toBe(true);
+    expect(created.hasDefault).toBe(true);
+    expect(updated.notNull).toBe(true);
+    expect(updated.hasDefault).toBe(true);
+  });
+});
+
+describe("agent_instances table", () => {
+  it("is named 'agent_instances'", () => {
+    expect(tableCfg(agentInstances).name).toBe("agent_instances");
+  });
+
+  it("has uuid PK id", () => {
+    const id = columnByName(tableCfg(agentInstances), "id");
+    expect(id.getSQLType()).toBe("uuid");
+    expect(id.hasDefault).toBe(true);
+  });
+
+  it("has definition_slug text NOT NULL (logical ref, no FK)", () => {
+    const cfg = tableCfg(agentInstances);
+    const col = columnByName(cfg, "definition_slug");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+    expectNoFkOn(cfg, "definition_slug");
+  });
+
+  it("has name text NOT NULL", () => {
+    const col = columnByName(tableCfg(agentInstances), "name");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has scope_domain_ids uuid[] NOT NULL DEFAULT '{}' and no FK", () => {
+    const cfg = tableCfg(agentInstances);
+    const col = columnByName(cfg, "scope_domain_ids");
+    expect(col.getSQLType()).toBe("uuid[]");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+    expectNoFkOn(cfg, "scope_domain_ids");
+  });
+
+  it("has output_channel_ids jsonb NOT NULL", () => {
+    const col = columnByName(tableCfg(agentInstances), "output_channel_ids");
+    expect(col.getSQLType()).toBe("jsonb");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+  });
+
+  it("has nullable schedule_cron text", () => {
+    const col = columnByName(tableCfg(agentInstances), "schedule_cron");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(false);
+  });
+
+  it("has memory jsonb NOT NULL DEFAULT '{}'", () => {
+    const col = columnByName(tableCfg(agentInstances), "memory");
+    expect(col.getSQLType()).toBe("jsonb");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+  });
+
+  it("has locale text NOT NULL DEFAULT 'en' with IN check", () => {
+    const cfg = tableCfg(agentInstances);
+    const col = columnByName(cfg, "locale");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+    expect(col.default).toBe("en");
+    expect(cfg.checks.length).toBeGreaterThan(0);
+  });
+
+  it("has enabled boolean NOT NULL DEFAULT true", () => {
+    const col = columnByName(tableCfg(agentInstances), "enabled");
+    expect(col.getSQLType()).toBe("boolean");
+    expect(col.notNull).toBe(true);
+    expect(col.default).toBe(true);
+  });
+
+  it("has created_at + updated_at timestamptz NOT NULL DEFAULT now()", () => {
+    const cfg = tableCfg(agentInstances);
+    expect(columnByName(cfg, "created_at").hasDefault).toBe(true);
+    expect(columnByName(cfg, "updated_at").hasDefault).toBe(true);
+  });
+
+  it("has UNIQUE (definition_slug, name)", () => {
+    const cfg = tableCfg(agentInstances);
+    const match = cfg.uniqueConstraints.find((u) => {
+      const names = u.columns.map((c) => c.name);
+      return (
+        names.length === 2 &&
+        names[0] === "definition_slug" &&
+        names[1] === "name"
+      );
+    });
+    expect(match).toBeDefined();
+  });
+});
+
+describe("agent_runs table (APPEND-ONLY)", () => {
+  it("is named 'agent_runs'", () => {
+    expect(tableCfg(agentRuns).name).toBe("agent_runs");
+  });
+
+  it("has uuid PK id", () => {
+    const id = columnByName(tableCfg(agentRuns), "id");
+    expect(id.getSQLType()).toBe("uuid");
+    expect(id.hasDefault).toBe(true);
+  });
+
+  it("has definition_slug text NOT NULL (logical ref, no FK)", () => {
+    const cfg = tableCfg(agentRuns);
+    const col = columnByName(cfg, "definition_slug");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+    expectNoFkOn(cfg, "definition_slug");
+  });
+
+  it("has instance_id uuid NOT NULL with FK to agent_instances(id) ON DELETE RESTRICT", () => {
+    const cfg = tableCfg(agentRuns);
+    const col = columnByName(cfg, "instance_id");
+    expect(col.getSQLType()).toBe("uuid");
+    expect(col.notNull).toBe(true);
+    expectRestrictFkTo(cfg, agentInstances);
+  });
+
+  it("has trigger agent_trigger NOT NULL", () => {
+    const col = columnByName(tableCfg(agentRuns), "trigger");
+    expect(col.getSQLType()).toBe("agent_trigger");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has inputs jsonb NOT NULL DEFAULT '{}'", () => {
+    const col = columnByName(tableCfg(agentRuns), "inputs");
+    expect(col.getSQLType()).toBe("jsonb");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+  });
+
+  it("has tool_calls jsonb NOT NULL DEFAULT '[]'", () => {
+    const col = columnByName(tableCfg(agentRuns), "tool_calls");
+    expect(col.getSQLType()).toBe("jsonb");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+  });
+
+  it("has nullable output jsonb", () => {
+    const col = columnByName(tableCfg(agentRuns), "output");
+    expect(col.getSQLType()).toBe("jsonb");
+    expect(col.notNull).toBe(false);
+  });
+
+  it("has skills_used jsonb NOT NULL DEFAULT '[]' (Builder-only)", () => {
+    const col = columnByName(tableCfg(agentRuns), "skills_used");
+    expect(col.getSQLType()).toBe("jsonb");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+  });
+
+  it("has tokens_in / tokens_out integer NOT NULL DEFAULT 0", () => {
+    const cfg = tableCfg(agentRuns);
+    const tIn = columnByName(cfg, "tokens_in");
+    const tOut = columnByName(cfg, "tokens_out");
+    expect(tIn.getSQLType()).toBe("integer");
+    expect(tIn.notNull).toBe(true);
+    expect(tIn.default).toBe(0);
+    expect(tOut.default).toBe(0);
+  });
+
+  it("has cost_usd numeric(10, 6) NOT NULL", () => {
+    const col = columnByName(tableCfg(agentRuns), "cost_usd");
+    expect(col.getSQLType()).toBe("numeric(10, 6)");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+  });
+
+  it("has latency_ms integer NOT NULL DEFAULT 0", () => {
+    const col = columnByName(tableCfg(agentRuns), "latency_ms");
+    expect(col.getSQLType()).toBe("integer");
+    expect(col.notNull).toBe(true);
+    expect(col.default).toBe(0);
+  });
+
+  it("has status agent_run_status NOT NULL", () => {
+    const col = columnByName(tableCfg(agentRuns), "status");
+    expect(col.getSQLType()).toBe("agent_run_status");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has nullable error_class enum (reused from PR 03)", () => {
+    const col = columnByName(tableCfg(agentRuns), "error_class");
+    expect(col.getSQLType()).toBe("error_class");
+    expect(col.notNull).toBe(false);
+  });
+
+  it("has started_at NOT NULL DEFAULT now()", () => {
+    const col = columnByName(tableCfg(agentRuns), "started_at");
+    expect(col.getSQLType()).toBe("timestamp with time zone");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+  });
+
+  it("has nullable ended_at", () => {
+    const col = columnByName(tableCfg(agentRuns), "ended_at");
+    expect(col.getSQLType()).toBe("timestamp with time zone");
+    expect(col.notNull).toBe(false);
+  });
+
+  it("has created_at NOT NULL DEFAULT now()", () => {
+    const col = columnByName(tableCfg(agentRuns), "created_at");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+  });
+
+  it("has an index on (instance_id, started_at)", () => {
+    expect(hasIndexOn(tableCfg(agentRuns), ["instance_id", "started_at"]))
+      .toBe(true);
+  });
+
+  it("has an index on (definition_slug, started_at)", () => {
+    expect(
+      hasIndexOn(tableCfg(agentRuns), ["definition_slug", "started_at"]),
+    ).toBe(true);
+  });
+
+  it("has an index on status", () => {
+    expect(hasIndexOn(tableCfg(agentRuns), ["status"])).toBe(true);
+  });
+
+  it("has NO updated_at column (append-only)", () => {
+    const cfg = tableCfg(agentRuns);
+    expect(cfg.columns.map((c) => c.name)).not.toContain("updated_at");
+  });
+});
+
+describe("automation_candidates table (mutation-adjacent)", () => {
+  it("is named 'automation_candidates'", () => {
+    expect(tableCfg(automationCandidates).name).toBe("automation_candidates");
+  });
+
+  it("has uuid PK id", () => {
+    const id = columnByName(tableCfg(automationCandidates), "id");
+    expect(id.getSQLType()).toBe("uuid");
+    expect(id.hasDefault).toBe(true);
+  });
+
+  it("has surfacer_run_id uuid NOT NULL with FK to agent_runs(id) ON DELETE RESTRICT", () => {
+    const cfg = tableCfg(automationCandidates);
+    const col = columnByName(cfg, "surfacer_run_id");
+    expect(col.getSQLType()).toBe("uuid");
+    expect(col.notNull).toBe(true);
+    expectRestrictFkTo(cfg, agentRuns);
+  });
+
+  it("has source_page_refs jsonb NOT NULL", () => {
+    const col = columnByName(
+      tableCfg(automationCandidates),
+      "source_page_refs",
+    );
+    expect(col.getSQLType()).toBe("jsonb");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has proposal jsonb NOT NULL", () => {
+    const col = columnByName(tableCfg(automationCandidates), "proposal");
+    expect(col.getSQLType()).toBe("jsonb");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has status automation_candidate_status NOT NULL DEFAULT 'proposed'", () => {
+    const col = columnByName(tableCfg(automationCandidates), "status");
+    expect(col.getSQLType()).toBe("automation_candidate_status");
+    expect(col.notNull).toBe(true);
+    expect(col.default).toBe("proposed");
+  });
+
+  it("has nullable rationale text", () => {
+    const col = columnByName(tableCfg(automationCandidates), "rationale");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(false);
+  });
+
+  it("has nullable reviewed_by with FK to users(id) ON DELETE RESTRICT", () => {
+    const cfg = tableCfg(automationCandidates);
+    const col = columnByName(cfg, "reviewed_by");
+    expect(col.getSQLType()).toBe("uuid");
+    expect(col.notNull).toBe(false);
+    expectRestrictFkTo(cfg, users, "reviewed_by");
+  });
+
+  it("has nullable reviewed_at", () => {
+    const col = columnByName(tableCfg(automationCandidates), "reviewed_at");
+    expect(col.getSQLType()).toBe("timestamp with time zone");
+    expect(col.notNull).toBe(false);
+  });
+
+  it("has both created_at AND updated_at (mutation-adjacent)", () => {
+    const cfg = tableCfg(automationCandidates);
+    expect(columnByName(cfg, "created_at").hasDefault).toBe(true);
+    expect(columnByName(cfg, "updated_at").hasDefault).toBe(true);
+  });
+
+  it("has an index on status", () => {
+    expect(hasIndexOn(tableCfg(automationCandidates), ["status"])).toBe(true);
+  });
+
+  it("has an index on surfacer_run_id", () => {
+    expect(hasIndexOn(tableCfg(automationCandidates), ["surfacer_run_id"])).toBe(
+      true,
+    );
+  });
+});
+
+describe("automation_deployments table (mutation-adjacent)", () => {
+  it("is named 'automation_deployments'", () => {
+    expect(tableCfg(automationDeployments).name).toBe("automation_deployments");
+  });
+
+  it("has uuid PK id", () => {
+    const id = columnByName(tableCfg(automationDeployments), "id");
+    expect(id.getSQLType()).toBe("uuid");
+    expect(id.hasDefault).toBe(true);
+  });
+
+  it("has candidate_id uuid NOT NULL with FK to automation_candidates(id) ON DELETE RESTRICT", () => {
+    const cfg = tableCfg(automationDeployments);
+    const col = columnByName(cfg, "candidate_id");
+    expect(col.getSQLType()).toBe("uuid");
+    expect(col.notNull).toBe(true);
+    expectRestrictFkTo(cfg, automationCandidates);
+  });
+
+  it("has builder_run_id uuid NOT NULL with FK to agent_runs(id) ON DELETE RESTRICT", () => {
+    const cfg = tableCfg(automationDeployments);
+    const col = columnByName(cfg, "builder_run_id");
+    expect(col.getSQLType()).toBe("uuid");
+    expect(col.notNull).toBe(true);
+    expectRestrictFkTo(cfg, agentRuns, "builder_run_id");
+  });
+
+  it("has n8n_workflow_id text UNIQUE NOT NULL", () => {
+    const cfg = tableCfg(automationDeployments);
+    const col = columnByName(cfg, "n8n_workflow_id");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+    expect(uniqueColumnNames(cfg)).toContain("n8n_workflow_id");
+  });
+
+  it("has skills_used_snapshot jsonb NOT NULL", () => {
+    const col = columnByName(
+      tableCfg(automationDeployments),
+      "skills_used_snapshot",
+    );
+    expect(col.getSQLType()).toBe("jsonb");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has status automation_deployment_status NOT NULL DEFAULT 'deployed'", () => {
+    const col = columnByName(tableCfg(automationDeployments), "status");
+    expect(col.getSQLType()).toBe("automation_deployment_status");
+    expect(col.notNull).toBe(true);
+    expect(col.default).toBe("deployed");
+  });
+
+  it("has deployed_at NOT NULL DEFAULT now()", () => {
+    const col = columnByName(tableCfg(automationDeployments), "deployed_at");
+    expect(col.notNull).toBe(true);
+    expect(col.hasDefault).toBe(true);
+  });
+
+  it("has nullable activated_at (observation-only; Gate 3 invariant)", () => {
+    const col = columnByName(tableCfg(automationDeployments), "activated_at");
+    expect(col.getSQLType()).toBe("timestamp with time zone");
+    expect(col.notNull).toBe(false);
+  });
+
+  it("has nullable last_observed_at", () => {
+    const col = columnByName(
+      tableCfg(automationDeployments),
+      "last_observed_at",
+    );
+    expect(col.getSQLType()).toBe("timestamp with time zone");
+    expect(col.notNull).toBe(false);
+  });
+
+  it("has both created_at AND updated_at (mutation-adjacent)", () => {
+    const cfg = tableCfg(automationDeployments);
+    expect(columnByName(cfg, "created_at").hasDefault).toBe(true);
+    expect(columnByName(cfg, "updated_at").hasDefault).toBe(true);
+  });
+
+  it("has an index on status", () => {
+    expect(hasIndexOn(tableCfg(automationDeployments), ["status"])).toBe(true);
+  });
+
+  it("has an index on candidate_id", () => {
+    expect(hasIndexOn(tableCfg(automationDeployments), ["candidate_id"])).toBe(
+      true,
+    );
+  });
+});
+
+describe("marketplace_updates table (mutation-adjacent)", () => {
+  it("is named 'marketplace_updates'", () => {
+    expect(tableCfg(marketplaceUpdates).name).toBe("marketplace_updates");
+  });
+
+  it("has uuid PK id", () => {
+    const id = columnByName(tableCfg(marketplaceUpdates), "id");
+    expect(id.getSQLType()).toBe("uuid");
+    expect(id.hasDefault).toBe(true);
+  });
+
+  it("has marketplace_source text NOT NULL", () => {
+    const col = columnByName(tableCfg(marketplaceUpdates), "marketplace_source");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has release_tag text NOT NULL", () => {
+    const col = columnByName(tableCfg(marketplaceUpdates), "release_tag");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has target_commitish text NOT NULL", () => {
+    const col = columnByName(tableCfg(marketplaceUpdates), "target_commitish");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has tree_sha text NOT NULL", () => {
+    const col = columnByName(tableCfg(marketplaceUpdates), "tree_sha");
+    expect(col.getSQLType()).toBe("text");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has skills_diff jsonb NOT NULL", () => {
+    const col = columnByName(tableCfg(marketplaceUpdates), "skills_diff");
+    expect(col.getSQLType()).toBe("jsonb");
+    expect(col.notNull).toBe(true);
+  });
+
+  it("has status marketplace_update_status NOT NULL DEFAULT 'pending'", () => {
+    const col = columnByName(tableCfg(marketplaceUpdates), "status");
+    expect(col.getSQLType()).toBe("marketplace_update_status");
+    expect(col.notNull).toBe(true);
+    expect(col.default).toBe("pending");
+  });
+
+  it("has nullable reviewed_by with FK to users(id) ON DELETE RESTRICT", () => {
+    const cfg = tableCfg(marketplaceUpdates);
+    const col = columnByName(cfg, "reviewed_by");
+    expect(col.getSQLType()).toBe("uuid");
+    expect(col.notNull).toBe(false);
+    expectRestrictFkTo(cfg, users, "reviewed_by");
+  });
+
+  it("has nullable reviewed_at", () => {
+    const col = columnByName(tableCfg(marketplaceUpdates), "reviewed_at");
+    expect(col.getSQLType()).toBe("timestamp with time zone");
+    expect(col.notNull).toBe(false);
+  });
+
+  it("has both created_at AND updated_at (mutation-adjacent)", () => {
+    const cfg = tableCfg(marketplaceUpdates);
+    expect(columnByName(cfg, "created_at").hasDefault).toBe(true);
+    expect(columnByName(cfg, "updated_at").hasDefault).toBe(true);
+  });
+
+  it("has UNIQUE (marketplace_source, release_tag)", () => {
+    const cfg = tableCfg(marketplaceUpdates);
+    const match = cfg.uniqueConstraints.find((u) => {
+      const names = u.columns.map((c) => c.name);
+      return (
+        names.length === 2 &&
+        names[0] === "marketplace_source" &&
+        names[1] === "release_tag"
+      );
+    });
+    expect(match).toBeDefined();
+  });
+
+  it("has an index on status", () => {
+    expect(hasIndexOn(tableCfg(marketplaceUpdates), ["status"])).toBe(true);
   });
 });

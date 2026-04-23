@@ -70,3 +70,34 @@ export const erasureAction = pgEnum("erasure_action", [
   "recompile_page",
   "delete_page",
 ]);
+
+// --- self-op enums (PR 04) ---
+
+export const agentTrigger = pgEnum("agent_trigger", [
+  "scheduled",
+  "http",
+  "mcp",
+]);
+
+export const agentRunStatus = pgEnum("agent_run_status", [
+  "running",
+  "success",
+  "failed",
+  "timeout",
+]);
+
+export const automationCandidateStatus = pgEnum(
+  "automation_candidate_status",
+  ["proposed", "approved", "rejected", "built", "skipped"],
+);
+
+export const automationDeploymentStatus = pgEnum(
+  "automation_deployment_status",
+  ["deployed", "activated", "deactivated", "removed"],
+);
+
+export const marketplaceUpdateStatus = pgEnum("marketplace_update_status", [
+  "pending",
+  "accepted",
+  "skipped",
+]);
