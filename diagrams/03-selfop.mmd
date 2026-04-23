@@ -1,0 +1,73 @@
+---
+title: opencoo · self-operating engine + 3-gate automation
+config:
+  theme: base
+  themeVariables:
+    background: "#F6F3EC"
+    primaryColor: "#F6F3EC"
+    primaryBorderColor: "#121210"
+    primaryTextColor: "#121210"
+    lineColor: "#78746B"
+    clusterBkg: "#EFEBE1"
+    clusterBorder: "#121210"
+---
+flowchart LR
+    classDef ext     fill:#F6F3EC,stroke:#78746B,color:#3D3B36,stroke-dasharray: 4 3
+    classDef selfop  fill:#F4E2BF,stroke:#8C6722,color:#3A2A0F
+    classDef advink  fill:#DFAE5E,stroke:#6F5022,color:#1B1409
+    classDef wiki    fill:#D1E2DF,stroke:#285E5C,color:#0F2625
+    classDef shared  fill:#EFEBE1,stroke:#3D3B36,color:#121210
+    classDef sidecar fill:#EFEBE1,stroke:#121210,color:#121210,stroke-dasharray: 3 3
+    classDef gate    fill:#F3DAD0,stroke:#C6583A,color:#5A1F10
+
+    GITEA[("Gitea wiki<br/>worldview.md · pages")]:::wiki
+    PG[("Postgres<br/>agent_runs · candidates · deployments")]:::shared
+
+    subgraph SO["Self-Operating module"]
+        direction TB
+        HARN["Agent harness<br/>tools · context budgets · cost/latency<br/>structured output · audit trail<br/>worldview grounding · agent memory"]:::advink
+
+        subgraph DEFS["Agent definitions · instantiated 1..N times"]
+            direction LR
+            HB["Heartbeat<br/>daily advisory<br/>memory: 3 prior runs"]:::selfop
+            LINT["Lint<br/>weekly · contradictions<br/>stale pages · automation drift"]:::selfop
+            CHAT["Chat<br/>MCP-served Q&A<br/>per-session"]:::selfop
+            SURF["Surfacer<br/>scans wiki →<br/>automation_candidates"]:::selfop
+            BLD["Builder<br/>builds n8n workflow<br/>via AutomationAdapter"]:::selfop
+        end
+
+        UI["Management UI + Review Dashboard<br/>bundled static · self-op Fastify"]:::selfop
+    end
+
+    OUT["OutputAdapters<br/>Slack · Asana · email"]:::ext
+    AG["External AI agents<br/>Claude · ChatGPT"]:::ext
+    NMCP["n8n-mcp"]:::sidecar
+    N8N["Customer's n8n"]:::ext
+
+    GITEA --> HARN
+    HARN --> HB & LINT & CHAT & SURF & BLD
+    PG -.->|prior runs · worldview freshness| HARN
+
+    HB --> OUT
+    LINT --> OUT
+    CHAT -->|MCP session| AG
+
+    subgraph GATES["Automation pipeline · surface → build → activate"]
+        direction LR
+        CAND[/"automation_candidates<br/>status: proposed"/]:::selfop
+        G1{{"Gate 1<br/>surfacer_auto_approve<br/>per-domain · default OFF"}}:::gate
+        APPR[/"approved"/]:::selfop
+        G2{{"Gate 2<br/>builder_auto_deploy<br/>per-domain · default OFF"}}:::gate
+        DEPL[/"deployed DISABLED in n8n<br/>+ wiki backlink"/]:::selfop
+        G3{{"Gate 3<br/>workflow activation<br/>ALWAYS MANUAL · in n8n UI"}}:::gate
+        ACTIVE[/"active workflow"/]:::advink
+    end
+
+    SURF --> CAND --> G1 -->|auto OR manual click| APPR
+    APPR --> G2 -->|auto OR Build-this click| BLD
+    BLD --> NMCP --> DEPL --> G3 -->|human toggle in n8n| ACTIVE
+    ACTIVE -.-> N8N
+
+    UI -.->|approve / reject| CAND
+    UI -.->|Build this| APPR
+    LINT -.->|automation-drift task| UI

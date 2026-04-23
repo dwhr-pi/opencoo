@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 -76 456 152" width="456" height="152" aria-label="coo">
+  
+  <g transform="translate(56,0)"><circle r="56" fill="none" stroke="#121210" stroke-width="16" stroke-dasharray="282 74" transform="rotate(-140)"></circle></g>
+  
+  <g transform="translate(208,0)"><circle r="56" fill="#121210"></circle><circle r="14" fill="#F6F3EC"></circle></g>
+  
+  <g transform="translate(360,0)"><circle r="56" fill="none" stroke="#121210" stroke-width="16"></circle><circle r="14" fill="#121210"></circle></g>
+</svg>

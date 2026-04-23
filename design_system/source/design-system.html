@@ -1,0 +1,1268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>opencoo — identity & design system</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* --- paper & ink --- */
+    --paper:        #F6F3EC;   /* base canvas, warm */
+    --paper-2:      #EFEBE1;   /* subtle card */
+    --paper-3:      #E6E1D4;   /* hairline / divider */
+    --ink:          #121210;   /* primary text */
+    --ink-2:        #3D3B36;   /* secondary */
+    --ink-3:        #78746B;   /* tertiary / caption */
+    --ink-4:        #A8A398;   /* muted / placeholder */
+    --rule:         #1212101a; /* 10% ink */
+
+    /* --- accents (oklch, matched L/C, 3 hues) --- */
+    --advisory:     oklch(0.74 0.13 70);   /* warm amber — "COO across the table" */
+    --advisory-ink: oklch(0.42 0.10 55);
+    --wiki:         oklch(0.55 0.08 180);  /* deep teal — compiled knowledge */
+    --alert:        oklch(0.62 0.17 25);   /* used only in dashboard alerts */
+
+    --radius-s: 4px;
+    --radius-m: 6px;
+    --radius-l: 10px;
+
+    --mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+    --sans: 'Geist', -apple-system, system-ui, sans-serif;
+    --serif:'Instrument Serif', 'Times New Roman', serif;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-feature-settings: "ss01","ss02","cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    line-height: 1.4;
+  }
+
+  /* Grid background (blueprint vibe, very subtle) */
+  .page{
+    background-image:
+      linear-gradient(to right, #12121008 1px, transparent 1px),
+      linear-gradient(to bottom, #12121008 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+
+  .wrap{ max-width: 1180px; margin: 0 auto; padding: 56px 40px 120px; }
+
+  /* Responsive: below 1000px the two-column grids stack. Keeps everything
+     within the preview pane without horizontal scroll. */
+  @media (max-width: 1000px){
+    .wrap{ padding: 40px 28px 96px; }
+    .hero{ grid-template-columns: 1fr !important; gap: 28px; }
+    .motion-grid{ grid-template-columns: 1fr !important; }
+    .sec-title{ font-size: 24px; }
+    .tagline{ font-size: 30px; }
+    .lede{ font-size: 24px; }
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 48px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .topbar .right span + span{ margin-left: 20px; }
+
+  /* ---------- Section ---------- */
+  section{ margin: 80px 0; }
+  .sec-head{
+    display:flex; align-items:baseline; gap: 16px;
+    border-top: 1px solid var(--ink);
+    padding-top: 14px;
+    margin-bottom: 28px;
+  }
+  .sec-num{
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    color: var(--ink-3); text-transform: uppercase;
+  }
+  .sec-title{
+    font-family: var(--sans); font-size: 28px; font-weight: 500;
+    letter-spacing: -0.01em; margin: 0;
+  }
+  .sec-note{
+    margin-left:auto; font-family: var(--mono); font-size: 11px;
+    color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em;
+  }
+
+  .lede{
+    font-family: var(--serif);
+    font-size: 28px;
+    line-height: 1.25;
+    font-style: italic;
+    max-width: 760px;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    margin: 0 0 16px;
+  }
+  .lede em{ font-style: normal; font-family: var(--mono); font-size: 22px; background: var(--advisory); color:#1b1409; padding: 0 6px; border-radius: 3px; }
+
+  .sub{ font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.04em; }
+
+  /* =================== HERO =================== */
+  .hero{
+    display:grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 40px;
+    align-items: stretch;
+    margin-bottom: 96px;
+  }
+  .hero-left{
+    border: 1px solid var(--ink);
+    padding: 40px 40px 32px;
+    background: var(--paper);
+    position: relative;
+    min-height: 360px;
+    display:flex; flex-direction:column; justify-content:space-between;
+  }
+  .hero-left::before{
+    content:""; position:absolute; inset:6px; border:1px dashed #12121022; pointer-events:none;
+  }
+  .hero-corners span{
+    position:absolute; width:8px; height:8px; background:var(--ink);
+  }
+  .hero-corners span:nth-child(1){ top:-1px; left:-1px; }
+  .hero-corners span:nth-child(2){ top:-1px; right:-1px; }
+  .hero-corners span:nth-child(3){ bottom:-1px; left:-1px; }
+  .hero-corners span:nth-child(4){ bottom:-1px; right:-1px; }
+
+  .file-label{
+    font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+    display:flex; justify-content:space-between; letter-spacing:0.08em; text-transform:uppercase;
+  }
+  .hero-mark{
+    display:flex; align-items:center; justify-content:center; flex:1;
+    padding: 24px 0 16px;
+  }
+  .hero-mark svg{ width: 86%; height:auto; }
+
+  .hero-right{
+    display:flex; flex-direction:column; gap: 16px;
+  }
+  .hero-meta{
+    border: 1px solid var(--rule);
+    background: #fff8;
+    padding: 20px 22px;
+    border-radius: var(--radius-s);
+  }
+  .hero-meta h3{
+    font-family: var(--mono); font-size: 11px; text-transform:uppercase;
+    letter-spacing: 0.1em; color: var(--ink-3); margin: 0 0 10px;
+  }
+  .hero-meta dl{ margin:0; display:grid; grid-template-columns: 120px 1fr; gap: 6px 20px; font-size: 13px; }
+  .hero-meta dt{ font-family: var(--mono); color: var(--ink-3); font-size: 11px; text-transform:uppercase; letter-spacing:0.06em; padding-top:3px; }
+  .hero-meta dd{ margin:0; color: var(--ink); }
+  .hero-meta dd b{ font-weight:500; }
+
+  .tagline{
+    font-family: var(--serif); font-size: 36px; line-height: 1.08;
+    letter-spacing: -0.02em; margin: 0;
+  }
+  .tagline em{ font-style: italic; color: var(--ink-2); }
+  .tagline .amp{ color: oklch(0.60 0.16 60); font-style: italic; }
+
+  /* =================== LOGO GRID =================== */
+  .logo-grid{
+    display:grid; grid-template-columns: repeat(6, 1fr);
+    border: 1px solid var(--ink);
+    background: var(--paper-2);
+    margin-bottom: 24px;
+  }
+  .logo-cell{
+    grid-column: span 2;
+    aspect-ratio: 5/3;
+    background: var(--paper);
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    display:flex; align-items:center; justify-content:center;
+    position:relative;
+    padding: 24px;
+  }
+  .logo-cell.dark{ background: var(--ink); color: var(--paper); }
+  .logo-cell.accent{ background: var(--advisory); }
+  .logo-cell.wide{ grid-column: span 3; }
+  .logo-cell.full{ grid-column: span 6; aspect-ratio: 14/3; }
+  .logo-cell-tag{
+    position:absolute; top:12px; left:14px;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink-3); letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .logo-cell.dark .logo-cell-tag{ color: #ffffff55; }
+  .logo-cell.accent .logo-cell-tag{ color: #2a1f0f99; }
+
+  .logo-cell svg{ max-width: 82%; max-height: 70%; }
+
+  /* =================== CONCEPT =================== */
+  .concept{
+    display:grid; grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .concept-card{
+    border: 1px solid var(--rule);
+    padding: 22px;
+    background: var(--paper);
+    border-radius: var(--radius-s);
+  }
+  .concept-card h4{
+    font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+    margin: 0 0 14px; letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .concept-visual{
+    height: 120px;
+    display:flex; align-items:center; justify-content:center;
+    border: 1px dashed var(--paper-3);
+    border-radius: var(--radius-s);
+    margin-bottom: 14px;
+  }
+  .concept-card p{ font-size: 14px; color: var(--ink-2); margin: 0; line-height: 1.5; }
+  .concept-card p b{ color: var(--ink); font-weight: 500; }
+
+  /* =================== COLOR =================== */
+  .palette{ display:grid; grid-template-columns: repeat(12, 1fr); gap: 0; border: 1px solid var(--ink); }
+  .swatch{
+    grid-column: span 3;
+    aspect-ratio: 4/3;
+    padding: 14px 16px;
+    display:flex; flex-direction:column; justify-content:space-between;
+    font-family: var(--mono); font-size: 11px;
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink);
+  }
+  .swatch b{ font-weight:500; font-size: 12px; letter-spacing: 0.04em; }
+  .swatch span{ color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
+  .swatch.ink{ background: var(--ink); color: var(--paper); }
+  .swatch.ink span{ color: #ffffff77; }
+  .swatch.ink2{ background: var(--ink-2); color: var(--paper); }
+  .swatch.ink2 span{ color: #ffffff77; }
+  .swatch.ink3{ background: var(--ink-3); color: var(--paper); }
+  .swatch.ink3 span{ color: #ffffffbb; }
+  .swatch.paper{ background: var(--paper); }
+  .swatch.paper2{ background: var(--paper-2); }
+  .swatch.paper3{ background: var(--paper-3); }
+  .swatch.adv{ background: var(--advisory); }
+  .swatch.advink{ background: var(--advisory-ink); color:#fff; }
+  .swatch.advink span{ color:#ffffff88; }
+  .swatch.wiki{ background: var(--wiki); color:#fff; }
+  .swatch.wiki span{ color:#ffffff88; }
+  .swatch.alert{ background: var(--alert); color:#fff; }
+  .swatch.alert span{ color:#ffffff88; }
+
+  /* =================== TYPE =================== */
+  .type-row{
+    display:grid; grid-template-columns: 140px 1fr 220px;
+    gap: 24px;
+    padding: 20px 0;
+    border-top: 1px solid var(--rule);
+    align-items: baseline;
+  }
+  .type-row:last-child{ border-bottom: 1px solid var(--rule); }
+  .type-row .lbl{ font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; }
+  .type-row .specs{ font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-align:right; }
+  .t-display{ font-family: var(--serif); font-style: italic; font-size: 56px; line-height: 1; letter-spacing: -0.02em; }
+  .t-h1{ font-family: var(--sans); font-size: 40px; font-weight: 500; letter-spacing: -0.015em; line-height: 1.05; }
+  .t-h2{ font-family: var(--sans); font-size: 24px; font-weight: 500; letter-spacing: -0.01em; }
+  .t-body{ font-family: var(--sans); font-size: 15px; line-height: 1.55; color: var(--ink-2); max-width: 640px; }
+  .t-mono{ font-family: var(--mono); font-size: 13px; letter-spacing: 0.01em; color: var(--ink); }
+  .t-micro{ font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform:uppercase; color: var(--ink-3); }
+
+  /* =================== COMPONENTS =================== */
+  .comp-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .comp-card{
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    border-radius: var(--radius-m);
+    padding: 20px;
+  }
+  .comp-card .comp-lbl{
+    font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+    letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 14px;
+  }
+  .btn{
+    display: inline-flex; align-items:center; gap: 8px;
+    font-family: var(--sans); font-size: 13px; font-weight: 500;
+    padding: 9px 14px; border-radius: var(--radius-s);
+    border: 1px solid var(--ink); background: var(--ink); color: var(--paper);
+    cursor: pointer; letter-spacing: -0.005em;
+  }
+  .btn.ghost{ background: transparent; color: var(--ink); }
+  .btn.advisory{ background: var(--advisory); border-color: var(--advisory-ink); color: #1b1409; }
+  .btn.subtle{ background: var(--paper-2); border-color: var(--rule); color: var(--ink); }
+  .btn .k{ font-family: var(--mono); font-size: 11px; opacity: 0.65; }
+  .btn-row{ display:flex; flex-wrap:wrap; gap: 10px; align-items:center; }
+
+  .badge{
+    font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.08em; padding: 3px 7px; border-radius: 3px;
+    background: var(--paper-2); color: var(--ink-2); border: 1px solid var(--rule);
+  }
+  .badge.wiki{ background: color-mix(in oklab, var(--wiki) 14%, var(--paper)); color: var(--wiki); border-color: color-mix(in oklab, var(--wiki) 25%, var(--paper)); }
+  .badge.adv{ background: color-mix(in oklab, var(--advisory) 28%, var(--paper)); color: var(--advisory-ink); border-color: color-mix(in oklab, var(--advisory) 40%, var(--paper)); }
+  .badge.alert{ background: color-mix(in oklab, var(--alert) 14%, var(--paper)); color: var(--alert); border-color: color-mix(in oklab, var(--alert) 30%, var(--paper)); }
+  .badge.ok{ background: color-mix(in oklab, #1f8a5a 14%, var(--paper)); color: #1b6a46; border-color: color-mix(in oklab, #1f8a5a 26%, var(--paper)); }
+
+  /* Heartbeat card */
+  .hb{
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-m);
+    background: var(--paper);
+    padding: 22px;
+    position: relative;
+  }
+  .hb-rail{ position:absolute; left:0; top:20px; bottom:20px; width: 3px; background: var(--advisory); border-radius: 3px; }
+  .hb-head{ display:flex; align-items:center; gap:10px; margin-bottom: 8px; }
+  .hb-head .hb-tag{ font-family: var(--mono); font-size: 11px; color: var(--ink-3); letter-spacing: 0.08em; text-transform: uppercase; }
+  .hb-title{ font-family: var(--sans); font-weight: 500; font-size: 19px; line-height: 1.35; letter-spacing: -0.005em; margin: 0 0 10px; color: var(--ink); }
+  .hb-body{ font-size: 14px; color: var(--ink-2); line-height: 1.55; margin: 0 0 12px; }
+  .hb-meta{ display:flex; gap: 14px; font-family: var(--mono); font-size: 11px; color: var(--ink-3); padding-top: 10px; border-top: 1px dashed var(--rule); letter-spacing: 0.04em; }
+  .hb-meta .dot{ width:6px; height:6px; background: var(--advisory); border-radius: 50%; display:inline-block; margin-right: 6px; transform: translateY(-1px);}
+
+  /* Wiki page */
+  .wiki-card{
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-m);
+    background: var(--paper);
+    overflow: hidden;
+  }
+  .wiki-head{
+    padding: 12px 16px; background: var(--paper-2); border-bottom: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .wiki-head .path b{ color: var(--ink); font-weight: 500; }
+  .wiki-body{ padding: 22px 24px; font-size: 14px; color: var(--ink-2); line-height: 1.6; }
+  .wiki-body h4{ font-family: var(--sans); font-weight: 500; font-size: 16px; color: var(--ink); margin: 18px 0 6px; }
+  .wiki-body h4:first-child{ margin-top: 0; }
+  .wiki-body ul{ padding-left: 18px; margin: 6px 0; }
+  .wiki-body code{ font-family: var(--mono); background: var(--paper-2); padding: 1px 5px; border-radius: 3px; font-size: 12.5px; color: var(--ink); }
+  .citation{ display:inline-flex; gap: 4px; align-items:center; padding: 1px 6px; background: color-mix(in oklab, var(--wiki) 10%, var(--paper)); color: var(--wiki); font-family: var(--mono); font-size: 11px; border-radius: 3px; text-decoration:none; }
+
+  /* Input */
+  .field{
+    display:flex; flex-direction:column; gap: 6px; margin-bottom: 12px;
+  }
+  .field label{ font-family: var(--mono); font-size: 10px; color: var(--ink-3); letter-spacing: 0.1em; text-transform: uppercase; }
+  .field input, .field select{
+    font-family: var(--mono); font-size: 13px; color: var(--ink);
+    background: var(--paper); border: 1px solid var(--rule); padding: 10px 12px;
+    border-radius: var(--radius-s);
+  }
+  .field input:focus{ outline: 2px solid var(--advisory); outline-offset: 1px; border-color: var(--advisory-ink); }
+
+  /* Log / tape */
+  .log{
+    background: var(--ink); color: #EDE7D6; padding: 18px 20px; border-radius: var(--radius-m);
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.7; overflow:hidden;
+  }
+  .log .t{ color: #A8A398; }
+  .log .ok{ color: oklch(0.8 0.13 150); }
+  .log .adv{ color: var(--advisory); }
+  .log .wk{ color: oklch(0.78 0.09 180); }
+  .log .er{ color: oklch(0.72 0.17 25); }
+
+  /* Diagram */
+  .diagram{
+    border: 1px solid var(--rule); border-radius: var(--radius-m);
+    background: var(--paper); padding: 28px; margin-top: 24px;
+  }
+  .diagram svg{ width: 100%; height: auto; display:block; }
+
+  /* Iconography grid */
+  .icon-grid{ display:grid; grid-template-columns: repeat(6, 1fr); gap: 0; border: 1px solid var(--rule); border-radius: var(--radius-s); overflow:hidden; }
+  .icon-cell{
+    aspect-ratio: 1/1; display:flex; align-items:center; justify-content:center;
+    border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+    background: var(--paper); position:relative;
+  }
+  .icon-cell:nth-child(6n){ border-right:none; }
+  .icon-cell-tag{ position:absolute; bottom:8px; left:0; right:0; text-align:center; font-family: var(--mono); font-size: 10px; color: var(--ink-3); letter-spacing: 0.06em; text-transform: uppercase; }
+  .icon-cell svg{ width: 40%; height: 40%; }
+
+  /* Usage rules */
+  .rules{ display:grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  .rule{
+    border: 1px solid var(--rule);
+    padding: 20px;
+    border-radius: var(--radius-s);
+    background: var(--paper);
+  }
+  .rule .chip{
+    display:inline-block; font-family: var(--mono); font-size: 10px;
+    padding: 3px 7px; border-radius: 3px; letter-spacing: 0.08em; text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .rule.do .chip{ background: color-mix(in oklab, #1f8a5a 14%, var(--paper)); color: #1b6a46; }
+  .rule.dont .chip{ background: color-mix(in oklab, var(--alert) 14%, var(--paper)); color: var(--alert); }
+  .rule p{ font-size: 13.5px; color: var(--ink-2); line-height: 1.55; margin: 0; }
+
+  /* Spacing ruler */
+  .ruler{ display:flex; gap: 0; align-items:flex-end; background: var(--paper-2); padding: 24px; border-radius: var(--radius-s); border: 1px solid var(--rule); }
+  .tick{ display:flex; flex-direction:column; align-items:center; font-family: var(--mono); font-size: 10px; color: var(--ink-3); letter-spacing: 0.06em; padding: 0 12px; }
+  .tick .bar{ background: var(--ink); width: 100%; margin-bottom: 6px; }
+
+  /* Footer */
+  .foot{
+    font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+    padding-top: 32px; margin-top: 80px; border-top: 1px solid var(--rule);
+    display:flex; justify-content:space-between; text-transform: uppercase; letter-spacing: 0.08em;
+  }
+
+  .two-col{ display:grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .three-col{ display:grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+</style>
+</head>
+<body>
+
+<!-- =================================================================
+     CANONICAL GLYPH LIBRARY · single source of truth for every mark.
+     Every SVG in this document references these via <use href="#gl-x" x="-76" y="-76" width="152" height="152"/>.
+     DNA: stroke 16, r 56, vertical center y=0. Descender 100 below y=0.
+
+     Glyph symbols have viewBox="-76 -76 152 152" (a 152×152 square around a r=56 glyph
+     with 20-unit clearspace on all sides). This makes <use> placement trivial:
+     width=H, height=H, x=cx-H/2, y=cy-H/2.
+================================================================= -->
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden;pointer-events:none;" focusable="false">
+  <defs>
+    <!-- ========== TRIO GLYPHS (c·o·o) — the brand's three states ========== -->
+    <!-- c: open arc, facing right -->
+    <symbol id="gl-c" viewBox="-76 -76 152 152" overflow="visible">
+      <circle r="56" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16"
+              stroke-dasharray="282 74" transform="rotate(-140)"/>
+    </symbol>
+    <!-- o-compile: solid disc with small inner hole (compiled knowledge) -->
+    <symbol id="gl-o-compile" viewBox="-76 -76 152 152" overflow="visible">
+      <circle r="56" fill="var(--mark-fg, #121210)"/>
+      <circle r="14" fill="var(--mark-bg, #F6F3EC)"/>
+    </symbol>
+    <!-- o-operate: ring with center dot (agent orbit) -->
+    <symbol id="gl-o-operate" viewBox="-76 -76 152 152" overflow="visible">
+      <circle r="56" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16"/>
+      <circle r="14" fill="var(--mark-fg, #121210)"/>
+    </symbol>
+
+    <!-- ========== BAUHAUS LETTERS (for the wordmark "open") ========== -->
+    <!-- o: plain ring -->
+    <symbol id="gl-ltr-o" viewBox="-76 -76 152 152" overflow="visible">
+      <circle r="56" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16"/>
+    </symbol>
+    <!-- p: ring + left stem with descender -->
+    <symbol id="gl-ltr-p" viewBox="-76 -76 152 252" overflow="visible">
+      <circle r="56" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16"/>
+      <rect x="-64" y="0" width="16" height="100" fill="var(--mark-fg, #121210)"/>
+    </symbol>
+    <!-- e: arc with aperture + middle crossbar -->
+    <symbol id="gl-ltr-e" viewBox="-76 -76 152 152" overflow="visible">
+      <path d="M 55.15 9.72 A 56 56 0 1 1 55.15 -9.72" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16"/>
+      <rect x="-56" y="-8" width="84" height="16" fill="var(--mark-fg, #121210)"/>
+    </symbol>
+    <!-- n: half-circle arch on two vertical stems -->
+    <symbol id="gl-ltr-n" viewBox="-76 -76 152 152" overflow="visible">
+      <path d="M -56 56 L -56 0 A 56 56 0 0 1 56 0 L 56 56" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16"/>
+    </symbol>
+
+    <!-- ========== ASSEMBLED WORDMARKS ========== -->
+    <!-- "open" as a standalone wordmark: 4 letters, center-to-center gap 152, starts at x=56 so left edge=0.
+         Total width: 56 + 3*152 + 56 = 568 (letters) · plus descender of p → height 56+100+56 = 212 around y=0.
+         viewBox covers x=-20 to x=588 (608 wide), y=-76 to y=176 (252 tall). -->
+    <symbol id="gl-word-open" viewBox="-20 -76 608 252" overflow="visible">
+      <g>
+        <use href="#gl-ltr-o" x="-20" y="-76" width="152" height="152"/>
+        <use href="#gl-ltr-p" x="132" y="-76" width="152" height="252"/>
+        <use href="#gl-ltr-e" x="284" y="-76" width="152" height="152"/>
+        <use href="#gl-ltr-n" x="436" y="-76" width="152" height="152"/>
+      </g>
+    </symbol>
+
+    <!-- "coo" trio as a standalone mark: same gap spacing.
+         viewBox: x=-20 to x=436 (456 wide), y=-76 to y=76 (152 tall). -->
+    <symbol id="gl-trio-coo" viewBox="-20 -76 456 152" overflow="visible">
+      <use href="#gl-c"         x="-20" y="-76" width="152" height="152"/>
+      <use href="#gl-o-compile" x="132" y="-76" width="152" height="152"/>
+      <use href="#gl-o-operate" x="284" y="-76" width="152" height="152"/>
+    </symbol>
+
+    <!-- Full "opencoo" wordmark: open + coo with a slightly larger gap (176) between "n" and "c".
+         Total x-range: 0 to 56 + 3*152 + 176 + 3*152 + 56 = 1200. Use -20 padding → viewBox 1240×252. -->
+    <symbol id="gl-word-opencoo" viewBox="-20 -76 1240 252" overflow="visible">
+      <g transform="translate(56,0)"><circle r="56" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16"/></g>
+      <g transform="translate(208,0)"><circle r="56" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16"/><rect x="-64" y="0" width="16" height="100" fill="var(--mark-fg, #121210)"/></g>
+      <g transform="translate(360,0)"><path d="M 55.15 9.72 A 56 56 0 1 1 55.15 -9.72" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16"/><rect x="-56" y="-8" width="84" height="16" fill="var(--mark-fg, #121210)"/></g>
+      <g transform="translate(512,0)"><path d="M -56 56 L -56 0 A 56 56 0 0 1 56 0 L 56 56" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16"/></g>
+      <g transform="translate(688,0)"><circle r="56" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16" stroke-dasharray="282 74" transform="rotate(-140)"/></g>
+      <g transform="translate(840,0)"><circle r="56" fill="var(--mark-fg, #121210)"/><circle r="14" fill="var(--mark-bg, #F6F3EC)"/></g>
+      <g transform="translate(992,0)"><circle r="56" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="16"/><circle r="14" fill="var(--mark-fg, #121210)"/></g>
+    </symbol>
+  </defs>
+</svg>
+<div class="page">
+<div class="wrap">
+
+  <!-- ================= TOP BAR ================= -->
+  <div class="topbar">
+    <div><b style="color:var(--ink);font-family:var(--mono);">opencoo</b> / identity & system — v0.1</div>
+    <div class="right">
+      <span>apache-2.0</span>
+      <span>oss · self-hosted</span>
+      <span id="stamp">2026-04-20</span>
+    </div>
+  </div>
+
+  <!-- ================= HERO ================= -->
+  <div class="hero">
+    <div class="hero-left">
+      <div class="hero-corners"><span></span><span></span><span></span><span></span></div>
+      <div class="file-label"><span>wordmark/primary.svg</span><span>02.1</span></div>
+      <div class="hero-mark" id="hero-mark">
+        <!-- Canonical "opencoo" wordmark — references the global glyph library. -->
+        <svg viewBox="-20 -76 1240 252" xmlns="http://www.w3.org/2000/svg" aria-label="opencoo" style="--mark-fg:#121210">
+          <g stroke="#12121012" stroke-width="1">
+            <line x1="-20" y1="-56" x2="1220" y2="-56"/>
+            <line x1="-20" y1="56"  x2="1220" y2="56"/>
+            <line x1="-20" y1="156" x2="1220" y2="156"/>
+          </g>
+          <use href="#gl-word-opencoo" width="1240" height="252" x="-20" y="-76"/>
+        </svg>
+
+      <div class="file-label"><span>clearspace: 1× ◯ all sides</span><span>rgb + print</span></div>
+    </div>
+
+    <div class="hero-right">
+      <p class="tagline">Your company's<br/><em>compiled</em> <span class="amp">&</span> <em>self-operating</em><br/>second brain.</p>
+
+      <div class="hero-meta">
+        <h3>Manifest</h3>
+        <dl>
+          <dt>name</dt>     <dd><b>opencoo</b> — always lowercase, one word</dd>
+          <dt>category</dt> <dd>Knowledge infrastructure · OSS · self-hosted</dd>
+          <dt>voice</dt>    <dd>Technical. Honest. Dry.</dd>
+          <dt>against</dt>  <dd>RAG, vector stores, semantic slop</dd>
+          <dt>for</dt>      <dd>Partners, operators, 20–200 ppl companies</dd>
+        </dl>
+      </div>
+      <div class="hero-meta">
+        <h3>The mark, in three glyphs</h3>
+        <dl>
+          <dt>◯ open</dt>  <dd>the <b>c</b> — open-source, open to any source</dd>
+          <dt>● compile</dt><dd>the first <b>o</b> — knowledge, synthesized</dd>
+          <dt>◉ operate</dt><dd>the second <b>o</b> — agents, acting on it</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 01 · CONCEPT ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">01 — Concept</span>
+      <h2 class="sec-title">Three glyphs tell the whole story.</h2>
+      <span class="sec-note">logo system</span>
+    </div>
+
+    <p class="lede">The last three letters of <em>opencoo</em> — <b>c · o · o</b> — become the product's three states: <b>open → compile → operate</b>. Read across, that's the architecture of the product, drawn in ink.</p>
+
+    <div class="concept">
+      <div class="concept-card">
+        <h4>c — open</h4>
+        <div class="concept-visual">
+          <svg viewBox="-76 -76 152 152" width="92" height="92" style="--mark-fg:#121210">
+            <use href="#gl-c" x="-76" y="-76" width="152" height="152"/>
+          </svg>
+        </div>
+        <p><b>Ingest.</b> The open ring — open source, open to every source. Drive, Notion, Asana, Fireflies. Anything that produces text.</p>
+      </div>
+      <div class="concept-card">
+        <h4>o — compile</h4>
+        <div class="concept-visual">
+          <svg viewBox="-76 -76 152 152" width="92" height="92" style="--mark-fg:#121210">
+            <use href="#gl-o-compile" x="-76" y="-76" width="152" height="152"/>
+          </svg>
+        </div>
+        <p><b>Synthesize.</b> The filled mark — a compiled wiki page. Not a chunk, not an embedding. A finished paragraph that an agent can actually read.</p>
+      </div>
+      <div class="concept-card">
+        <h4>o — operate</h4>
+        <div class="concept-visual">
+          <svg viewBox="-76 -76 152 152" width="92" height="92" style="--mark-fg:#121210">
+            <use href="#gl-o-operate" x="-76" y="-76" width="152" height="152"/>
+          </svg>
+        </div>
+        <p><b>Act.</b> The ringed mark — an agent orbit. Heartbeat, Lint, Chat, Surfacer, Builder. Reading the middle glyph, writing back to the world.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 02 · LOGO LOCK-UPS ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">02 — Lock-ups</span>
+      <h2 class="sec-title">Wordmark, monogram, stacked.</h2>
+      <span class="sec-note">svg · 1× 2× 3×</span>
+    </div>
+
+    <div class="logo-grid">
+      <!-- Row 1: primary lock-up, full width -->
+      <div class="logo-cell full">
+        <span class="logo-cell-tag">PRIMARY · WORDMARK — OPEN + COO</span>
+        <svg viewBox="-20 -76 1240 252" width="100%" style="--mark-fg:#121210">
+          <use href="#gl-word-opencoo" width="1240" height="252" x="-20" y="-76"/>
+        </svg>
+      </div>
+
+      <!-- Row 2: trio monogram, stacked lock-up, favicon -->
+      <div class="logo-cell">
+        <span class="logo-cell-tag">MONOGRAM · TRIO COO</span>
+        <svg viewBox="-20 -76 456 152" width="100%" style="--mark-fg:#121210">
+          <use href="#gl-trio-coo" width="456" height="152" x="-20" y="-76"/>
+        </svg>
+      </div>
+      <div class="logo-cell">
+        <span class="logo-cell-tag">STACKED · TRIO + WORD</span>
+        <svg viewBox="-20 -76 456 380" width="100%" style="--mark-fg:#121210">
+          <use href="#gl-trio-coo"     width="456" height="152"  x="-20" y="-76"/>
+          <use href="#gl-word-opencoo" width="456" height="93"   x="-20" y="100"/>
+        </svg>
+      </div>
+      <div class="logo-cell">
+        <span class="logo-cell-tag">APP MARK · COMPILE</span>
+        <svg viewBox="-80 -80 160 160" width="92" height="92">
+          <rect x="-80" y="-80" width="160" height="160" rx="28" fill="#F6F3EC" stroke="#121210" stroke-width="2"/>
+          <g style="color:#121210">
+            <use href="#gl-o-compile" x="-60" y="-60" width="120" height="120"/>
+          </g>
+        </svg>
+      </div>
+
+      <!-- Row 3: inverse on ink, accent, CLI -->
+      <div class="logo-cell dark">
+        <span class="logo-cell-tag">INVERSE · ON INK</span>
+        <svg viewBox="-20 -76 1240 252" width="100%" style="--mark-fg:#F6F3EC; --mark-bg:#121210">
+          <g fill="none" stroke="#F6F3EC" stroke-width="16">
+            <g transform="translate(56,0)"><circle r="56"/></g>
+            <g transform="translate(208,0)"><circle r="56"/><rect x="-64" y="0" width="16" height="100" fill="#F6F3EC" stroke="none"/></g>
+            <g transform="translate(360,0)"><path d="M 55.15 9.72 A 56 56 0 1 1 55.15 -9.72"/><rect x="-56" y="-8" width="84" height="16" fill="#F6F3EC" stroke="none"/></g>
+            <g transform="translate(512,0)"><path d="M -56 56 L -56 0 A 56 56 0 0 1 56 0 L 56 56"/></g>
+            <g transform="translate(688,0)"><circle r="56" stroke-dasharray="282 74" transform="rotate(-140)"/></g>
+            <g transform="translate(840,0)"><circle r="56" fill="#F6F3EC" stroke="none"/><circle r="14" fill="#121210"/></g>
+            <g transform="translate(992,0)"><circle r="56"/><circle r="14" fill="#F6F3EC" stroke="none"/></g>
+          </g>
+        </svg>
+      </div>
+      <div class="logo-cell accent">
+        <span class="logo-cell-tag">ADVISORY · ON AMBER</span>
+        <svg viewBox="-20 -76 1240 252" width="100%" style="--mark-fg:#1b1409">
+          <use href="#gl-word-opencoo" width="1240" height="252" x="-20" y="-76"/>
+        </svg>
+      </div>
+      <div class="logo-cell">
+        <span class="logo-cell-tag">CLI · PROMPT</span>
+        <div style="font-family: var(--mono); font-size: 26px; color: var(--ink); display:flex; align-items:center; gap: 10px;">
+          <span style="color:var(--ink-3)">$</span>
+          <svg viewBox="-20 -76 456 152" width="130" style="--mark-fg:#121210; vertical-align:middle">
+            <use href="#gl-trio-coo" width="456" height="152" x="-20" y="-76"/>
+          </svg>
+          <span>heartbeat</span><span style="background:var(--ink);color:var(--paper);padding:0 4px;animation:blink 1s infinite;">_</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="sub">Primary lock-up sets the canonical proportions; <b>clearspace</b> = 1× filled-glyph diameter on all sides. Minimum wordmark width 96 px; below that, use monogram.</p>
+  </section>
+
+  <!-- ================= 02.5 · MOTION ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">02.5 — Motion</span>
+      <h2 class="sec-title">The wordmark compiles itself.</h2>
+      <span class="sec-note">intro · 3.2s · loop</span>
+    </div>
+
+    <div class="motion-grid" style="display:grid; grid-template-columns: 1.4fr 1fr; gap: 24px; align-items: stretch;">
+      <!-- Live animation -->
+      <div style="border: 1px solid var(--rule); border-radius: var(--radius-m); overflow: hidden; background: var(--paper); position: relative; aspect-ratio: 16/10;">
+        <div style="position:absolute; top:10px; left:12px; z-index:1; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); pointer-events:none;">
+          motion/intro.html · live
+        </div>
+        <iframe
+          src="logo-animation.html"
+          title="opencoo animated logo"
+          style="position:absolute; inset:0; width: 100%; height: 100%; border: 0; background: var(--paper);"
+          loading="lazy"></iframe>
+      </div>
+
+      <!-- Script / beats -->
+      <div style="border: 1px solid var(--rule); border-radius: var(--radius-m); padding: 22px 24px; background: var(--paper-2);">
+        <div class="t-micro" style="margin-bottom: 16px;">BEATS · absolute time</div>
+        <div style="display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; font-family: var(--mono); font-size: 12.5px; line-height: 1.6;">
+          <span style="color: var(--ink-3);">0.0 – 1.2s</span>
+          <span><b>write-in.</b> opencoo draws on, letter by letter, left to right. Every glyph is a proper Bauhaus letter — including the <code>c</code>, which is drawn with its aperture on the right.</span>
+
+          <span style="color: var(--ink-3);">1.2 – 2.0s</span>
+          <span><b>c opens.</b> The <code>c</code> rotates 180° around its own center. The aperture flips to the left — the canonical ingest glyph. The letter <i>becomes</i> the state.</span>
+
+          <span style="color: var(--ink-3);">1.5 – 2.3s</span>
+          <span><b>o compiles.</b> Ink floods from the middle <code>o</code>'s center outward, filling the ring, leaving the small inner hole — the compile glyph.</span>
+
+          <span style="color: var(--ink-3);">2.0 – 2.5s</span>
+          <span><b>o operates.</b> A dot fades in at the center of the last <code>o</code> — the agent takes up orbit.</span>
+
+          <span style="color: var(--ink-3);">3.2s – ∞</span>
+          <span><b>heartbeat.</b> Only the outer ring of the operate glyph breathes (scale 1 → 1.055 → 1, 1.6s cycle). The dot stays fixed — the agent's identity doesn't flicker; its orbit does.</span>
+        </div>
+
+        <div class="t-micro" style="margin-top: 24px; margin-bottom: 10px;">PRINCIPLES</div>
+        <ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.65; color: var(--ink-2);">
+          <li>Never animate the wordmark arbitrarily. It either <b>writes in</b> or it <b>transforms into state</b>.</li>
+          <li>Pen-entry points: top (12 o'clock) for every ring; top for stems; left for bars.</li>
+          <li>Eases: <code>cubic-bezier(.55,.1,.2,1)</code> for writing, <code>cubic-bezier(.6,.05,.2,1)</code> for transformations.</li>
+          <li>Heartbeat is the only loop — nothing else cycles.</li>
+        </ul>
+
+        <div style="margin-top: 22px; display: flex; gap: 10px;">
+          <a href="logo-animation.html" target="_blank"
+             style="font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; padding: 8px 12px; border: 1px solid var(--ink); color: var(--ink); text-decoration: none; background: var(--paper);">
+            open full screen ↗
+          </a>
+          <span style="font-family: var(--mono); font-size: 10px; color: var(--ink-4); align-self: center;">use as: landing hero · clip opener · social intro</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="sub" style="margin-top: 16px;">Intro is <b>autoplay + loop</b> every 8s; the heartbeat fills the gap so the mark never sits dead on screen.</p>
+  </section>
+
+  <!-- ================= 03 · COLOR ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">03 — Color</span>
+      <h2 class="sec-title">Paper, ink, one advisor's amber.</h2>
+      <span class="sec-note">oklch · p3-safe</span>
+    </div>
+
+    <p class="lede">A warm-neutral paper system carries the product — it should read as <em>printed documentation</em>, not a SaaS landing page. One accent, <b>Advisory Amber</b>, is reserved for the agent layer — heartbeat reports, approvals, the voice of the COO. <b>Wiki Teal</b> marks compiled knowledge — citations, wiki chrome.</p>
+
+    <div class="palette">
+      <div class="swatch paper"><b>Paper</b><span>#F6F3EC · base</span></div>
+      <div class="swatch paper2"><b>Paper/2</b><span>#EFEBE1 · card</span></div>
+      <div class="swatch paper3"><b>Paper/3</b><span>#E6E1D4 · rule</span></div>
+      <div class="swatch ink3"><b>Ink/3</b><span>#78746B · muted</span></div>
+      <div class="swatch ink2"><b>Ink/2</b><span>#3D3B36 · body</span></div>
+      <div class="swatch ink"><b>Ink</b><span>#121210 · primary</span></div>
+      <div class="swatch adv"><b>Advisory</b><span>oklch(.74 .13 70)</span></div>
+      <div class="swatch advink"><b>Advisory/ink</b><span>oklch(.42 .10 55)</span></div>
+      <div class="swatch wiki"><b>Wiki</b><span>oklch(.55 .08 180)</span></div>
+      <div class="swatch alert"><b>Alert</b><span>oklch(.62 .17 25)</span></div>
+      <div class="swatch" style="background: color-mix(in oklab, #1f8a5a 80%, var(--paper)); color:#fff;"><b>Healthy</b><span style="color:#ffffff88;">oklch(.55 .10 150)</span></div>
+      <div class="swatch" style="background:#fff;"><b>White</b><span>#FFFFFF · reserved</span></div>
+    </div>
+
+    <div class="rules" style="margin-top:28px;">
+      <div class="rule do">
+        <span class="chip">DO</span>
+        <p>Lead with paper + ink. Use <b>Advisory</b> exclusively for agent-generated surfaces — Heartbeat cards, approval prompts, the left rail. Use <b>Wiki</b> for citations and `path/to/page.md` chrome. Keep accent coverage under 10% per screen.</p>
+      </div>
+      <div class="rule dont">
+        <span class="chip">DON'T</span>
+        <p>No gradients on the mark. No purple. No blue-gray "enterprise SaaS" palette. Advisory amber is never used for destructive actions (that's Alert). Never pair Advisory next to Alert without a paper buffer between them.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 04 · TYPE ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">04 — Type</span>
+      <h2 class="sec-title">Three families, one job each.</h2>
+      <span class="sec-note">Geist · JetBrains Mono · Instrument Serif</span>
+    </div>
+
+    <div class="type-row">
+      <span class="lbl">Display</span>
+      <div class="t-display">Compiled, not retrieved.</div>
+      <span class="specs">Instrument Serif · italic<br/>56–96 / −2% · 1.0</span>
+    </div>
+    <div class="type-row">
+      <span class="lbl">H1</span>
+      <div class="t-h1">A self-hosted operating system for company knowledge.</div>
+      <span class="specs">Geist · 500<br/>32–48 / −1.5% · 1.05</span>
+    </div>
+    <div class="type-row">
+      <span class="lbl">H2 / Section</span>
+      <div class="t-h2">Ingestion Engine — two passes, one commit.</div>
+      <span class="specs">Geist · 500<br/>20–28 / −1% · 1.2</span>
+    </div>
+    <div class="type-row">
+      <span class="lbl">Body</span>
+      <div class="t-body">Agents navigate by path, not by similarity. Every ingested source becomes a page; every page fits in the LLM's first 100 lines of attention. The wiki is the product.</div>
+      <span class="specs">Geist · 400<br/>14–16 / 0 · 1.55</span>
+    </div>
+    <div class="type-row">
+      <span class="lbl">Mono / Data</span>
+      <div class="t-mono">wiki-executive/processes/pricing-2026q2.md · 2.4kb · sha:9e4a21</div>
+      <span class="specs">JetBrains Mono · 400<br/>12–14 / +1% · 1.5</span>
+    </div>
+    <div class="type-row">
+      <span class="lbl">Micro</span>
+      <div class="t-micro">REVIEW · APPROVE · REJECT · LINT · HEARTBEAT · CHAT</div>
+      <span class="specs">JetBrains Mono · 600<br/>10–11 / +8% · UC</span>
+    </div>
+  </section>
+
+  <!-- ================= 05 · ARCHITECTURE DIAGRAM STYLE ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">05 — Diagrams</span>
+      <h2 class="sec-title">Engine flow, rendered in the mark.</h2>
+      <span class="sec-note">system/architecture</span>
+    </div>
+
+    <p class="lede">The three glyphs do double duty. The same <em>open</em> · <em>compile</em> · <em>operate</em> triad that forms the logo becomes the diagrammatic vocabulary for every architecture drawing opencoo ships — docs, dashboards, investor decks.</p>
+
+    <div class="diagram">
+      <svg viewBox="0 0 1080 260" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#121210"/>
+          </marker>
+        </defs>
+
+        <!-- lane labels -->
+        <g font-family="JetBrains Mono" font-size="11" fill="#78746B" letter-spacing="1.5" text-transform="uppercase">
+          <text x="60"  y="22">SOURCES</text>
+          <text x="370" y="22">INGESTION</text>
+          <text x="610" y="22">WIKI · GITEA</text>
+          <text x="870" y="22">SELF-OPERATING</text>
+        </g>
+
+        <!-- sources column -->
+        <g font-family="JetBrains Mono" font-size="12" fill="#121210">
+          <rect x="40" y="50" width="170" height="32" fill="none" stroke="#12121055"/>
+          <text x="56" y="71">drive / notion</text>
+          <rect x="40" y="94" width="170" height="32" fill="none" stroke="#12121055"/>
+          <text x="56" y="115">asana / linear</text>
+          <rect x="40" y="138" width="170" height="32" fill="none" stroke="#12121055"/>
+          <text x="56" y="159">fireflies / otter</text>
+        </g>
+
+        <!-- ingestion: open glyph -->
+        <g transform="translate(340,130)" style="color:#121210">
+          <use href="#gl-c" x="-56" y="-56" width="112" height="112"/>
+          <text y="6" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="#121210" font-weight="600">INGEST</text>
+          <text y="22" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#78746B">classify · compile</text>
+        </g>
+
+        <!-- wiki: filled glyph -->
+        <g transform="translate(610,130)" style="color:#121210">
+          <use href="#gl-o-compile" x="-56" y="-56" width="112" height="112"/>
+          <text y="95" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="#121210" font-weight="600">COMPILE</text>
+          <text y="111" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#78746B">wiki · worldview · index</text>
+        </g>
+
+        <!-- self-op: ring glyph -->
+        <g transform="translate(880,130)" style="color:#121210">
+          <use href="#gl-o-operate" x="-56" y="-56" width="112" height="112"/>
+          <text y="95" text-anchor="middle" font-family="JetBrains Mono" font-size="12" fill="#121210" font-weight="600">OPERATE</text>
+          <text y="111" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#78746B">heartbeat · lint · chat</text>
+        </g>
+
+        <!-- flows -->
+        <g stroke="#121210" stroke-width="1.5" fill="none" marker-end="url(#arrow)">
+          <path d="M 210 66  C 260 66, 270 130, 290 130"/>
+          <path d="M 210 110 L 285 130"/>
+          <path d="M 210 154 C 260 154, 270 130, 290 130"/>
+          <path d="M 402 130 L 548 130"/>
+          <path d="M 672 130 L 818 130"/>
+        </g>
+
+        <!-- return flow -->
+        <g stroke="oklch(0.74 0.13 70)" stroke-width="1.8" fill="none" stroke-dasharray="4 3" marker-end="url(#arrow)">
+          <path d="M 880 190 C 880 230, 340 230, 340 195"/>
+        </g>
+        <text x="580" y="248" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#7a5d1e" letter-spacing="1">&#8226; advisory feedback: n8n automation built back into wiki</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ================= 06 · COMPONENTS ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">06 — Components</span>
+      <h2 class="sec-title">UI primitives, tuned to operators.</h2>
+      <span class="sec-note">ui · management console</span>
+    </div>
+
+    <div class="comp-grid">
+      <!-- Buttons -->
+      <div class="comp-card">
+        <div class="comp-lbl">buttons · mono-affixed shortcuts</div>
+        <div class="btn-row">
+          <button class="btn">Approve <span class="k">⏎</span></button>
+          <button class="btn ghost">Reject <span class="k" style="color:var(--ink-3)">⌫</span></button>
+          <button class="btn advisory">Run heartbeat <span class="k">⌘H</span></button>
+          <button class="btn subtle">Re-compile page</button>
+        </div>
+      </div>
+
+      <!-- Badges -->
+      <div class="comp-card">
+        <div class="comp-lbl">status badges</div>
+        <div class="btn-row">
+          <span class="badge wiki">wiki-executive</span>
+          <span class="badge adv">heartbeat</span>
+          <span class="badge ok">compiled</span>
+          <span class="badge">review · approve</span>
+          <span class="badge alert">guard flag</span>
+          <span class="badge">n8n · disabled</span>
+        </div>
+      </div>
+
+      <!-- Field -->
+      <div class="comp-card">
+        <div class="comp-lbl">source binding · form</div>
+        <div class="field">
+          <label>source type</label>
+          <select><option>notion</option></select>
+        </div>
+        <div class="field">
+          <label>target domain</label>
+          <input value="wiki-executive"/>
+        </div>
+        <div class="field">
+          <label>review mode</label>
+          <input value="approve · human-in-the-loop"/>
+        </div>
+      </div>
+
+      <!-- Log tape -->
+      <div class="comp-card">
+        <div class="comp-lbl">execution log · tape</div>
+        <div class="log">
+<span class="t">08:02:11</span> <span class="adv">heartbeat</span> ceo · run <span class="wk">r_9e4a21</span> · ok <span class="ok">✓</span>
+<span class="t">08:02:44</span> <span class="adv">heartbeat</span> posted → slack/#ceo
+<span class="t">08:14:07</span> <span class="wk">compile</span> processes/pricing-2026q2.md <span class="t">(+124w)</span>
+<span class="t">08:14:09</span> <span class="wk">index</span> rebuilt · 3 pages touched
+<span class="t">08:19:33</span> <span class="er">guard</span> injection score 0.87 → review
+<span class="t">08:22:02</span> <span class="adv">chat</span> mcp · &quot;q2 pricing change?&quot; · 4 pages read
+        </div>
+      </div>
+    </div>
+
+    <!-- Heartbeat + Wiki side by side -->
+    <div class="two-col" style="margin-top: 24px;">
+      <div class="hb">
+        <div class="hb-rail"></div>
+        <div class="hb-head">
+          <span class="badge adv">ceo · heartbeat</span>
+          <span class="hb-tag" style="margin-left:auto">mon 08:00 · run r_9e4a21</span>
+        </div>
+        <h3 class="hb-title">"Pricing-2026Q2 shipped; two open contradictions sit under it."</h3>
+        <p class="hb-body">The pricing page was re-compiled this morning after three Fireflies transcripts landed from Friday's board meeting. <b>Two open contradictions</b> remain: the commercial team is still quoting the old MSA numbers, and the Notion handbook says Net-30 while your sales deck says Net-45. Lint flagged both last week — neither has moved.</p>
+        <div class="hb-meta">
+          <span><span class="dot"></span>grounded: wiki-executive · company</span>
+          <span>3 prior heartbeats in memory</span>
+          <span>cost $0.08</span>
+        </div>
+      </div>
+
+      <div class="wiki-card">
+        <div class="wiki-head">
+          <span class="path">wiki-executive / processes / <b>pricing-2026q2.md</b></span>
+          <span>as_of 2026-04-20 · sha 9e4a21</span>
+        </div>
+        <div class="wiki-body">
+          <h4>Identity &amp; purpose</h4>
+          <p>Sets 2026 Q2 list pricing across Growth and Scale tiers, including the Net-30 payment term policy.<a class="citation" href="#">↗ 4 sources</a></p>
+          <h4>Current priorities</h4>
+          <ul>
+            <li>Retire the legacy MSA clause before 2026-05-01.</li>
+            <li>Reconcile <code>payment-terms</code> across sales handbook &amp; contract boilerplate.<a class="citation" href="#">↗ 2 sources</a></li>
+          </ul>
+          <h4>Open contradictions</h4>
+          <p><span class="badge alert" style="vertical-align:-1px">contradiction</span> Handbook says Net-30; commercial deck says Net-45.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 07 · ICONOGRAPHY ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">07 — Iconography</span>
+      <h2 class="sec-title">Built from the same three marks.</h2>
+      <span class="sec-note">24px grid · 2px stroke</span>
+    </div>
+
+    <p class="lede">Icons inherit the logo's geometry: a <em>10-unit grid</em>, <em>2-unit strokes</em>, and the three primitives (open arc, filled disc, ring). Complex concepts are composed from these three — never invented from scratch.</p>
+
+    <div class="icon-grid">
+      <!-- ingest (canonical c glyph) -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" style="--mark-fg:#121210">
+          <use href="#gl-c" x="-76" y="-76" width="152" height="152"/>
+        </svg>
+        <span class="icon-cell-tag">ingest</span>
+      </div>
+      <!-- compile (canonical o-compile) -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" style="--mark-fg:#121210">
+          <use href="#gl-o-compile" x="-76" y="-76" width="152" height="152"/>
+        </svg>
+        <span class="icon-cell-tag">compile</span>
+      </div>
+      <!-- operate (canonical o-operate) -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" style="--mark-fg:#121210">
+          <use href="#gl-o-operate" x="-76" y="-76" width="152" height="152"/>
+        </svg>
+        <span class="icon-cell-tag">operate</span>
+      </div>
+
+      <!-- heartbeat: concentric rings + center dot (pulse from the center) -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="10" style="--mark-fg:#121210">
+          <circle r="14" fill="var(--mark-fg, #121210)" stroke="none"/>
+          <path d="M 36 0 A 36 36 0 0 1 -36 0" stroke-linecap="round"/>
+          <path d="M 58 0 A 58 58 0 0 1 -58 0" stroke-linecap="round" stroke-dasharray="4 18"/>
+        </svg>
+        <span class="icon-cell-tag">heartbeat</span>
+      </div>
+      <!-- lint: a filled disc (compiled knowledge) with a flag planted on top -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="10" style="--mark-fg:#121210">
+          <circle cy="18" r="40" fill="var(--mark-fg, #121210)" stroke="none"/>
+          <line x1="-4" x2="-4" y1="-62" y2="18" stroke-linecap="round"/>
+          <path d="M -4 -62 L 48 -50 L -4 -34 Z" fill="var(--mark-fg, #121210)"/>
+        </svg>
+        <span class="icon-cell-tag">lint</span>
+      </div>
+      <!-- chat/mcp: a speech-bubble ring — circle + integrated tail pointing down-left -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="10" style="--mark-fg:#121210" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M -36 50 L -20 38 A 54 54 0 1 1 6 52 Z" fill="var(--mark-bg, #F6F3EC)"/>
+        </svg>
+        <span class="icon-cell-tag">chat / mcp</span>
+      </div>
+      <!-- review: a filled disc (compiled) with a tick orbiting above it -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="10" style="--mark-fg:#121210">
+          <circle r="44" fill="var(--mark-fg, #121210)" stroke="none"/>
+          <path d="M -24 -6 L -4 14 L 34 -24" stroke="var(--mark-bg, #F6F3EC)" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="icon-cell-tag">review</span>
+      </div>
+      <!-- contradiction: two discs joined by a broken line — a severed equivalence -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="10" style="--mark-fg:#121210" stroke-linecap="round">
+          <circle cx="-46" r="18" fill="var(--mark-fg, #121210)"/>
+          <circle cx="46"  r="18" fill="var(--mark-fg, #121210)"/>
+          <line x1="-24" x2="-8" y1="0" y2="0"/>
+          <line x1="8"   x2="24" y1="0" y2="0"/>
+        </svg>
+        <span class="icon-cell-tag">contradiction</span>
+      </div>
+      <!-- automation / trio orbit: three dots on an invisible triangle, connected -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="10" style="--mark-fg:#121210">
+          <circle r="56"/>
+          <circle cx="0" cy="-42" r="10" fill="var(--mark-fg, #121210)" stroke="none"/>
+          <circle cx="36" cy="21" r="10" fill="var(--mark-fg, #121210)" stroke="none"/>
+          <circle cx="-36" cy="21" r="10" fill="var(--mark-fg, #121210)" stroke="none"/>
+        </svg>
+        <span class="icon-cell-tag">automation</span>
+      </div>
+      <!-- guard / lineage: a locked disc (key-slot notch at the top) -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="10" style="--mark-fg:#121210">
+          <circle r="54"/>
+          <path d="M 0 -54 L 0 -14" stroke-linecap="round"/>
+          <circle r="10" fill="var(--mark-fg, #121210)" stroke="none"/>
+        </svg>
+        <span class="icon-cell-tag">guard</span>
+      </div>
+      <!-- domain: a ring with a horizontal rule through its center — a titled/named space -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="10" style="--mark-fg:#121210">
+          <circle r="58"/>
+          <line x1="-58" x2="58" y1="0" y2="0" stroke-linecap="round"/>
+        </svg>
+        <span class="icon-cell-tag">domain</span>
+      </div>
+      <!-- worldview: a globe — ring with an equator and two longitudes -->
+      <div class="icon-cell">
+        <svg viewBox="-76 -76 152 152" width="36" height="36" fill="none" stroke="var(--mark-fg, #121210)" stroke-width="10" style="--mark-fg:#121210">
+          <circle r="58"/>
+          <line x1="-58" x2="58" y1="0" y2="0"/>
+          <ellipse rx="24" ry="58"/>
+          <line x1="0" y1="-58" x2="0" y2="58"/>
+        </svg>
+        <span class="icon-cell-tag">worldview</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 08 · SPACING & RADII ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">08 — Spacing</span>
+      <h2 class="sec-title">4-pt grid. Tight radii. Honest rules.</h2>
+      <span class="sec-note">spacing · radii · rule</span>
+    </div>
+
+    <div class="three-col">
+      <div>
+        <div class="t-micro" style="margin-bottom:12px;">SPACING · 4PT</div>
+        <div class="ruler">
+          <div class="tick" style="height:120px;"><div class="bar" style="height:4px;"></div>4</div>
+          <div class="tick" style="height:120px;"><div class="bar" style="height:8px;"></div>8</div>
+          <div class="tick" style="height:120px;"><div class="bar" style="height:12px;"></div>12</div>
+          <div class="tick" style="height:120px;"><div class="bar" style="height:16px;"></div>16</div>
+          <div class="tick" style="height:120px;"><div class="bar" style="height:24px;"></div>24</div>
+          <div class="tick" style="height:120px;"><div class="bar" style="height:32px;"></div>32</div>
+          <div class="tick" style="height:120px;"><div class="bar" style="height:48px;"></div>48</div>
+          <div class="tick" style="height:120px;"><div class="bar" style="height:72px;"></div>72</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="t-micro" style="margin-bottom:12px;">RADII</div>
+        <div style="display:flex; gap:14px; align-items:flex-end;">
+          <div style="width:72px; height:72px; border: 1px solid var(--ink); border-radius: 3px; display:flex; align-items:flex-end; justify-content:center; padding:6px; font-family:var(--mono); font-size:10px;">3 · chip</div>
+          <div style="width:72px; height:72px; border: 1px solid var(--ink); border-radius: 4px; display:flex; align-items:flex-end; justify-content:center; padding:6px; font-family:var(--mono); font-size:10px;">4 · input</div>
+          <div style="width:72px; height:72px; border: 1px solid var(--ink); border-radius: 6px; display:flex; align-items:flex-end; justify-content:center; padding:6px; font-family:var(--mono); font-size:10px;">6 · card</div>
+          <div style="width:72px; height:72px; border: 1px solid var(--ink); border-radius: 10px; display:flex; align-items:flex-end; justify-content:center; padding:6px; font-family:var(--mono); font-size:10px;">10 · sheet</div>
+        </div>
+        <p class="sub" style="margin-top:16px;">Never fully rounded. opencoo surfaces are <b>documents, not pills</b>. Cards inherit the 6 px radius; pill-shaped buttons and fully-rounded cards are forbidden.</p>
+      </div>
+
+      <div>
+        <div class="t-micro" style="margin-bottom:12px;">RULE / DIVIDER</div>
+        <div style="display:flex; flex-direction:column; gap:16px;">
+          <div style="border-top: 1px solid var(--ink);">&nbsp;<span class="sub" style="float:right;">1px · primary</span></div>
+          <div style="border-top: 1px solid var(--rule);">&nbsp;<span class="sub" style="float:right;">1px · subtle (10%)</span></div>
+          <div style="border-top: 1px dashed var(--rule);">&nbsp;<span class="sub" style="float:right;">1px dashed · sub-group</span></div>
+          <div style="border-top: 2px solid var(--advisory);">&nbsp;<span class="sub" style="float:right;">2px · advisory rail</span></div>
+        </div>
+        <p class="sub" style="margin-top:16px;">Shadows are used <b>never</b> for elevation. Depth in opencoo is signaled by border and background shift — the product is a printed book, not a glass UI.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 09 · VOICE ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">09 — Voice</span>
+      <h2 class="sec-title">How opencoo writes about itself.</h2>
+      <span class="sec-note">copy · tone</span>
+    </div>
+
+    <div class="two-col">
+      <div class="rule do">
+        <span class="chip">DO · SAY IT LIKE THIS</span>
+        <p>
+          <b>"Compiled at ingestion, not retrieved at query time."</b><br>
+          <b>"Agents navigate by path."</b><br>
+          <b>"The wiki is the product."</b><br>
+          <b>"One process by default. Split when you need to."</b>
+        </p>
+        <p style="margin-top:12px;"><span class="sub">Short sentences. Concrete nouns. Technical specificity over marketing. Lowercase product name, always.</span></p>
+      </div>
+      <div class="rule dont">
+        <span class="chip">DON'T · NEVER THIS</span>
+        <p>
+          <b>"Revolutionary AI-powered enterprise knowledge platform."</b><br>
+          <b>"Unlock insights from your data with semantic search."</b><br>
+          <b>"OpenCoo · OpenCOO · Open Coo."</b><br>
+          <b>Emoji. Gradients. 🚀 🎉 💡 — never.</b>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 10 · MARK IN CONTEXT ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">10 — In context</span>
+      <h2 class="sec-title">Where the mark lives.</h2>
+      <span class="sec-note">surfaces</span>
+    </div>
+
+    <div class="three-col">
+      <!-- GitHub header -->
+      <div style="border:1px solid var(--rule); border-radius: var(--radius-m); overflow:hidden; background: var(--paper);">
+        <div style="background:#24292f; color:#f0f6fc; font-family: var(--mono); font-size: 12px; padding: 10px 14px;">github.com / <b>opencoo</b> / opencoo</div>
+        <div style="padding: 20px; display:flex; align-items:center; gap:14px;">
+          <svg viewBox="-20 -76 456 152" width="130" style="--mark-fg:#121210">
+            <use href="#gl-trio-coo" width="456" height="152" x="-20" y="-76"/>
+          </svg>
+          <div>
+            <div style="font-family:var(--mono); font-size:14px;">opencoo</div>
+            <div class="sub">self-hosted COO · apache-2.0 · ★ 4.2k</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Terminal -->
+      <div style="border:1px solid var(--rule); border-radius: var(--radius-m); overflow:hidden;">
+        <div style="background:#121210; color:#A8A398; font-family: var(--mono); font-size:11px; padding: 10px 14px; display:flex; gap:6px;">
+          <span style="width:10px; height:10px; border-radius:50%; background:#ff5f56; display:inline-block;"></span>
+          <span style="width:10px; height:10px; border-radius:50%; background:#ffbd2e; display:inline-block;"></span>
+          <span style="width:10px; height:10px; border-radius:50%; background:#27c93f; display:inline-block;"></span>
+          <span style="margin-left:8px;">~/opencoo — zsh</span>
+        </div>
+        <div style="background:#121210; color:#EDE7D6; font-family: var(--mono); font-size: 12.5px; padding: 16px; line-height: 1.8;">
+<span style="color:#A8A398">$</span> opencoo heartbeat<br>
+<span style="color:var(--advisory)">◯ ● ◉</span>  ceo-heartbeat · run r_9e4a21<br>
+<span style="color:oklch(0.8 0.13 150)">✓</span> grounded · wiki-executive, company<br>
+<span style="color:oklch(0.78 0.09 180)">→</span> 4 pages read · 1 contradiction<br>
+<span style="color:oklch(0.8 0.13 150)">✓</span> posted · slack/#ceo · 0.08$
+        </div>
+      </div>
+
+      <!-- Sticker / pin -->
+      <div style="border:1px solid var(--rule); border-radius: var(--radius-m); background: var(--ink); padding: 28px; display:flex; align-items:center; justify-content:center; min-height: 150px;">
+        <div style="width:120px; height:120px; border-radius: 50%; background: var(--advisory); display:flex; align-items:center; justify-content:center; position:relative;">
+          <svg viewBox="-20 -76 456 152" width="100" style="--mark-fg:#121210">
+            <use href="#gl-trio-coo" width="456" height="152" x="-20" y="-76"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FOOTER ================= -->
+  <div class="foot">
+    <span>opencoo · identity &amp; system · v0.1 — draft</span>
+    <span>© open-source · apache-2.0</span>
+  </div>
+
+</div>
+</div>
+
+<style>
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+
+<script>
+  // date stamp
+  const stamp = document.querySelector('.topbar .right');
+  // already included via template string at render; no-op kept for future
+</script>
+</body>
+</html>

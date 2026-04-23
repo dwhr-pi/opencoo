@@ -1,0 +1,70 @@
+---
+title: opencoo · system overview
+config:
+  theme: base
+  themeVariables:
+    background: "#F6F3EC"
+    primaryColor: "#F6F3EC"
+    primaryBorderColor: "#121210"
+    primaryTextColor: "#121210"
+    lineColor: "#78746B"
+    clusterBkg: "#EFEBE1"
+    clusterBorder: "#121210"
+---
+flowchart TB
+    classDef ext     fill:#F6F3EC,stroke:#78746B,color:#3D3B36,stroke-dasharray: 4 3
+    classDef ingest  fill:#E4EEEC,stroke:#3E8583,color:#132E2D
+    classDef wiki    fill:#D1E2DF,stroke:#285E5C,color:#0F2625
+    classDef selfop  fill:#F4E2BF,stroke:#8C6722,color:#3A2A0F
+    classDef shared  fill:#EFEBE1,stroke:#3D3B36,color:#121210
+    classDef sidecar fill:#EFEBE1,stroke:#121210,color:#121210,stroke-dasharray: 3 3
+
+    subgraph EXT["External world · customer or 3rd-party"]
+        direction LR
+        SRC["Sources<br/>Drive · Asana · Fireflies · …"]:::ext
+        LLM["LLM providers<br/>Google · OpenAI · Anthropic · Ollama"]:::ext
+        N8N["Customer's n8n<br/>NEVER in our compose"]:::ext
+        OUT["Output channels<br/>Slack · Asana · email"]:::ext
+        AG["Employees' AI agents<br/>Claude · ChatGPT · custom"]:::ext
+    end
+
+    subgraph COMPOSE["docker-compose · single-tenant per customer"]
+        direction TB
+
+        subgraph ENGINE["opencoo engine · 1 process default · 2 containers in split mode"]
+            direction LR
+            ING["Ingestion module<br/>reads world → writes wiki"]:::ingest
+            SO["Self-Operating module<br/>reads wiki → writes world<br/>serves UI + Chat MCP"]:::selfop
+            SHR["packages/shared/<br/>LLM router · wikiWrite · vault · cost log"]:::shared
+        end
+
+        subgraph STATE["Shared state"]
+            direction LR
+            PG[("Postgres")]:::shared
+            RDS[("Redis · BullMQ")]:::shared
+        end
+
+        subgraph KNOW["Knowledge substrate"]
+            direction LR
+            GITEA[("Gitea<br/>per-domain repos")]:::wiki
+            GMCP["gitea-wiki-mcp-server<br/>OAuth 2.1 · npm-published"]:::wiki
+        end
+
+        subgraph SIDE["Sidecars"]
+            direction LR
+            DOC["docling-serve<br/>PDF/PPTX/XLSX → MD"]:::sidecar
+            NMCP["n8n-mcp · optional<br/>self-hosted OR managed"]:::sidecar
+        end
+    end
+
+    SRC --> ING
+    ING --> GITEA
+    SO --> GITEA
+    GMCP --> GITEA
+    AG -->|scoped Gitea PAT| GMCP
+    SO --> OUT
+    SO --> NMCP
+    NMCP --> N8N
+    ING -.-> DOC
+    ENGINE -.-> STATE
+    ENGINE -.-> LLM

@@ -1,0 +1,33 @@
+# Private client/PoC docs — contains secrets, client names, credential IDs
+docs/local/
+
+# Internal design-of-record — the public contributor summary is docs/ARCHITECTURE.md
+/architecture.md
+docs/internal/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Node / pnpm / Turborepo
+node_modules/
+.pnpm-store/
+.turbo/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp

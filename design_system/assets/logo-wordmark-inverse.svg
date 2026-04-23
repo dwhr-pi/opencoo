@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 -76 1240 252" width="1240" height="252" aria-label="opencoo">
+  <g fill="none" stroke="#F6F3EC" stroke-width="16">
+    <g transform="translate(56,0)"><circle r="56"></circle></g>
+    <g transform="translate(208,0)"><circle r="56"></circle><rect x="-64" y="0" width="16" height="100" fill="#F6F3EC" stroke="none"></rect></g>
+    <g transform="translate(360,0)"><path d="M 55.15 9.72 A 56 56 0 1 1 55.15 -9.72"></path><rect x="-56" y="-8" width="84" height="16" fill="#F6F3EC" stroke="none"></rect></g>
+    <g transform="translate(512,0)"><path d="M -56 56 L -56 0 A 56 56 0 0 1 56 0 L 56 56"></path></g>
+    <g transform="translate(688,0)"><circle r="56" stroke-dasharray="282 74" transform="rotate(-140)"></circle></g>
+    <g transform="translate(840,0)"><circle r="56" fill="#F6F3EC" stroke="none"></circle><circle r="14" fill="#121210"></circle></g>
+    <g transform="translate(992,0)"><circle r="56"></circle><circle r="14" fill="#F6F3EC" stroke="none"></circle></g>
+  </g>
+</svg>

@@ -1,0 +1,163 @@
+/* =============================================================
+   opencoo · colors_and_type.css
+   The canonical visual-foundations stylesheet for opencoo.
+   Paper + ink system. Three type families, one job each.
+   ============================================================= */
+
+/* --- Webfonts ---------------------------------------------------
+   Geist (sans), JetBrains Mono (mono), Instrument Serif (serif).
+   Loaded from Google Fonts CDN. If you need self-hosted files,
+   see /fonts/ — TTFs ship alongside this stylesheet where possible. */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap');
+
+:root{
+  /* ---------- Paper & ink (warm neutral system) ---------- */
+  --paper:        #F6F3EC;   /* base canvas, warm */
+  --paper-2:      #EFEBE1;   /* subtle card */
+  --paper-3:      #E6E1D4;   /* hairline / divider */
+  --ink:          #121210;   /* primary text */
+  --ink-2:        #3D3B36;   /* secondary */
+  --ink-3:        #78746B;   /* tertiary / caption */
+  --ink-4:        #A8A398;   /* muted / placeholder */
+  --rule:         #1212101a; /* 10% ink, for hairlines */
+
+  /* ---------- Accents (oklch, matched L/C) ---------- */
+  --advisory:     oklch(0.74 0.13 70);   /* warm amber — agent/advisory layer */
+  --advisory-ink: oklch(0.42 0.10 55);   /* deep amber — advisory text on paper */
+  --wiki:         oklch(0.55 0.08 180);  /* deep teal — compiled knowledge, citations */
+  --alert:        oklch(0.62 0.17 25);   /* red — only in dashboard alerts */
+  --healthy:      oklch(0.55 0.10 150);  /* green — compiled/ok state */
+
+  /* ---------- Semantic foreground tokens ---------- */
+  --fg-1: var(--ink);       /* primary body + headings */
+  --fg-2: var(--ink-2);     /* secondary body */
+  --fg-3: var(--ink-3);     /* caption / mono labels */
+  --fg-4: var(--ink-4);     /* placeholder / muted */
+
+  /* ---------- Semantic background tokens ---------- */
+  --bg-1: var(--paper);
+  --bg-2: var(--paper-2);
+  --bg-3: var(--paper-3);
+  --bg-ink: var(--ink);
+
+  /* ---------- Radii (tight, document-like — never pills) ---------- */
+  --radius-s: 3px;     /* chips, tiny tags */
+  --radius-m: 4px;     /* inputs */
+  --radius-l: 6px;     /* cards */
+  --radius-xl: 10px;   /* sheets */
+
+  /* ---------- Spacing scale (4pt grid) ---------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 72px;
+
+  /* ---------- Type families ---------- */
+  --font-sans:  'Geist', -apple-system, system-ui, 'Segoe UI', sans-serif;
+  --font-mono:  'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --font-serif: 'Instrument Serif', 'Times New Roman', serif;
+
+  /* ---------- Type scale (display, h1..micro) ---------- */
+  --fs-display: 56px;  --lh-display: 1.0;  --tr-display: -0.02em;
+  --fs-h1:      40px;  --lh-h1:      1.05; --tr-h1:      -0.015em;
+  --fs-h2:      24px;  --lh-h2:      1.2;  --tr-h2:      -0.01em;
+  --fs-h3:      19px;  --lh-h3:      1.35; --tr-h3:      -0.005em;
+  --fs-body:    15px;  --lh-body:    1.55;
+  --fs-small:   13px;  --lh-small:   1.5;
+  --fs-mono:    13px;  --lh-mono:    1.5;
+  --fs-micro:   11px;  --lh-micro:   1.4;
+  --fs-tiny:    10px;
+
+  /* ---------- Motion easings ---------- */
+  --ease-write:     cubic-bezier(.55,.1,.2,1);
+  --ease-transform: cubic-bezier(.6,.05,.2,1);
+  --heartbeat-dur:  1600ms;
+}
+
+/* ============================================================
+   Base element styles — use these by applying .prose or using
+   semantic HTML inside an opencoo surface.
+   ============================================================ */
+html, body{
+  background: var(--bg-1);
+  color: var(--fg-1);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01","ss02","cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  line-height: var(--lh-body);
+}
+
+/* ---------- Semantic type classes ---------- */
+.t-display, h1.display{
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
+  letter-spacing: var(--tr-display);
+  color: var(--fg-1);
+}
+.t-h1, h1{
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: var(--fs-h1);
+  line-height: var(--lh-h1);
+  letter-spacing: var(--tr-h1);
+  color: var(--fg-1);
+}
+.t-h2, h2{
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: var(--fs-h2);
+  line-height: var(--lh-h2);
+  letter-spacing: var(--tr-h2);
+  color: var(--fg-1);
+}
+.t-h3, h3{
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+  letter-spacing: var(--tr-h3);
+  color: var(--fg-1);
+}
+.t-body, p{
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--fg-2);
+}
+.t-mono, code, pre, kbd{
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  letter-spacing: 0.01em;
+  color: var(--fg-1);
+}
+.t-micro{
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.t-caption{
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--fg-3);
+  letter-spacing: 0.04em;
+}
+.t-lede{
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 28px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--fg-1);
+  max-width: 760px;
+}

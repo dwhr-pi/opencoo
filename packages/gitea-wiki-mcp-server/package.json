@@ -1,0 +1,72 @@
+{
+  "name": "gitea-wiki-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server that exposes a Gitea-backed markdown wiki as tools for AI agents (Claude Code, n8n, Cursor, etc.). Ships 6 read-only tools: table-of-contents, page read, ripgrep search, frontmatter index, backlinks, recent changes.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "gitea-wiki-mcp-server": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:http": "MCP_MODE=http node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "dev:http": "MCP_MODE=http tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "gitea",
+    "wiki",
+    "rag",
+    "ai",
+    "llm",
+    "claude",
+    "n8n"
+  ],
+  "author": "Romuald Członkowski <romek@aiadvisors.pl>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/czlonkowski/gitea-wiki-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/czlonkowski/gitea-wiki-mcp-server/issues"
+  },
+  "homepage": "https://github.com/czlonkowski/gitea-wiki-mcp-server#readme",
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@vscode/ripgrep": "^1.15.14",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
+    "gray-matter": "^4.0.3",
+    "lru-cache": "^11.2.1",
+    "simple-git": "^3.28.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.15.30",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

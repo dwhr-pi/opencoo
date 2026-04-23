@@ -1,0 +1,66 @@
+---
+title: opencoo · ingestion engine · sources → wiki
+config:
+  theme: base
+  themeVariables:
+    background: "#F6F3EC"
+    primaryColor: "#F6F3EC"
+    primaryBorderColor: "#121210"
+    primaryTextColor: "#121210"
+    lineColor: "#78746B"
+    clusterBkg: "#EFEBE1"
+    clusterBorder: "#121210"
+---
+flowchart LR
+    classDef ext     fill:#F6F3EC,stroke:#78746B,color:#3D3B36,stroke-dasharray: 4 3
+    classDef ingest  fill:#E4EEEC,stroke:#3E8583,color:#132E2D
+    classDef wiki    fill:#D1E2DF,stroke:#285E5C,color:#0F2625
+    classDef shared  fill:#EFEBE1,stroke:#3D3B36,color:#121210
+    classDef sidecar fill:#EFEBE1,stroke:#121210,color:#121210,stroke-dasharray: 3 3
+    classDef review  fill:#F4E2BF,stroke:#8C6722,color:#3A2A0F
+    classDef alert   fill:#F3DAD0,stroke:#C6583A,color:#5A1F10
+
+    SRC["Sources<br/>Drive · Asana · Fireflies"]:::ext
+
+    subgraph PIPE["Ingestion pipeline · BullMQ jobs · idempotency keyed at each stage"]
+        direction LR
+        SCAN["Scanner<br/>poll every Nh"]:::ingest
+        WH["Webhook receiver<br/>push events"]:::ingest
+        CONV["DocumentConverter router<br/>NFC normalize<br/>extraction_degraded check"]:::ingest
+        GUARD["Guard layer<br/>injection + content-safety<br/>fail_mode: block · review · log_only"]:::ingest
+        CLS["Classifier · Pass 1<br/>Worker tier<br/>→ target pages/domains"]:::ingest
+        COMP["Compiler · Pass 2<br/>Thinker tier · merge<br/>emits Worldview-Impact"]:::ingest
+        WW["wikiWrite primitive<br/>1 call = 1 commit<br/>1 queue per domain · concurrency=1"]:::shared
+    end
+
+    DOC["docling-serve sidecar<br/>PDF · PPTX · XLSX · complex DOCX"]:::sidecar
+
+    subgraph POST["Post-compile · same run or scheduled"]
+        direction TB
+        WVC["Worldview compiler<br/>impact-debounced<br/>+ 24h safety net"]:::ingest
+        IDX["Index rebuilder<br/>every 6h + post-compile"]:::ingest
+        REVD["Review dispatcher<br/>approve / review bindings"]:::ingest
+        CLEAN["Cleanup · weekly<br/>retention purge"]:::ingest
+    end
+
+    REVUI["Review Dashboard<br/>self-op · Gitea SSO"]:::review
+    GITEA[("Gitea<br/>worldview.md · index.md · pages")]:::wiki
+    DLQ[("DLQ in Redis<br/>retention 7 / 14 / 30 d")]:::alert
+
+    SRC -->|polled| SCAN --> CONV
+    SRC -->|push| WH --> CONV
+    CONV -->|non-trivial format| DOC
+    DOC --> CONV
+    CONV --> GUARD
+    GUARD -->|pass| CLS
+    GUARD -.->|fail_mode review| REVUI
+    GUARD -.->|fail_mode block| DLQ
+    CLS --> COMP
+    COMP -->|auto binding| WW
+    COMP -.->|approve / review binding| REVD --> REVUI
+    REVUI -.->|approved| WW
+    COMP --> WVC
+    WVC --> WW
+    IDX --> WW
+    WW --> GITEA
+    CLEAN -.->|prunes intake · webhooks · llm_usage| GITEA

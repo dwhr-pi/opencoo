@@ -1,0 +1,54 @@
+/* opencoo diagrams — typography + fine-tuning to match design_system/design-system.html */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap');
+
+/* Node labels — sans */
+.node .label,
+.nodeLabel,
+.nodeLabel p,
+foreignObject div {
+  font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif !important;
+  color: #121210 !important;
+  font-weight: 500 !important;
+  letter-spacing: -0.005em !important;
+}
+
+/* Edge labels — mono micro caption on paper chip */
+.edgeLabel,
+.edgeLabel foreignObject div,
+.edgeLabel span {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace !important;
+  font-size: 10.5px !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  color: #3D3B36 !important;
+  background: #F6F3EC !important;
+  padding: 1px 5px !important;
+  border-radius: 2px !important;
+}
+
+/* Cluster (subgraph) titles — mono uppercase tertiary ink */
+.cluster .cluster-label foreignObject div,
+.cluster-label,
+.cluster-label .nodeLabel,
+.cluster-label .nodeLabel p {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace !important;
+  font-size: 10.5px !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase !important;
+  color: #78746B !important;
+  font-weight: 500 !important;
+}
+
+/* Cluster frames — thin ink rule, slightly rounded corners */
+.cluster rect {
+  stroke: #121210 !important;
+  stroke-width: 1px !important;
+  rx: 4px !important;
+  ry: 4px !important;
+}
+
+/* Flow lines — tertiary ink, thin */
+.flowchart-link { stroke-width: 1.1px !important; }
+
+/* Arrowheads — match line color */
+.marker { fill: #78746B !important; stroke: #78746B !important; }

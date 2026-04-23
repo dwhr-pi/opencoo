@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>opencoo — animated logo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: #F6F3EC;
+    --ink:   #121210;
+    --ink-3: #78746B;
+    --rule:  #1212101a;
+    --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+  *{ box-sizing:border-box; }
+  html, body{ margin:0; padding:0; height:100%; background: var(--paper); color: var(--ink); font-family: var(--mono); }
+  body{
+    background-image:
+      linear-gradient(to right, #12121008 1px, transparent 1px),
+      linear-gradient(to bottom, #12121008 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  .stage{ height: 100%; display: grid; grid-template-rows: auto 1fr auto; }
+
+  .chrome{
+    padding: 18px 22px; display:flex; justify-content:space-between; align-items:center;
+    font-size: 11px; color: var(--ink-3); letter-spacing: 0.08em; text-transform: uppercase;
+    border-bottom: 1px solid var(--rule);
+  }
+  .chrome b{ color: var(--ink); font-weight: 500; }
+  .chrome .right{ display:flex; gap: 18px; }
+
+  .mark-wrap{ display:grid; place-items:center; padding: 24px; }
+  .mark{ width: min(1080px, 94vw); aspect-ratio: 1240 / 260; }
+  .mark svg{ display:block; width: 100%; height: 100%; overflow: visible; }
+
+  .caption{
+    padding: 18px 22px; display:flex; gap: 18px; justify-content: space-between; align-items: center;
+    font-size: 11px; color: var(--ink-3); letter-spacing: 0.08em; text-transform: uppercase;
+    border-top: 1px solid var(--rule);
+  }
+  .caption .replay{
+    background: transparent; border: 1px solid var(--ink); color: var(--ink);
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 6px 12px; cursor:pointer;
+  }
+  .caption .replay:hover{ background: var(--ink); color: var(--paper); }
+  .caption .dot{ width:6px; height:6px; border-radius:50%; background: var(--ink); display:inline-block; margin-right:6px; vertical-align:middle; animation: caret 1s steps(2) infinite; }
+  @keyframes caret { 50% { opacity: 0.2; } }
+
+  /* =========================================================
+     EVERY glyph is a STROKED <path>. The path's M (move-to)
+     is placed at the natural pen entry point so the draw-on
+     animation starts where a human would start drawing.
+
+     Lengths (for --len, used as stroke-dasharray):
+       o (ring):     352  (2π·56 ≈ 351.86)
+       p-ring:       352
+       p-stem:       100  (length of descender rect)
+       e-arc 340°:   332
+       e-crossbar:    84
+       n:            288  (56 + arc 176 + 56)
+       c (full ring):352  (starts as closed, aperture cut later)
+       o (ring):     352
+  ========================================================= */
+
+  /* initial invisible state */
+  .ltr, .op-dot, .o-compile-fill, .o-compile-hole { opacity: 0; }
+  .o-compile-fill { r: 0; }
+  .o-compile-hole { r: 0; }
+
+  /* DRAW-ON animation */
+  @keyframes drawOn {
+    0%   { stroke-dashoffset: var(--len); opacity: 1; }
+    100% { stroke-dashoffset: 0; opacity: 1; }
+  }
+
+  /* (removed: cCutAperture was used when c was drawn as a closed ring;
+     now c is drawn with its aperture from the start.) */
+  /* C transformation: rotate 180° so the aperture (drawn pointing RIGHT)
+     flips to point LEFT — the canonical ingest-glyph orientation. */
+  @keyframes cRotate {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(180deg); }
+  }
+
+  /* MIDDLE O — COMPILE */
+  @keyframes oCompileFill   { 0% { r: 0; } 100% { r: 56; } }
+  @keyframes oCompileHole   { 0%, 70% { r: 0; opacity: 0; } 100% { r: 14; opacity: 1; } }
+  @keyframes oCompileFadeRing { 0%, 40% { opacity: 1; } 100% { opacity: 0; } }
+
+  /* LAST O — OPERATE dot fades in (no fly-in) */
+  @keyframes dotFadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  /* HEARTBEAT — runs forever after sequence.
+     Uses CSS vars so scale composes cleanly without clobbering anything. */
+  @keyframes hbRing {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.055); }
+  }
+  @keyframes hbDot {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.25); }
+  }
+
+
+  /* MARK entrance */
+  @keyframes markRise {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* =========================================================
+     TIMING (absolute delays from t=0; all fill-mode forwards)
+     Draw-on bars:
+       o1:     0   →  240
+       p-ring: 120 →  360
+       p-stem: 240 →  400
+       e-arc:  320 →  560
+       e-bar:  460 →  580
+       n:     520 →  760
+     Hold:   760 → 1100
+     c cut+rotate: 1100 → 1750
+     mid-o fill:   1500 → 2250
+     last-o dot:   2000 → 2500  (fade)
+     underline:    2600 → 3100
+     heartbeat:    3200 →  ∞
+  ========================================================= */
+
+  .play .mark-group { animation: markRise 500ms ease-out forwards; }
+
+  /* Draw-on setup for every stroked letter group */
+  .play .ltr {
+    opacity: 1;
+    stroke-dasharray: var(--len);
+    stroke-dashoffset: var(--len);
+    animation-fill-mode: forwards;
+  }
+
+  .play .ltr-o1    { animation: drawOn 240ms cubic-bezier(.55,.1,.2,1) forwards;   animation-delay: 0ms; }
+  .play .ltr-pRing { animation: drawOn 240ms cubic-bezier(.55,.1,.2,1) forwards;   animation-delay: 120ms; }
+  .play .ltr-pStem { animation: drawOn 160ms cubic-bezier(.55,.1,.2,1) forwards;   animation-delay: 240ms; }
+  .play .ltr-eArc  { animation: drawOn 240ms cubic-bezier(.55,.1,.2,1) forwards;   animation-delay: 320ms; }
+  .play .ltr-eBar  { animation: drawOn 120ms cubic-bezier(.55,.1,.2,1) forwards;   animation-delay: 460ms; }
+  .play .ltr-n     { animation: drawOn 240ms cubic-bezier(.55,.1,.2,1) forwards;   animation-delay: 520ms; }
+  .play .ltr-c     { animation: drawOn 280ms cubic-bezier(.55,.1,.2,1) forwards;   animation-delay: 680ms; }
+  .play .ltr-o2    { animation: drawOn 240ms cubic-bezier(.55,.1,.2,1) forwards;   animation-delay: 820ms; }
+  .play .ltr-o3    { animation: drawOn 240ms cubic-bezier(.55,.1,.2,1) forwards;   animation-delay: 960ms; }
+
+  /* c transformation — rotates 180° around its own center. No aperture-cut needed
+     because the c is already drawn with an aperture during pass 1. */
+  .play .c-rotator {
+    transform-origin: 688px 0px;
+    transform-box: view-box;
+    animation: cRotate 700ms cubic-bezier(.6,.05,.2,1) forwards;
+    animation-delay: 1250ms;
+  }
+
+  /* Middle o compile */
+  .play .o-compile-ring {
+    animation: oCompileFadeRing 750ms ease-out forwards;
+    animation-delay: 1500ms;
+  }
+  .play .o-compile-fill {
+    opacity: 1;
+    animation: oCompileFill 750ms cubic-bezier(.3,.1,.3,1) forwards;
+    animation-delay: 1500ms;
+  }
+  .play .o-compile-hole {
+    animation: oCompileHole 750ms ease-out forwards;
+    animation-delay: 1500ms;
+  }
+
+  /* Last o — dot fades in at center and STAYS visible forever.
+     Declared on .op-dot so that both the fade-in and the heartbeat scale
+     apply to different CSS property spaces (opacity vs transform) and
+     don't clobber each other. */
+  .play .op-dot {
+    animation: dotFadeIn 500ms cubic-bezier(.4,0,.2,1) forwards;
+    animation-delay: 2000ms;
+  }
+  /* When heartbeat starts, force opacity:1 so the fadeIn "forwards" state
+     isn't wiped by the new animation declaration on .op-dot-hb. */
+  .play.hb .op-dot-hb {
+    opacity: 1 !important;
+  }
+
+  /* Heartbeat — only the outer ring pulses. The dot (agent identity)
+     stays steady at the center — that's the stable thing; the orbit is
+     what breathes. */
+  .play.hb .op-ring-hb {
+    transform-origin: center;
+    transform-box: fill-box;
+    animation: hbRing 1600ms ease-in-out infinite;
+  }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+
+  <div class="chrome">
+    <div><b>opencoo</b> / wordmark / animation</div>
+    <div class="right">
+      <span>intro · loop</span>
+      <span>3.2s · then heartbeat</span>
+      <span>svg · css</span>
+    </div>
+  </div>
+
+  <div class="mark-wrap">
+    <div class="mark">
+      <svg viewBox="-20 -76 1240 260" xmlns="http://www.w3.org/2000/svg" aria-label="opencoo"
+           stroke-linecap="butt" stroke-linejoin="miter">
+        <g class="mark-group">
+
+          <!-- ============ OPEN ============ -->
+
+          <!-- o1  · ring, drawn from top (0,-56), clockwise -->
+          <g class="ltr ltr-o1" style="--len: 352">
+            <path d="M 56 -56 A 56 56 0 1 1 55.99 -56 Z"
+                  fill="none" stroke="#121210" stroke-width="16"/>
+          </g>
+
+          <!-- p · ring first (top start), then stem draws from top to bottom -->
+          <g class="ltr ltr-pRing" style="--len: 352">
+            <path d="M 208 -56 A 56 56 0 1 1 207.99 -56 Z"
+                  fill="none" stroke="#121210" stroke-width="16"/>
+          </g>
+          <!-- stem at x=152, y=0..100. Drawn as stroked vertical. stroke-width=16 so center at x=152. -->
+          <g class="ltr ltr-pStem" style="--len: 100">
+            <path d="M 152 0 L 152 100" fill="none" stroke="#121210" stroke-width="16"/>
+          </g>
+
+          <!-- e · arc, center (360,0), r=56, starts at bottom-right aperture (cos10°,sin10°)
+               going counter-clockwise (large arc, sweep=1 in SVG =  CW visually  … actually sweep=1 goes the long way CCW here).
+               Path chosen so the pen starts at aperture-bottom and ends at aperture-top. -->
+          <g class="ltr ltr-eArc" style="--len: 332">
+            <path d="M 415.15 9.72 A 56 56 0 1 1 415.15 -9.72"
+                  fill="none" stroke="#121210" stroke-width="16"/>
+          </g>
+          <!-- crossbar: stroked path from left edge to stop inside ring.
+               stroke-width 16 means we draw a line at y=0 from x=304 to x=388 (length 84). -->
+          <g class="ltr ltr-eBar" style="--len: 84">
+            <path d="M 304 0 L 388 0" fill="none" stroke="#121210" stroke-width="16"/>
+          </g>
+
+          <!-- n · arch.  Starts top-left (456, 56), strokes up → arch → down to (568, 56). -->
+          <g class="ltr ltr-n" style="--len: 288">
+            <path d="M 456 56 L 456 0 A 56 56 0 0 1 568 0 L 568 56"
+                  fill="none" stroke="#121210" stroke-width="16"/>
+          </g>
+
+          <!-- ============ COO ============ -->
+
+          <!-- c · drawn as a PROPER lowercase c with aperture pointing RIGHT.
+               Arc sweeps from top-lip (688+56·cos40°, -56·sin40°) = (730.9, -36)
+               CCW around the long way (through top, left, bottom) to bottom-lip (730.9, +36).
+               Arc length ~= 273.6 (280° of circumference 352). On the 2nd pass the whole
+               group rotates 180° so the aperture flips to the LEFT (canonical ingest glyph). -->
+          <g class="c-rotator">
+            <g class="ltr ltr-c" style="--len: 274">
+              <path class="c-stroke"
+                    d="M 730.9 -36 A 56 56 0 1 0 730.9 36"
+                    fill="none" stroke="#121210" stroke-width="16"/>
+            </g>
+          </g>
+
+          <!-- middle o · draws as ring, then compiled disc grows beneath & ring fades -->
+          <g class="ltr ltr-o2" style="--len: 352">
+            <path class="o-compile-ring"
+                  d="M 840 -56 A 56 56 0 1 1 839.99 -56 Z"
+                  fill="none" stroke="#121210" stroke-width="16"/>
+          </g>
+          <circle class="o-compile-fill" cx="840" cy="0" fill="#121210"/>
+          <circle class="o-compile-hole" cx="840" cy="0" fill="#F6F3EC"/>
+
+          <!-- last o · ring draws normally, then dot fades in at center -->
+          <g class="ltr ltr-o3" style="--len: 352">
+            <path class="op-ring-hb"
+                  d="M 992 -56 A 56 56 0 1 1 991.99 -56 Z"
+                  fill="none" stroke="#121210" stroke-width="16"/>
+          </g>
+          <circle class="op-dot op-dot-hb" cx="992" cy="0" r="14" fill="#121210"/>
+
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="caption">
+    <div><span class="dot"></span>opencoo / the wordmark compiles itself</div>
+    <div style="display:flex; gap: 22px; align-items:center;">
+      <span>draw · open · compile · operate · heartbeat</span>
+      <button class="replay" id="replay">Replay ↻</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const stage = document.getElementById('stage');
+  const replay = document.getElementById('replay');
+
+  function play(){
+    stage.classList.remove('play', 'hb');
+    void stage.offsetWidth;
+    stage.classList.add('play');
+    setTimeout(() => stage.classList.add('hb'), 3200);
+  }
+
+  replay.addEventListener('click', play);
+
+  window.addEventListener('load', () => {
+    play();
+    setInterval(play, 8000);
+  });
+</script>
+</body>
+</html>

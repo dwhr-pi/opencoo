@@ -1,0 +1,22 @@
+# Caddy vhost for the wiki MCP server (OPTIONAL — only if you want public HTTPS).
+# For internal-only access from a sibling n8n container, skip this block
+# entirely: n8n can reach the MCP server at http://gitea-wiki-mcp:3000 over
+# the shared Docker network.
+#
+# Replace `mcp-wiki.example.com` with your own subdomain before using.
+
+mcp-wiki.example.com {
+  encode zstd gzip
+
+  # Health check is public (no auth). The MCP server enforces bearer auth
+  # on /mcp and HMAC on /refresh/:slug internally.
+  reverse_proxy gitea-wiki-mcp:3000
+
+  log {
+    output file /var/log/caddy/mcp-wiki.log {
+      roll_size 20MB
+      roll_keep 5
+    }
+    level INFO
+  }
+}

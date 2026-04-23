@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css"><style>
+.cols{ display:grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+.ruler{ display:flex; gap:0; align-items:flex-end; background: var(--paper-2); padding: 16px 18px; border: 1px solid var(--rule); border-radius: 3px; }
+.tick{ display:flex; flex-direction:column; align-items:center; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); letter-spacing:.04em; padding: 0 9px; }
+.tick .bar{ background: var(--ink); width:100%; margin-bottom: 5px; }
+.radii{ display:flex; gap:10px; align-items:flex-end; }
+.r{ width:60px; height:60px; border: 1px solid var(--ink); display:flex; align-items:flex-end; justify-content:center; padding:5px; font-family: var(--font-mono); font-size: 9px; color: var(--ink-2); }
+</style></head><body><div class="card">
+<div class="mono">Spacing 4pt · Radii · Never pills</div>
+<div class="cols">
+  <div class="ruler">
+    <div class="tick"><div class="bar" style="height:4px;"></div>4</div>
+    <div class="tick"><div class="bar" style="height:8px;"></div>8</div>
+    <div class="tick"><div class="bar" style="height:12px;"></div>12</div>
+    <div class="tick"><div class="bar" style="height:16px;"></div>16</div>
+    <div class="tick"><div class="bar" style="height:24px;"></div>24</div>
+    <div class="tick"><div class="bar" style="height:32px;"></div>32</div>
+    <div class="tick"><div class="bar" style="height:48px;"></div>48</div>
+    <div class="tick"><div class="bar" style="height:72px;"></div>72</div>
+  </div>
+  <div class="radii">
+    <div class="r" style="border-radius:3px;">3 chip</div>
+    <div class="r" style="border-radius:4px;">4 input</div>
+    <div class="r" style="border-radius:6px;">6 card</div>
+    <div class="r" style="border-radius:10px;">10 sheet</div>
+  </div>
+</div>
+</div></body></html>

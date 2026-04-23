@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css"><style>
+.swatches{ display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.sw{ aspect-ratio: 4/2.4; border-radius: 3px; padding: 12px; display:flex; flex-direction:column; justify-content:space-between; font-family: var(--font-mono); font-size: 11px; }
+.sw b{ font-weight:500; font-size: 13px; }
+.sw span{ font-size: 10px; letter-spacing:.06em; }
+.rule{ font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); }
+</style></head><body><div class="card">
+<div class="mono">Accents · agent layer, wiki, alert, healthy</div>
+<div class="swatches">
+  <div class="sw" style="background: oklch(0.74 0.13 70);color:#1b1409"><b>Advisory</b><span>oklch(.74 .13 70) · agent layer</span></div>
+  <div class="sw" style="background: oklch(0.42 0.10 55);color:#fff"><b>Advisory/ink</b><span style="color:#ffffff99">oklch(.42 .10 55) · advisor text</span></div>
+  <div class="sw" style="background: oklch(0.55 0.08 180);color:#fff"><b>Wiki</b><span style="color:#ffffff99">oklch(.55 .08 180) · citations</span></div>
+  <div class="sw" style="background: oklch(0.62 0.17 25);color:#fff"><b>Alert</b><span style="color:#ffffff99">oklch(.62 .17 25) · flags only</span></div>
+  <div class="sw" style="background: oklch(0.55 0.10 150);color:#fff"><b>Healthy</b><span style="color:#ffffff99">oklch(.55 .10 150) · ok state</span></div>
+  <div class="sw" style="background:#F6F3EC;border:1px dashed #12121044"><b>Paper</b><span style="color:#78746B">accent coverage &lt; 10% per screen</span></div>
+</div>
+<div class="rule">Advisory reserved for agent-generated surfaces · Wiki for compiled-knowledge chrome · never pair Advisory next to Alert without a paper buffer.</div>
+</div></body></html>

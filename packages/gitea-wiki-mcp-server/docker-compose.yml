@@ -1,0 +1,28 @@
+# Local development compose ONLY. For production, paste the service block
+# into your existing stack (typically alongside n8n + gitea on the same
+# Docker network). See deploy/MANUAL_DEPLOY.md.
+
+services:
+  gitea-wiki-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gitea-wiki-mcp-server:local
+    container_name: gitea-wiki-mcp
+    restart: unless-stopped
+    # Local dev publishes on loopback. Production DOES NOT publish — n8n reaches
+    # the service internally via the shared `n8n` network.
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - wiki_mcp_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  wiki_mcp_data:

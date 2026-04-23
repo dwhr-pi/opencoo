@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Evaluations run against the `tests/fixtures/sample-wiki` repo mounted at
+  /data/repos/fixture (the smoke-test setup). To run:
+
+    python scripts/evaluation.py -t stdio -c node -a dist/index.js \
+      -e MCP_BEARER_TOKEN=… -e GITEA_PAT=fake \
+      -e GITEA_BASE_URL=https://gitea.example.com \
+      -e REPOS='[{"slug":"fixture","owner":"x","name":"y","default":true}]' \
+      -e DATA_DIR=/tmp/eval-data -e SYNC_INTERVAL_MIN=0 \
+      evaluation.xml
+
+  (Copy the sample-wiki into /tmp/eval-data/repos/fixture/ and touch .git/HEAD
+  first — see scripts/smoke-stdio.mjs for the pattern.)
+
+  All questions require multi-hop tool use and return a single verifiable
+  string. None of them requires write operations.
+-->
+<evaluation>
+  <qa_pair>
+    <question>How many pages exist in the wiki according to the table of contents? Respond with only the integer.</question>
+    <answer>5</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Find the page whose frontmatter type is 'strategy' and has the tag 'quality'. What is the exact value of the frontmatter 'title' field? Respond with only the title string.</question>
+    <answer>Engineering Principles</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Which page in the 'projects/' directory describes blocked issues? Search the wiki content and respond with the full repo-relative file path.</question>
+    <answer>projects/platform-refresh.md</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>The strategy page lists three pillars. The third pillar ends with a parenthesized single word — what is that word? Respond with one word, no punctuation.</question>
+    <answer>Agile</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>How many pages link to `strategy/fundamentals.md`? Count via backlinks. Respond with the integer only.</question>
+    <answer>1</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Of the two pages under `projects/`, which one has a 'project_id' field in its frontmatter? Respond with the file path only (e.g. 'projects/foo.md').</question>
+    <answer>projects/platform-refresh.md</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Search for the word 'observability'. In which file does it appear? Respond with the repo-relative path only.</question>
+    <answer>strategy/fundamentals.md</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Filter wiki pages to those whose frontmatter type is 'engineering-project'. How many are there? Respond with the integer only.</question>
+    <answer>2</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Among all pages with frontmatter, which page has a frontmatter 'updated' value that is strictly later than '2026-03-01'? Respond with the single path.</question>
+    <answer>projects/platform-refresh.md</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Read `projects/infra-backlog.md` and name ALL of its frontmatter tags, in the order they appear in the YAML, joined with a single comma and no spaces. Example format: 'tag1,tag2,tag3'.</question>
+    <answer>platform,team-infra,backlog</answer>
+  </qa_pair>
+</evaluation>

@@ -1,0 +1,51 @@
+---
+title: opencoo · six adapter interfaces
+config:
+  theme: base
+  themeVariables:
+    background: "#F6F3EC"
+    primaryColor: "#F6F3EC"
+    primaryBorderColor: "#121210"
+    primaryTextColor: "#121210"
+    lineColor: "#78746B"
+    clusterBkg: "#EFEBE1"
+    clusterBorder: "#121210"
+---
+flowchart LR
+    classDef ingest  fill:#E4EEEC,stroke:#3E8583,color:#132E2D
+    classDef selfop  fill:#F4E2BF,stroke:#8C6722,color:#3A2A0F
+    classDef adp     fill:#F6F3EC,stroke:#121210,color:#121210,stroke-dasharray: 3 3
+    classDef impl    fill:#EFEBE1,stroke:#78746B,color:#3D3B36
+
+    ING["Ingestion<br/>module"]:::ingest
+    SO["Self-Operating<br/>module"]:::selfop
+    UI["Management UI<br/>form rendered from credentialSchema"]:::selfop
+
+    subgraph A["Six adapter interfaces"]
+        direction TB
+        A1[/"SourceAdapter<br/>scan · webhook · fetch"/]:::adp
+        A6[/"DocumentConverterAdapter<br/>bytes → clean Markdown"/]:::adp
+        A5[/"GuardAdapter<br/>injection · content-safety<br/>fail_mode: block / review / log_only"/]:::adp
+        A2[/"WikiAdapter<br/>compile target"/]:::adp
+        A3[/"OutputAdapter<br/>delivery + alert fan-out"/]:::adp
+        A4[/"AutomationAdapter<br/>workflow building"/]:::adp
+    end
+
+    subgraph IMPL["v0.1 reference implementations"]
+        direction TB
+        I1["source-drive<br/>source-asana<br/>source-fireflies"]:::impl
+        I6["converter-native-ts · MD / HTML / TXT / DOCX<br/>converter-docling · PDF / PPTX / XLSX<br/>converter-markitdown · EPUB / audio / ZIP"]:::impl
+        I5["Llama Prompt Guard 2 86M · Ollama / Groq<br/>Bielik-Guard 0.1B · PL sidecar<br/>Granite Guardian 3.3 2B · EN Ollama"]:::impl
+        I2["wiki-gitea · default<br/>GitHub / GitLab later"]:::impl
+        I3["output-asana · output-slack<br/>output-google-chat<br/>output-email · v0.2"]:::impl
+        I4["automation-n8n-mcp<br/>self-hosted OR managed n8n-mcp.com"]:::impl
+    end
+
+    ING --> A1 --> I1
+    ING --> A6 --> I6
+    ING --> A5 --> I5
+    ING --> A2 --> I2
+    SO  --> A2
+    SO  --> A3 --> I3
+    SO  --> A4 --> I4
+    UI -.->|renders form per adapter| A1 & A2 & A3 & A4 & A5 & A6

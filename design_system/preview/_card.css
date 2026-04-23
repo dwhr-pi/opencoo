@@ -1,0 +1,15 @@
+/* Shared card shell used by every preview/*.html file. 700px wide. */
+@import url('../colors_and_type.css');
+*{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; background: var(--paper); color: var(--ink); }
+.card{
+  width: 700px;
+  padding: 20px 24px;
+  font-family: var(--font-sans);
+  background: var(--paper);
+  color: var(--ink);
+  display: flex; flex-direction: column; gap: 14px;
+}
+.row{ display:flex; align-items:center; gap:12px; }
+.mono{ font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.hairline{ border:0; border-top: 1px solid var(--rule); margin: 0; }
