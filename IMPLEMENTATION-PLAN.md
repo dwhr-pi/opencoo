@@ -8,24 +8,55 @@
 
 ---
 
+## Progress snapshot (as of 2026-04-24)
+
+**Phase-a: 10 / 32 PRs merged** (plus the §0 pre-coding gate). `main` is at commit `d0e957b`; all 583 workspace tests green + 1 skipped (gated Docling contract). No Docker installed yet — pglite + mock clients for all use-case tier tests.
+
+| # | IMPL PR | GitHub PR | Merge commit | Title | THREAT-MODEL coverage |
+|---|---|---|---|---|---|
+| 1 | §0 gate | #1 | `c436d56` | pnpm/turbo workspace + 4 ESLint boundary rules | invariants 2 / 5 / 9 / 10 |
+| 2 | PR 01 | #2 | `6fe1f99` | Drizzle core schema (domains / sources_bindings / users / credentials) | §3.6 shape |
+| 3 | PR 02 | #3 | `ec7881e` | Ingestion schema (9 tables) + append-only invariant + `catalog_candidate` carve-out in §2-8 | invariant 8 |
+| 4 | PR 03 | #4 | `4e4aa5f` | Self-op schema + `agent_runs` FK backfill + 5th ESLint rule `no-update-append-only` | invariant 7 (Gate 3 JSDoc), invariant 8 |
+| 5 | PR 04 | #5 | `16de035` | Logger + errors taxonomy + `LOG_LEVEL` allow-list | invariant 11 (doc + callout) |
+| 6 | PR 05 | #6 | `173573b` | text-normalize (NFC + control-strip + fence-aware collapse) | §6.3 converter-edge normalisation |
+| 7 | PR 06 | #7 | `71014d1` | credential-store (AES-256-GCM, AAD-bound, KMS-swappable) | §3.6 full |
+| 8 | PR 07 | #8 | `7be9252` | llm-router + cost-tracker + budget-cap + `llm_usage_debug` migration | invariants 5, 11; **§7 residual "no hard LLM spend cap" CLOSED** |
+| 9 | PR 08 | #9 | `33fbcf0` | wiki-write (sole sanctioned write path) + `WikiAdapter` port | invariant 2, §3.5 |
+| 10 | PR 09 | #10 | `184d0f5` | `gitea-wiki-mcp-server` REPOS config + `worldview://` resource + PAT-scope enforcement | §3.14 full |
+| 11 | PR 10 | #11 | `d0e957b` | converter-docling + `DocumentConverterAdapter` contract suite (first adapter package) | §3.2 full |
+
+**What's complete structurally:**
+- §1.2.1 Shared foundations — **COMPLETE** (7 of 7 PRs). Foundations checkpoint passed 2026-04-24 — all tests in-memory, zero Docker, zero network.
+- §1.2.2 wiki-write + MCP — **COMPLETE** (2 of 2 PRs).
+- §1.2.3 Document conversion + guards — **1 of 3 PRs** (PR 10 converter-docling done; PRs 11 wiki-gitea + 12 guard-redaction-regex pending).
+
+**Team workflow in use:** per-PR team cycle via the `opencoo-phase-a` agent team — planner drafts plan, orchestrator approves, implementer executes TDD, simplifier refines, reviewer gates (with explicit `/security-review` on THREAT-MODEL-touching PRs). Squash-merge to main after CI green. Each PR's closed GitHub branch preserves the full TDD-ordered commit history for bisect.
+
+**Residual advisories filed across PRs 7-11** (all non-blocking, v0.2 hardening or future-PR reactivity): listed in each PR's body on GitHub. Tracked for the phase-a exit-gate `CHANGES-v0.1.md` draft.
+
+**Next PR** (paused): PR 11 `packages/adapters/wiki-gitea` — first PR that definitely needs Docker (Gitea service-containers for contract-tier tests). Colima install lands with it per the orchestrator plan (`~/.claude/plans/we-are-starting-implementation-radiant-diffie.md`).
+
+---
+
 ## 0. Pre-coding gate (before Phase a starts)
 
 **Gate condition:** the design-partner PoC is end-to-end production-stable (CLAUDE.md "No opencoo TypeScript is written until the PoC is end-to-end production-stable").
 
 **Exit criteria (all must hold before opening the first TypeScript PR):**
 
-- [ ] Pilot PoC runs every pipeline in production for ≥ two consecutive weeks without manual intervention beyond normal operator triage.
-- [ ] Pilot prompts are frozen and tagged. Committed to `packages/shared/prompts/pl/` staging branch (gitignored until phase-a PR 01 lands).
-- [ ] `architecture.md` refinement PR merged, capturing every PoC-discovered edge case, prompt revision, and flow that didn't survive contact with production.
-- [ ] `docs/local/` is authoritative for "what runs today"; no conflict between PoC operational truth and the OSS spec.
-- [ ] `DECISIONS.md` is empty (zero open items) or every open item is explicitly deferred with an owner.
-- [ ] Repo has `pnpm` + `turbo` + Drizzle + vitest toolchain bootstrapped (repo-root `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`).
-- [ ] **`eslint.config.js` present at repo root with four custom boundary rules enforced.** Each rule ships with a negative-case fixture that would lint-pass without the rule and lint-fail with it — proving the rule is doing what it says (the rules are load-bearing for the rest of the plan; they must exist before PR 01 opens):
+- [x] Pilot PoC runs every pipeline in production for ≥ two consecutive weeks without manual intervention beyond normal operator triage.
+- [x] Pilot prompts are frozen and tagged. Committed to `packages/shared/prompts/pl/` staging branch (gitignored until phase-a PR 01 lands).
+- [x] `architecture.md` refinement PR merged, capturing every PoC-discovered edge case, prompt revision, and flow that didn't survive contact with production.
+- [x] `docs/local/` is authoritative for "what runs today"; no conflict between PoC operational truth and the OSS spec.
+- [x] `DECISIONS.md` is empty (zero open items) or every open item is explicitly deferred with an owner.
+- [x] Repo has `pnpm` + `turbo` + Drizzle + vitest toolchain bootstrapped (repo-root `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`). (PR #1, commit `c436d56`)
+- [x] **`eslint.config.js` present at repo root with four custom boundary rules enforced.** Each rule ships with a negative-case fixture that would lint-pass without the rule and lint-fail with it — proving the rule is doing what it says (the rules are load-bearing for the rest of the plan; they must exist before PR 01 opens). _(PR #1; 5th rule `no-update-append-only` added in PR #4 once the invariant-8 table set stabilised.)_
   - `no-cross-engine-import` — `packages/engine-ingestion/**` cannot import from `packages/engine-self-operating/**` and vice versa (`architecture.md` §2.5; THREAT-MODEL §2 invariant 10).
   - `no-direct-gitea-write` — non-provisioning code cannot import the Gitea API client directly; must go through `packages/shared/wiki-write` (THREAT-MODEL §2 invariant 2).
   - `no-direct-llm-sdk` — `@ai-sdk/*` / Vercel AI SDK imports are forbidden outside `packages/shared/llm-router` (THREAT-MODEL §2 invariant 5).
-  - `no-feature-env-vars` — `process.env.*` outside the allow-list (`DATABASE_URL`, `ENCRYPTION_KEY`, `PORT`, `ADMIN_BOOTSTRAP_TOKEN` + their `_FILE` variants, plus `NODE_ENV`, `LLM_DEBUG_LOG`, `TELEMETRY_ENDPOINT`) is a lint error (THREAT-MODEL §2 invariant 9).
-- [ ] `pnpm lint` green on the empty repo. `pnpm lint` on each negative-case fixture file fails with the expected rule ID.
+  - `no-feature-env-vars` — `process.env.*` outside the allow-list (`DATABASE_URL`, `ENCRYPTION_KEY`, `PORT`, `ADMIN_BOOTSTRAP_TOKEN` + their `_FILE` variants, plus `NODE_ENV`, `LLM_DEBUG_LOG`, `LOG_LEVEL`, `TELEMETRY_ENDPOINT`) is a lint error (THREAT-MODEL §2 invariant 9). _(`LOG_LEVEL` added in PR #5.)_
+- [x] `pnpm lint` green on the empty repo. `pnpm lint` on each negative-case fixture file fails with the expected rule ID.
 
 ---
 
@@ -35,8 +66,8 @@ Ships as `0.1.0-a.N` tags. **Gates the pilot migration.** Nothing activates in t
 
 ### 1.1 Entry gate
 
-- [ ] All §0 exit criteria green.
-- [ ] CI is able to run `pnpm test` on an empty repo (vitest configured, one trivial passing test). This proves the harness before any real test lands.
+- [x] All §0 exit criteria green.
+- [x] CI is able to run `pnpm test` on an empty repo (vitest configured, one trivial passing test). This proves the harness before any real test lands. _(Verified on PR #1 merge.)_
 
 ### 1.2 Deliverables (dependency-ordered)
 
@@ -50,13 +81,13 @@ Schema first (per CLAUDE.md + `architecture.md` §14.4 "schema-ownership rule"),
 
 | PR | Title | Depends on | Test-first artifact | Acceptance | Verify | Files est. |
 |---|---|---|---|---|---|---|
-| 01 | Drizzle schema: domains + sources_bindings + users + credentials | — | `schema.test.ts` — `pgTable` shapes match § mappings; `drizzle-kit generate` produces SQL that applies cleanly on empty Postgres; migrations are **idempotent** (a second apply on the same schema produces zero changes); `domains` carries `class ∈ {'knowledge', 'catalog-workflows', 'catalog-skills'}`, nullable `llm_budget_monthly_cap_usd numeric(10,2)`, `governance_cadence`, `review_role`, `locale` | Schema compiles; `pnpm --filter shared db:generate` emits deterministic SQL; running generator twice produces identical output; RLS not required in v0.1 | `pnpm --filter shared test` + `pnpm --filter shared db:check` + `pnpm --filter shared db:generate --check` (byte-equal on second run) | ~10 |
-| 02 | Drizzle schema: ingestion-side tables | PR 01 | `schema-ingestion.test.ts` — every `ingestion_intake`, `webhook_events`, `page_citations`, `llm_usage`, `miner_runs`, `catalog_candidate`, `miner_suppressions`, `redaction_events`, `erasure_log` table present and append-only-shaped (no `updated_at`) | Migrations apply; append-only invariant encoded via types | Same as PR 01 | ~10 |
-| 03 | Drizzle schema: self-op tables + marketplace_updates | PR 01 | `schema-selfop.test.ts` — `agent_definitions`, `agent_instances`, `agent_runs` (jsonb `skills_used`), `automation_candidates`, `automation_deployments`, `marketplace_updates` | Migrations apply; `agent_runs.skills_used` is `jsonb` with Zod type | Same as PR 01 | ~8 |
-| 04 | `packages/shared/logger` + `errors` | PR 01 | `logger.test.ts` — emits JSON-per-line with `ts`/`level`/`module`/`run_id`; never multi-line; no raw prompts at `info` level (THREAT-MODEL §2 invariant 11) | One `Logger` interface exported; `ErrorClass` union (Transient / Upstream-quota / Validation) typed | `pnpm --filter shared test logger` | ~6 |
-| 05 | `packages/shared/text-normalize` | — | `text-normalize.test.ts` — NFC + control-strip + whitespace-collapse; idempotent on pre-normalized input; preserves code fences | Exported `normalize(input: string): string`; used at router edge (unit only here) | `pnpm --filter shared test text-normalize` | ~4 |
-| 06 | `packages/shared/credential-store` (AES-256-GCM impl behind interface) | PR 01 | `credential-store.test.ts` — round-trip encrypt/decrypt; AAD binds to credential ID; IV never reused across writes; rejects keys < 32 bytes; reads tolerate old `encryption_version`; writes always current; never logs plaintext | Interface exported so KMS backend plugs in later without schema change (§17 Resolved "Credentials vault") | `pnpm --filter shared test credential-store` | ~8 |
-| 07 | `packages/shared/llm-router` + `cost-tracker` + per-domain spend cap | PRs 01, 03, 04 | `llm-router.test.ts` — every call goes through router; per-domain `llm_policy` enforced; `LlmPolicyViolationError` typed; no silent fallback; `llm_usage` row written with tier/model/pipeline/doc_id/tokens/cost/latency; full prompt/response only in `llm_usage_debug` when `LLM_DEBUG_LOG=1`. **Spend-cap enforcement:** when the domain's month-to-date `llm_usage.cost` sum breaches `llm_budget_monthly_cap_usd` (nullable; null = unlimited), router **pauses the domain's BullMQ queues** and throws `LlmBudgetExceededError`; admin alert emitted; fail-closed (THREAT-MODEL §7 risk "No hard LLM spend cap" — resolved in phase a) | No provider SDK instantiation outside router; lazy imports per provider; queue-pause is idempotent; re-enable requires admin action in UI (wired in PR 29) | `pnpm --filter shared test llm-router` + `pnpm --filter shared test cost-tracker` + `pnpm --filter shared test budget-cap` | ~14 |
+| 01 ✅ `6fe1f99` (#2) | Drizzle schema: domains + sources_bindings + users + credentials | — | `schema.test.ts` — `pgTable` shapes match § mappings; `drizzle-kit generate` produces SQL that applies cleanly on empty Postgres; migrations are **idempotent** (a second apply on the same schema produces zero changes); `domains` carries `class ∈ {'knowledge', 'catalog-workflows', 'catalog-skills'}`, nullable `llm_budget_monthly_cap_usd numeric(10,2)`, `governance_cadence`, `review_role`, `locale` | Schema compiles; `pnpm --filter shared db:generate` emits deterministic SQL; running generator twice produces identical output; RLS not required in v0.1 | `pnpm --filter shared test` + `pnpm --filter shared db:check` + `pnpm --filter shared db:generate --check` (byte-equal on second run) | ~10 |
+| 02 ✅ `ec7881e` (#3) | Drizzle schema: ingestion-side tables | PR 01 | `schema-ingestion.test.ts` — every `ingestion_intake`, `webhook_events`, `page_citations`, `llm_usage`, `miner_runs`, `catalog_candidate`, `miner_suppressions`, `redaction_events`, `erasure_log` table present and append-only-shaped (no `updated_at`) | Migrations apply; append-only invariant encoded via types | Same as PR 01 | ~10 |
+| 03 ✅ `4e4aa5f` (#4) | Drizzle schema: self-op tables + marketplace_updates | PR 01 | `schema-selfop.test.ts` — `agent_definitions`, `agent_instances`, `agent_runs` (jsonb `skills_used`), `automation_candidates`, `automation_deployments`, `marketplace_updates` | Migrations apply; `agent_runs.skills_used` is `jsonb` with Zod type | Same as PR 01 | ~8 |
+| 04 ✅ `16de035` (#5) | `packages/shared/logger` + `errors` | PR 01 | `logger.test.ts` — emits JSON-per-line with `ts`/`level`/`module`/`run_id`; never multi-line; no raw prompts at `info` level (THREAT-MODEL §2 invariant 11) | One `Logger` interface exported; `ErrorClass` union (Transient / Upstream-quota / Validation) typed | `pnpm --filter shared test logger` | ~6 |
+| 05 ✅ `173573b` (#6) | `packages/shared/text-normalize` | — | `text-normalize.test.ts` — NFC + control-strip + whitespace-collapse; idempotent on pre-normalized input; preserves code fences | Exported `normalize(input: string): string`; used at router edge (unit only here) | `pnpm --filter shared test text-normalize` | ~4 |
+| 06 ✅ `71014d1` (#7) | `packages/shared/credential-store` (AES-256-GCM impl behind interface) | PR 01 | `credential-store.test.ts` — round-trip encrypt/decrypt; AAD binds to credential ID; IV never reused across writes; rejects keys < 32 bytes; reads tolerate old `encryption_version`; writes always current; never logs plaintext | Interface exported so KMS backend plugs in later without schema change (§17 Resolved "Credentials vault") | `pnpm --filter shared test credential-store` | ~8 |
+| 07 ✅ `7be9252` (#8) | `packages/shared/llm-router` + `cost-tracker` + per-domain spend cap | PRs 01, 03, 04 | `llm-router.test.ts` — every call goes through router; per-domain `llm_policy` enforced; `LlmPolicyViolationError` typed; no silent fallback; `llm_usage` row written with tier/model/pipeline/doc_id/tokens/cost/latency; full prompt/response only in `llm_usage_debug` when `LLM_DEBUG_LOG=1`. **Spend-cap enforcement:** when the domain's month-to-date `llm_usage.cost` sum breaches `llm_budget_monthly_cap_usd` (nullable; null = unlimited), router **pauses the domain's BullMQ queues** and throws `LlmBudgetExceededError`; admin alert emitted; fail-closed (THREAT-MODEL §7 risk "No hard LLM spend cap" — resolved in phase a) | No provider SDK instantiation outside router; lazy imports per provider; queue-pause is idempotent; re-enable requires admin action in UI (wired in PR 29) | `pnpm --filter shared test llm-router` + `pnpm --filter shared test cost-tracker` + `pnpm --filter shared test budget-cap` | ~14 |
 
 **Phase-a foundations checkpoint:** after PR 07, run `pnpm test` at repo root — every use-case test written so far passes in-memory, no Docker touched, **no network calls** (every `MockLLMClient` fixture is pre-recorded and offline-playable; recording workflow documented in `packages/shared/testing/record-llm.ts` shipped as part of PR 07). If any test needs Docker or network to pass, a fixture is missing; fix before moving on. (`architecture.md` §14.3; `CONVENTIONS.md` §3.1)
 
@@ -64,14 +95,14 @@ Schema first (per CLAUDE.md + `architecture.md` §14.4 "schema-ownership rule"),
 
 | PR | Title | Depends on | Test-first artifact | Acceptance | Verify | Files est. |
 |---|---|---|---|---|---|---|
-| 08 | `packages/shared/wiki-write` | PRs 01, 04, 07 | `wiki-write.test.ts` — modes `'replace' \| 'append' \| 'delete'`; one call = one atomic Gitea commit; stale-SHA pull-retry; per-domain BullMQ queue `concurrency: 1`; delete-mode daily cap (default 10) fails closed above threshold; commit-message tags `[compiler]` / `[lint]` / etc. required; forbids cross-domain paths even if caller mis-validates (belt-and-suspenders per THREAT-MODEL §3.5) | `InMemoryWikiAdapter` in `__fixtures__/` for use-case tests; real `wiki-gitea` adapter tested separately in PR 11 | `pnpm --filter shared test wiki-write` | ~10 |
-| 09 | `gitea-wiki-mcp-server` — REPOS config + `worldview://` resource | PR 08 | `mcp-worldview-resource.test.ts` — `worldview://{domain}` and `worldview://company` resolvable; PAT-scope enforced at API layer; out-of-scope reads return uniform "not accessible" (THREAT-MODEL §3.14) | No wiki content cached across PAT changes | `pnpm --filter gitea-wiki-mcp-server test` | ~6 |
+| 08 ✅ `33fbcf0` (#9) | `packages/shared/wiki-write` | PRs 01, 04, 07 | `wiki-write.test.ts` — modes `'replace' \| 'append' \| 'delete'`; one call = one atomic Gitea commit; stale-SHA pull-retry; per-domain BullMQ queue `concurrency: 1`; delete-mode daily cap (default 10) fails closed above threshold; commit-message tags `[compiler]` / `[lint]` / etc. required; forbids cross-domain paths even if caller mis-validates (belt-and-suspenders per THREAT-MODEL §3.5) | `InMemoryWikiAdapter` in `__fixtures__/` for use-case tests; real `wiki-gitea` adapter tested separately in PR 11 | `pnpm --filter shared test wiki-write` | ~10 |
+| 09 ✅ `184d0f5` (#10) | `gitea-wiki-mcp-server` — REPOS config + `worldview://` resource | PR 08 | `mcp-worldview-resource.test.ts` — `worldview://{domain}` and `worldview://company` resolvable; PAT-scope enforced at API layer; out-of-scope reads return uniform "not accessible" (THREAT-MODEL §3.14) | No wiki content cached across PAT changes | `pnpm --filter gitea-wiki-mcp-server test` | ~6 |
 
 #### 1.2.3 Document conversion + guards (PRs 10–12)
 
 | PR | Title | Depends on | Test-first artifact | Acceptance | Verify | Files est. |
 |---|---|---|---|---|---|---|
-| 10 | `packages/adapters/converter-docling` | PR 05 | `converter-docling.contract.test.ts` — pass shared `DocumentConverterAdapter` contract suite: fails-closed on malformed input (`ConversionError`), triggers `extraction_degraded` when a known-tabular input produces zero GFM pipes, strips script/style/iframe, does not follow external refs | Sidecar process contract documented; `network_mode: none` recommended | `pnpm --filter converter-docling test` | ~8 |
+| 10 ✅ `d0e957b` (#11) | `packages/adapters/converter-docling` | PR 05 | `converter-docling.contract.test.ts` — pass shared `DocumentConverterAdapter` contract suite: fails-closed on malformed input (`ConversionError`), triggers `extraction_degraded` when a known-tabular input produces zero GFM pipes, strips script/style/iframe, does not follow external refs | Sidecar process contract documented; `network_mode: none` recommended | `pnpm --filter converter-docling test` | ~8 |
 | 11 | `packages/adapters/wiki-gitea` | PR 08 | `wiki-gitea.contract.test.ts` — implements `WikiAdapter` against real Gitea in CI (service-containers); service-account git author on machine commits; `Co-authored-by:` on human-approved | Queue-per-domain respected | `pnpm --filter wiki-gitea test:contract` | ~8 |
 | 12 | `packages/adapters/guard-redaction-regex` | PR 02, 04 | `guard-redaction.contract.test.ts` — role=`redaction`; returns `transformed_text`; writes `redaction_events` (metadata only — THREAT-MODEL §3.3 "Do not log matched content"); versioned default pattern list; stateless per `classify()` | `role` + `categories` declared in export; `fail_mode: 'transform'` default | `pnpm --filter guard-redaction-regex test` | ~6 |
 
