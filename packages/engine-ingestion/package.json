@@ -1,0 +1,37 @@
+{
+  "name": "@opencoo/engine-ingestion",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Engine for the ingestion side of opencoo: Fastify health/ready probes, BullMQ-backed pipeline registry, and the PipelineDefinition surface concrete pipelines (PRs 14-17) plug into. Schema-import only — does not own any pgTable (CLAUDE.md schema-ownership rule).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@opencoo/shared": "workspace:*",
+    "bullmq": "5.76.1",
+    "fastify": "5.8.5",
+    "ioredis": "5.10.1",
+    "pg": "8.20.0",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/pg": "8.20.0",
+    "ioredis-mock": "8.13.1",
+    "typescript": "~5.7.2",
+    "vitest": "^3.0.5"
+  }
+}

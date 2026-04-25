@@ -50,7 +50,7 @@ ruleTester.run("no-feature-env-vars", noFeatureEnvVars, {
     },
     {
       name: "destructuring from an unrelated object is untouched",
-      code: `const source = { GITEA_URL: 'x' }; const { GITEA_URL } = source;`,
+      code: `const source = { LLM_TIER: 'x' }; const { LLM_TIER } = source;`,
     },
     {
       name: "LOG_LEVEL member access is in the default allow-list",
@@ -60,13 +60,24 @@ ruleTester.run("no-feature-env-vars", noFeatureEnvVars, {
       name: "destructured LOG_LEVEL is in the default allow-list",
       code: `const { LOG_LEVEL } = process.env;`,
     },
+    {
+      name: "REDIS_URL is in the default allow-list (engine-ingestion BullMQ)",
+      code: `const url = process.env.REDIS_URL;`,
+    },
+    {
+      name: "REDIS_URL_FILE is in the default allow-list (Docker secrets convention)",
+      code: `const p = process.env.REDIS_URL_FILE;`,
+    },
+    {
+      name: "GITEA_URL is in the default allow-list (engine-ingestion + provisioning)",
+      code: `const url = process.env.GITEA_URL;`,
+    },
+    {
+      name: "GITEA_URL_FILE is in the default allow-list (Docker secrets convention)",
+      code: `const p = process.env.GITEA_URL_FILE;`,
+    },
   ],
   invalid: [
-    {
-      name: "GITEA_URL is not in the default allow-list",
-      code: `const host = process.env.GITEA_URL;`,
-      errors: [{ messageId: "featureEnvVar", data: { name: "GITEA_URL" } }],
-    },
     {
       name: "LLM_TIER is not allow-listed",
       code: `const tier = process.env.LLM_TIER;`,
@@ -74,29 +85,29 @@ ruleTester.run("no-feature-env-vars", noFeatureEnvVars, {
     },
     {
       name: "two forbidden keys in one statement produce two errors",
-      code: `const x = { a: process.env.GITEA_URL, b: process.env.LLM_TIER };`,
+      code: `const x = { a: process.env.LLM_TIER, b: process.env.SOMETHING_ELSE };`,
       errors: [
-        { messageId: "featureEnvVar", data: { name: "GITEA_URL" } },
         { messageId: "featureEnvVar", data: { name: "LLM_TIER" } },
+        { messageId: "featureEnvVar", data: { name: "SOMETHING_ELSE" } },
       ],
     },
     {
       name: "computed string access to a forbidden key flags too",
-      code: `const v = process.env['GITEA_URL'];`,
-      errors: [{ messageId: "featureEnvVar", data: { name: "GITEA_URL" } }],
+      code: `const v = process.env['LLM_TIER'];`,
+      errors: [{ messageId: "featureEnvVar", data: { name: "LLM_TIER" } }],
     },
     {
       name: "dynamic (non-literal) access is a separate error",
-      code: `const key = 'GITEA_URL'; const v = process.env[key];`,
+      code: `const key = 'LLM_TIER'; const v = process.env[key];`,
       errors: [{ messageId: "dynamicAccess" }],
     },
     {
       name: "fixtures-file forbidden keys flag",
       filename:
         "/repo/tests/eslint-fixtures/no-feature-env-vars.fixture.ts",
-      code: `const host = process.env.GITEA_URL; const tier = process.env.LLM_TIER;`,
+      code: `const host = process.env.SOMETHING_ELSE; const tier = process.env.LLM_TIER;`,
       errors: [
-        { messageId: "featureEnvVar", data: { name: "GITEA_URL" } },
+        { messageId: "featureEnvVar", data: { name: "SOMETHING_ELSE" } },
         { messageId: "featureEnvVar", data: { name: "LLM_TIER" } },
       ],
     },

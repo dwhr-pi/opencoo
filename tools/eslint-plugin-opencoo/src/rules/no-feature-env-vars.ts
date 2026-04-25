@@ -22,6 +22,14 @@ const DEFAULT_ALLOW_LIST = [
   "LLM_DEBUG_LOG",
   "LOG_LEVEL",
   "TELEMETRY_ENDPOINT",
+  // Engine-ingestion needs Redis (BullMQ) and Gitea (wiki transport)
+  // URLs at boot. Both follow the existing `_FILE` Docker-secrets
+  // convention used by DATABASE_URL_FILE / ENCRYPTION_KEY_FILE so
+  // production deploys can stash credentials on tmpfs instead of env.
+  "REDIS_URL",
+  "REDIS_URL_FILE",
+  "GITEA_URL",
+  "GITEA_URL_FILE",
 ];
 
 function isIdentifier(
