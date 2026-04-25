@@ -10,7 +10,7 @@
 
 ## Progress snapshot (as of 2026-04-25)
 
-**Phase-a: 22 / 32 PRs merged** (plus the §0 pre-coding gate). `main` is at commit `ffa4161`; full repo 1307 passed | 2 skipped. Docker installed via colima for the wiki-gitea contract suite.
+**Phase-a: 23 / 32 PRs merged** (plus the §0 pre-coding gate). `main` is at commit `63076a7`; full repo 1333 passed | 5 skipped. Docker installed via colima for the wiki-gitea contract suite.
 
 | # | IMPL PR | GitHub PR | Merge commit | Title | THREAT-MODEL coverage |
 |---|---|---|---|---|---|
@@ -38,6 +38,7 @@
 | 22 | PR 20B | #23 | `68aa79e` | Chat agent + automation_drift detector + `callerPat` propagation + scope-domain SQL filter | §3.5 cross-tenant SQL leak fix |
 | 23 | PR 21 | #24 | `b522215` | Surfacer + Builder + 3 gates (gate 3 type-level: `AutomationAdapter.deployWorkflow` only) | invariant 7 full (Gate 3 type + grep + schema + runtime) |
 | 24 | PR 22 | #25 | `ffa4161` | Worldview compilation pipeline + sovereignty spy + 24KB cap retry + debounce policy | §3.4 worldview, §3.5 wikiWrite, §3.7 sovereignty |
+| 25 | PR 23 | #26 | `63076a7` | `source-drive` reference SourceAdapter + shared `sourceAdapterContract` suite (9 polling + 3 webhook stubs) | §3.1 SourceAdapter, §3.6 invariant 11 (`@ts-expect-error` pin) |
 
 **What's complete structurally:**
 - §1.2.1 Shared foundations — **COMPLETE** (7 of 7 PRs).
@@ -45,15 +46,15 @@
 - §1.2.3 Document conversion + guards — **COMPLETE** (3 of 3 PRs: PRs 10 / 11 / 12).
 - §1.2.4 Engine-ingestion — **COMPLETE** (5 of 5 PRs: PRs 13–17).
 - §1.2.5 Engine-self-operating + agents + worldview — **COMPLETE** (5 of 5 PRs: PRs 18, 19, 20, 21, 22).
-- §1.2.6 SourceAdapters + `catalog-workflows` — **0 of 5 PRs** (PRs 23–27 pending).
+- §1.2.6 SourceAdapters + `catalog-workflows` — **1 of 5 PRs** (PR 23 done; PRs 24–27 pending).
 - §1.2.7 Review Dashboard + Management UI + CLI — **0 of 3 PRs** (PRs 28–30 pending).
 - §1.2.8 Prompt-injection corpus + phase-a e2e — **0 of 2 PRs** (PRs 31–32 pending).
 
 **Team workflow in use:** per-PR team cycle via the `opencoo-phase-a` agent team — planner drafts plan, orchestrator approves, implementer executes TDD, simplifier refines, reviewer gates (with explicit `/security-review` on THREAT-MODEL-touching PRs). GitHub Copilot auto-review triaged before every merge. Squash-merge to main after CI green. Each PR's closed GitHub branch preserves the full TDD-ordered commit history for bisect.
 
-**Residual advisories filed across PRs 7-22** (all non-blocking, v0.2 hardening or future-PR reactivity): listed in each PR's body on GitHub. Tracked for the phase-a exit-gate `CHANGES-v0.1.md` draft.
+**Residual advisories filed across PRs 7-23** (all non-blocking, v0.2 hardening or future-PR reactivity): listed in each PR's body on GitHub. Tracked for the phase-a exit-gate `CHANGES-v0.1.md` draft.
 
-**Next PR**: PR 23 `packages/adapters/source-drive` — reference SourceAdapter + the shared SourceAdapter contract test suite. First of five §1.2.6 source adapters.
+**Next PR**: PR 24 `packages/adapters/{source-asana,output-asana}` — first webhook-mode SourceAdapter + first OutputAdapter (introduces the `OutputAdapter` port).
 
 ---
 
