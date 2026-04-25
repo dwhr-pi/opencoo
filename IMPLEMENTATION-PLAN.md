@@ -10,7 +10,7 @@
 
 ## Progress snapshot (as of 2026-04-25)
 
-**Phase-a: 25 / 32 PRs merged** (plus the §0 pre-coding gate). `main` is at commit `db59500`; full repo 1402 passed | 2 skipped. Docker installed via colima for the wiki-gitea contract suite.
+**Phase-a: 26 / 32 PRs merged** (plus the §0 pre-coding gate). `main` is at commit `8c09365`; full repo 1459 passed | 2 skipped. Docker installed via colima for the wiki-gitea contract suite.
 
 | # | IMPL PR | GitHub PR | Merge commit | Title | THREAT-MODEL coverage |
 |---|---|---|---|---|---|
@@ -41,6 +41,7 @@
 | 25 | PR 23 | #26 | `63076a7` | `source-drive` reference SourceAdapter + shared `sourceAdapterContract` suite (9 polling + 3 webhook stubs) | §3.1 SourceAdapter, §3.6 invariant 11 (`@ts-expect-error` pin) |
 | 26 | PR 24 | #27 | `f02c964` | `source-asana` (webhook-mode) + `output-asana` (first OutputAdapter) + 9-assertion `outputAdapterContract` suite + webhook stubs → real assertions | §3.1 webhook-mode, §3.6 invariant 11, no-raw-credentials-in-result pin |
 | 27 | PR 25 | #28 | `db59500` | `automation-n8n-mcp` AutomationAdapter + vendored `n8n-skills` baseline + Gate-3 cross-package source-grep + token-aware comment stripping | §2 invariant 7 (Gate 3 four layers), §3.9 automation-loop, §3.6 invariant 11 |
+| 28 | PR 26 | #29 | `8c09365` | `source-n8n` REST scanner + `catalog-workflow` Compiler template + guard wiring + shared `CONTENT_KINDS` const + lossless round-trip across 3 fixture shapes | §3.4 fenced-block parser, §3.6 invariant 11, §3.7 unconditional guard wiring |
 
 **What's complete structurally:**
 - §1.2.1 Shared foundations — **COMPLETE** (7 of 7 PRs).
@@ -48,15 +49,15 @@
 - §1.2.3 Document conversion + guards — **COMPLETE** (3 of 3 PRs: PRs 10 / 11 / 12).
 - §1.2.4 Engine-ingestion — **COMPLETE** (5 of 5 PRs: PRs 13–17).
 - §1.2.5 Engine-self-operating + agents + worldview — **COMPLETE** (5 of 5 PRs: PRs 18, 19, 20, 21, 22).
-- §1.2.6 SourceAdapters + `catalog-workflows` — **3 of 5 PRs** (PRs 23 / 24 / 25 done; PRs 26–27 pending).
+- §1.2.6 SourceAdapters + `catalog-workflows` — **4 of 5 PRs** (PRs 23 / 24 / 25 / 26 done; PR 27 pending).
 - §1.2.7 Review Dashboard + Management UI + CLI — **0 of 3 PRs** (PRs 28–30 pending).
 - §1.2.8 Prompt-injection corpus + phase-a e2e — **0 of 2 PRs** (PRs 31–32 pending).
 
 **Team workflow in use:** per-PR team cycle via the `opencoo-phase-a` agent team — planner drafts plan, orchestrator approves, implementer executes TDD, simplifier refines, reviewer gates (with explicit `/security-review` on THREAT-MODEL-touching PRs). GitHub Copilot auto-review triaged before every merge. Squash-merge to main after CI green. Each PR's closed GitHub branch preserves the full TDD-ordered commit history for bisect.
 
-**Residual advisories filed across PRs 7-25** (all non-blocking, v0.2 hardening or future-PR reactivity): listed in each PR's body on GitHub. Tracked for the phase-a exit-gate `CHANGES-v0.1.md` draft.
+**Residual advisories filed across PRs 7-26** (all non-blocking, v0.2 hardening or future-PR reactivity): listed in each PR's body on GitHub. Tracked for the phase-a exit-gate `CHANGES-v0.1.md` draft.
 
-**Next PR**: PR 26 `packages/adapters/source-n8n` + `catalog-workflows` Compiler template — REST scanner of n8n workflows tagged `catalog`; `content_kind: 'n8n-workflow'` bypasses DocumentConverter; lossless `originalJson → SourceEvent → Compiler → fenced-block body → re-parsed JSON` round-trip pinned in fixtures.
+**Next PR**: PR 27 `packages/adapters/source-fireflies` — webhook-mode SourceAdapter for Fireflies meeting transcripts. Webhook-only in v0.1 (polling deferred); `review_mode: 'approve'` default per THREAT-MODEL §3.1; dedupe on `meeting_id + revision`. Final §1.2.6 PR before §1.2.7 (Review Dashboard / Management UI / CLI).
 
 ---
 
