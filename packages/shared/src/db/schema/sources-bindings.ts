@@ -37,6 +37,11 @@ export const sourcesBindings = pgTable(
     retentionDaysOverride: integer("retention_days_override"),
     enabled: boolean("enabled").notNull().default(true),
     lastScannedAt: timestamp("last_scanned_at", { withTimezone: true }),
+    /** Opaque pagination cursor persisted across Scanner runs so a
+     *  4h-cron pickup resumes where the previous run left off
+     *  (PR 17 / plan #77). The engine does not parse the value —
+     *  shape is whatever the SourceAdapter returned last time. */
+    lastScanCursor: text("last_scan_cursor"),
     notes: text("notes"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

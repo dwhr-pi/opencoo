@@ -174,6 +174,13 @@ describe("wikiWrite — input validation", () => {
     ).rejects.toThrow(WikiWriteInputError);
   });
 
+  it("accepts the [index-rebuild] tag — written by the Index Rebuilder pipeline (plan #77)", async () => {
+    const { deps } = harness();
+    await expect(
+      wikiWrite(deps, baseInput({ tag: "[index-rebuild]" })),
+    ).resolves.toBeDefined();
+  });
+
   it("rejects a cross-domain path via WikiPathError (before queue enqueue)", async () => {
     const { deps, adapter } = harness();
     const spy = vi.spyOn(adapter, "writeAtomic");

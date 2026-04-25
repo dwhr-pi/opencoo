@@ -482,7 +482,60 @@ export function wikiAdapterContract(
       }
     });
 
-    // 13. Max body — moderately large file (100KB) survives.
+    // 14. listMarkdown — empty domain returns [] (no thrown error).
+    it("listMarkdown returns [] for an empty domain (plan #77)", async () => {
+      const handle = await options.makeAdapter(DOMAIN);
+      try {
+        const paths = await handle.adapter.listMarkdown(DOMAIN);
+        expect(paths).toEqual([]);
+      } finally {
+        await handle.cleanup();
+      }
+    });
+
+    // 15. listMarkdown — only `.md` files at any depth, sorted (deterministic).
+    it("listMarkdown returns *.md paths only, sorted, after writes (plan #77)", async () => {
+      const handle = await options.makeAdapter(DOMAIN);
+      try {
+        const sha0 = await handle.adapter.getHeadSha(DOMAIN);
+        await handle.adapter.writeAtomic(
+          makeArgs({
+            parentSha: sha0,
+            operations: [
+              { mode: "replace", path: "index.md", content: "# Index\n" },
+              {
+                mode: "replace",
+                path: "strategy/q3.md",
+                content: "# Q3\n",
+              },
+              {
+                mode: "replace",
+                path: "executive/log.md",
+                content: "# Log\n",
+              },
+              {
+                mode: "replace",
+                path: "data/payload.json",
+                content: '{"x":1}',
+              },
+            ],
+            commitMessage: "[compiler] seed",
+          }),
+        );
+        const paths = await handle.adapter.listMarkdown(DOMAIN);
+        // Only .md files; deterministic sort so the Index Rebuilder
+        // diffs are stable run-to-run.
+        expect(paths).toEqual([
+          "executive/log.md",
+          "index.md",
+          "strategy/q3.md",
+        ]);
+      } finally {
+        await handle.cleanup();
+      }
+    });
+
+    // 16. Max body — moderately large file (100KB) survives.
     it("preserves a moderately large body (~100KB) byte-faithfully", async () => {
       const handle = await options.makeAdapter(DOMAIN);
       try {

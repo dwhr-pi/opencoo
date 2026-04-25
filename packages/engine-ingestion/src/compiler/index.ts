@@ -6,6 +6,8 @@ export {
   compile,
   type CompileArgs,
   type CompileResult,
+  type ReviewDispatchEvent,
+  type ReviewDispatchHook,
 } from "./compiler.js";
 export {
   CompilerValidationError,

@@ -23,6 +23,7 @@
  * + alerted but does NOT roll back the wiki commit.
  */
 
+import { sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type { LlmRouter } from "@opencoo/shared/llm-router";
@@ -68,7 +69,36 @@ export interface CompileArgs {
    *  clock. Tests inject a fixed clock for deterministic
    *  frontmatter assertions. */
   readonly clock?: () => Date;
+  /**
+   * Optional post-commit review-dispatch callback (PR 17 / plan
+   * #77 extension 5). Fires AFTER the wikiWrite commit lands and
+   * AFTER page_citations are recorded — never before, and never
+   * inline with the wikiWrite call (atomicity per Q7 must remain:
+   * exactly one wikiWrite per compile run). The callback is
+   * invoked only when:
+   *   - a commit actually happened (no-op skip-write returns
+   *     null commitSha → no dispatch), AND
+   *   - the domain row's `review_role` is non-null (D4: routing
+   *     key lives on the domain, not the binding).
+   * The compiler treats `review_role` as opaque text — log,
+   * don't dereference. The callback owns delivery (e.g. enqueue
+   * an `ingestion.review.dispatch` BullMQ job).
+   */
+  readonly reviewDispatch?: ReviewDispatchHook;
 }
+
+/** Argument shape passed to `CompileArgs.reviewDispatch`. */
+export interface ReviewDispatchEvent {
+  readonly domainSlug: string;
+  readonly reviewRole: string;
+  readonly commitSha: string;
+  readonly pagePaths: readonly string[];
+  readonly sourceRef: string;
+}
+
+export type ReviewDispatchHook = (
+  event: ReviewDispatchEvent,
+) => Promise<void>;
 
 export interface CompileResult {
   /** The wikiWrite commit sha, or null when EVERY page was a
@@ -241,9 +271,59 @@ export async function compile(args: CompileArgs): Promise<CompileResult> {
     // will backfill missing citations.
   }
 
+  // Phase 5 — review-dispatch (PR 17 / plan #77 extension 5).
+  // Fires AFTER the wikiWrite + page_citations. Atomicity per
+  // Q7 is preserved: the wikiWrite happened in Phase 3 above
+  // exactly once, and the dispatch is a separate post-commit
+  // side effect that does NOT issue another wiki write.
+  if (commitSha !== null && args.reviewDispatch !== undefined) {
+    try {
+      const reviewRole = await fetchReviewRole(args.db, args.domainId);
+      if (reviewRole !== null) {
+        await args.reviewDispatch({
+          domainSlug: args.domainSlug,
+          reviewRole,
+          commitSha,
+          pagePaths: writtenPaths,
+          sourceRef: args.sourceRef,
+        });
+      }
+    } catch (err) {
+      args.wikiDeps.logger.error("compiler.review_dispatch.failed", {
+        domain_slug: args.domainSlug,
+        commit_sha: commitSha,
+        source_ref: args.sourceRef,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Soft-fail same as page_citations: the wiki commit
+      // landed, the dispatch can be retried via reconciliation
+      // or by re-running the cron.
+    }
+  }
+
   return {
     commitSha,
     pagePathsWritten: writtenPaths,
     worldviewImpact: landedImpact,
   };
+}
+
+interface ExecResult<R> {
+  readonly rows: R[];
+  readonly rowCount?: number;
+  readonly affectedRows?: number;
+}
+
+async function fetchReviewRole(
+  db: Db,
+  domainId: DomainId,
+): Promise<string | null> {
+  const result = (await db.execute(
+    sql`SELECT review_role FROM domains WHERE id = ${domainId}::uuid`,
+  )) as unknown as ExecResult<{ review_role: string | null }>;
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const role = row.review_role;
+  if (role === null || role === "") return null;
+  return role;
 }

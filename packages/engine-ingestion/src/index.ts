@@ -105,4 +105,37 @@ export {
   type RecordPageCitationsArgs,
   type MergedPageBody,
   type MergedPageBodyWire,
+  type ReviewDispatchEvent,
+  type ReviewDispatchHook,
 } from "./compiler/index.js";
+
+// Pipelines surface (PR 17, plan #77): the 5 v0.1 ingestion
+// pipelines. The composition root (PR 30 CLI) wires each one
+// to its BullMQ queue + scheduler.
+export {
+  buildIndexBody,
+  runIndexRebuilder,
+  DEFAULT_DEBUG_RETENTION_DAYS,
+  runCleanup,
+  REVIEW_DISPATCH_QUEUE_SLUG,
+  ReviewDispatchPayloadSchema,
+  runReviewDispatcher,
+  INLINE_CONTENT_CAP_BYTES,
+  SCANNER_CLASSIFY_QUEUE_SLUG,
+  runScanner,
+  runCompilationWorker,
+  type IndexRebuilderResult,
+  type RunIndexRebuilderArgs,
+  type CleanupResult,
+  type RunCleanupArgs,
+  type ReviewDispatchPayload,
+  type ReviewDispatchResult,
+  type RunReviewDispatcherArgs,
+  type RunScannerArgs,
+  type ScannerClassifyJob,
+  type ScannerEnqueue,
+  type ScannerResult,
+  type SourceAdapterRegistry,
+  type CompilationWorkerResult,
+  type RunCompilationWorkerArgs,
+} from "./pipelines/index.js";

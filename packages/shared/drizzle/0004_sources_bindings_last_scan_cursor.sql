@@ -1,0 +1,1 @@
+ALTER TABLE "sources_bindings" ADD COLUMN "last_scan_cursor" text;

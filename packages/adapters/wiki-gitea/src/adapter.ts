@@ -112,6 +112,18 @@ class GiteaWikiAdapterImpl implements GiteaWikiAdapter {
     return this.deps.client.inspectCommit(this.repoFor(domainSlug), sha);
   }
 
+  async listMarkdown(
+    domainSlug: DomainSlug,
+  ): Promise<readonly string[]> {
+    const all = await this.deps.client.listTreePaths(
+      this.repoFor(domainSlug),
+      this.deps.branch,
+    );
+    const md = all.filter((p) => p.endsWith(".md"));
+    md.sort();
+    return md;
+  }
+
   private repoFor(domainSlug: DomainSlug): GiteaRepoLocator {
     return {
       owner: this.deps.owner,

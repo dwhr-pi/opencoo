@@ -29,6 +29,13 @@
       "when": 1776983279172,
       "tag": "0003_llm_usage_debug_and_domain_id",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777097256839,
+      "tag": "0004_sources_bindings_last_scan_cursor",
+      "breakpoints": true
     }
   ]
 }

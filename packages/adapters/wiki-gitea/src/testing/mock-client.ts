@@ -168,6 +168,16 @@ export class MockGiteaClient implements GiteaClient {
     return recorded;
   }
 
+  async listTreePaths(
+    repo: GiteaRepoLocator,
+    branch: string,
+  ): Promise<readonly string[]> {
+    void branch; // mock has no branch concept, only one branch per repo
+    const state = this.repos.get(repoKey(repo));
+    if (state === undefined) return [];
+    return [...state.files.keys()];
+  }
+
   private stateOf(repo: GiteaRepoLocator): RepoState {
     const key = repoKey(repo);
     let state = this.repos.get(key);

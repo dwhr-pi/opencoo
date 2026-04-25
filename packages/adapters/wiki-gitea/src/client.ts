@@ -97,6 +97,12 @@ export interface GiteaClient {
   /** Optional commit-metadata reader, used by the contract suite's
    *  CommitInspector path (assertions 8/9/10). */
   inspectCommit(repo: GiteaRepoLocator, sha: string): Promise<CommitInspection>;
+  /** List every file path in the repo at the given branch. The
+   *  adapter filters to `*.md` and sorts; the client returns the
+   *  full tree because future use-cases (Lint, Cleanup) may need
+   *  other extensions. (PR 17 / plan #77, for the Index Rebuilder
+   *  pipeline.) */
+  listTreePaths(repo: GiteaRepoLocator, branch: string): Promise<readonly string[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -356,6 +362,47 @@ export class GiteaRestClient implements GiteaClient {
       throw new Error(`Gitea inspectCommit malformed response for ${sha}`);
     }
     return { message, authorName, authorEmail };
+  }
+
+  async listTreePaths(
+    repo: GiteaRepoLocator,
+    branch: string,
+  ): Promise<readonly string[]> {
+    // Gitea exposes `/api/v1/repos/{owner}/{name}/git/trees/{ref}`
+    // with `recursive=true` for a flat list of every blob path.
+    // The branch name is a valid `ref` for this endpoint.
+    const path = `/api/v1/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/git/trees/${encodeURIComponent(branch)}?recursive=true&per_page=1000`;
+    const response = await this.request("GET", path);
+    if (response.status === 404) {
+      // Empty repo (no commits yet) — return [] so the Index
+      // Rebuilder pipeline treats it as "no files to index".
+      return [];
+    }
+    if (!response.ok) {
+      throw new Error(
+        `Gitea listTreePaths ${repo.owner}/${repo.name}@${branch} → HTTP ${response.status}`,
+      );
+    }
+    const body: unknown = await response.json();
+    if (!isObject(body)) {
+      throw new Error(
+        `Gitea listTreePaths returned non-object for ${repo.owner}/${repo.name}@${branch}`,
+      );
+    }
+    const tree = (body as { tree?: unknown }).tree;
+    if (!Array.isArray(tree)) return [];
+    const out: string[] = [];
+    for (const entry of tree) {
+      if (
+        isObject(entry) &&
+        typeof entry.path === "string" &&
+        // Only blob entries — skip subdirectory marker rows.
+        entry.type === "blob"
+      ) {
+        out.push(entry.path);
+      }
+    }
+    return out;
   }
 
   private async request(

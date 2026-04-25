@@ -205,6 +205,25 @@ The compiler reuses `spotlight()` from the sibling `classifier/` subdir, so the 
 
 `page_citations` real columns (verified during planning, plan #72): `(id, domain_slug, page_path, source_binding_id, source_ref, compiled_by_run_id, prompt_version, created_at)`. The opaque `source_ref` text + binding FK uniquely attribute a page to the source that produced it; `prompt_version` (sourced from the loader) lets a stale-output bug be triaged by querying which prompt revision compiled which page.
 
+## Pipelines (PR 17, plan #77)
+
+`src/pipelines/` implements the five v0.1 ingestion pipelines architecture §9 names. Each is a pure function the composition root (PR 30 CLI) wires to its BullMQ queue + scheduler via `Queue.upsertJobScheduler` (bullmq 5.76.1):
+
+- **`runScanner`** (every 4h) — for each enabled binding, look up the `SourceAdapter` (new `@opencoo/shared/source-adapter` port), call `scan(cursor)` with the persisted `last_scan_cursor` (migration 0004), dedupe via `ingestion_intake` UNIQUE, enqueue `scanner.classify` jobs (1MiB inline payload cap), persist new cursor + `last_scanned_at`. At-least-once on enqueue failure: cursor stays unchanged so the next cron run retries; intake UNIQUE deduplicates the docs already enqueued.
+- **`runIndexRebuilder`** (every 6h) — `wikiAdapter.listMarkdown` (new port method) → `buildIndexBody` groups by top-level directory and emits a sorted index → `wikiWrite` with the new `[index-rebuild]` tag. Skip-write when the regenerated body equals the existing one.
+- **`runReviewDispatcher`** (event-driven) — consumes `ingestion.review.dispatch` jobs the Compiler emits via its `reviewDispatch` hook. Validates payload via Zod-strict, logs `review.dispatched` with the routing key. Treats `review_role` as opaque text (D4 / Q5) — log, don't dereference. v0.1 writes no row anywhere; PR 29+ Review Dashboard reads directly from the audit log.
+- **`runCleanup`** (weekly) — two-pass DELETE of `llm_usage_debug` rows older than the per-domain horizon (`domain.retention_days ?? DEFAULT_DEBUG_RETENTION_DAYS=7`). Pass 1: per-domain. Pass 2: orphan pass for rows whose `llm_usage` parent has no `domain_id`. **The load-bearing invariant suite** (`tests/pipelines/cleanup.test.ts`) snapshots row counts on every append-only table (`page_citations`, `redaction_events`, `erasure_log`, `miner_suppressions`, `agent_runs`) AND the wiki HEAD SHA before and after the run, then asserts equality. Cleanup never touches anything except `llm_usage_debug`.
+- **`runCompilationWorker`** — consumes `scanner.classify` jobs. Decode payload → `loadBindingMeta` → `classify` (Worker tier) → for each routed `(domain_slug, page_paths)`, `compile` (Thinker tier) atomically. Marks intake row classified on success. Multi-domain output → multiple `compile()` calls, each its own atomic wikiWrite per Q7. The Compiler's post-commit `reviewDispatch` hook fires from inside `compile()`, NOT here — atomicity per Q7 stays intact.
+
+The compiler grew an optional `reviewDispatch` callback (extension 5): fires AFTER the wikiWrite + page_citations, only when a commit landed AND `domain.review_role` is non-null. Soft-fail same shape as page_citations on dispatch error.
+
+## Port extensions (PR 17, plan #77)
+
+- **`@opencoo/shared/source-adapter`** — minimal v0.1 port (`{slug, scan({cursor, now?})}`). PR 23+ adds concrete adapters (Drive, Asana, Fireflies, n8n, gitea-wiki).
+- **`WikiAdapter.listMarkdown(domainSlug)`** — new method on the existing port. InMemory + Gitea both implement; the contract suite (`@opencoo/shared/adapter-contract-tests/wiki-adapter`) gained 2 new assertions covering empty domain → `[]` and *.md filtering + sort.
+- **`WikiWriteTagSchema += '[index-rebuild]'`** — single enum addition for Index Rebuilder commits.
+- **Migration 0004 (`sources_bindings.last_scan_cursor: text`, nullable)** — opaque pagination cursor the Scanner persists across runs.
+
 ## Pinned versions
 
 Pinned at branch start (2026-04-25):

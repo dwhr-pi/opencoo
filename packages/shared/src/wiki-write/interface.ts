@@ -15,6 +15,7 @@ export const WikiWriteTagSchema = z.enum([
   "[catalog-rename]",
   "[catalog-unarchive]",
   "[skill-supersede]",
+  "[index-rebuild]",
 ]);
 export type WikiWriteTag = z.infer<typeof WikiWriteTagSchema>;
 
@@ -152,4 +153,15 @@ export interface WikiAdapter {
     path: string,
   ): Promise<{ sha: string; content: string } | null>;
   writeAtomic(args: WriteAtomicArgs): Promise<WriteAtomicResult>;
+  /**
+   * List every `*.md` path in the domain's wiki, sorted
+   * alphabetically (deterministic so the Index Rebuilder
+   * pipeline's diffs are stable run-to-run). Returns `[]` for
+   * an empty domain. Non-`.md` files (JSON, YAML, anything else
+   * an adapter might end up storing) are filtered out by the
+   * adapter — the caller does not re-filter.
+   *
+   * Added PR 17 / plan #77 for the Index Rebuilder pipeline.
+   */
+  listMarkdown(domainSlug: DomainSlug): Promise<readonly string[]>;
 }

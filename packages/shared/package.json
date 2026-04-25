@@ -42,6 +42,10 @@
       "types": "./dist/cost-tracker/index.d.ts",
       "default": "./dist/cost-tracker/index.js"
     },
+    "./source-adapter": {
+      "types": "./dist/source-adapter/index.d.ts",
+      "default": "./dist/source-adapter/index.js"
+    },
     "./wiki-write": {
       "types": "./dist/wiki-write/index.d.ts",
       "default": "./dist/wiki-write/index.js"

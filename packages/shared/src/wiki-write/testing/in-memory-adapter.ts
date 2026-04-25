@@ -96,6 +96,17 @@ export class InMemoryWikiAdapter implements WikiAdapter {
     return { status: "ok", sha: newHead };
   }
 
+  async listMarkdown(domainSlug: DomainSlug): Promise<readonly string[]> {
+    const state = this.domains.get(domainSlug);
+    if (state === undefined) return [];
+    const out: string[] = [];
+    for (const path of state.pages.keys()) {
+      if (path.endsWith(".md")) out.push(path);
+    }
+    out.sort();
+    return out;
+  }
+
   /** @internal TEST ONLY — advance HEAD by a simulated external write. */
   inject(domainSlug: DomainSlug, path: string, content: string): void {
     const state = this.stateOf(domainSlug);
