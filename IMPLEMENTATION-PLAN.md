@@ -8,9 +8,9 @@
 
 ---
 
-## Progress snapshot (as of 2026-04-24)
+## Progress snapshot (as of 2026-04-25)
 
-**Phase-a: 10 / 32 PRs merged** (plus the §0 pre-coding gate). `main` is at commit `d0e957b`; all 583 workspace tests green + 1 skipped (gated Docling contract). No Docker installed yet — pglite + mock clients for all use-case tier tests.
+**Phase-a: 22 / 32 PRs merged** (plus the §0 pre-coding gate). `main` is at commit `ffa4161`; full repo 1307 passed | 2 skipped. Docker installed via colima for the wiki-gitea contract suite.
 
 | # | IMPL PR | GitHub PR | Merge commit | Title | THREAT-MODEL coverage |
 |---|---|---|---|---|---|
@@ -25,17 +25,35 @@
 | 9 | PR 08 | #9 | `33fbcf0` | wiki-write (sole sanctioned write path) + `WikiAdapter` port | invariant 2, §3.5 |
 | 10 | PR 09 | #10 | `184d0f5` | `gitea-wiki-mcp-server` REPOS config + `worldview://` resource + PAT-scope enforcement | §3.14 full |
 | 11 | PR 10 | #11 | `d0e957b` | converter-docling + `DocumentConverterAdapter` contract suite (first adapter package) | §3.2 full |
+| 12 | PR 11 | #13 | `47f7e52` | `wiki-gitea` Gitea-backed WikiAdapter + shared 13-assertion contract suite | §3.5 full, path-traversal defense |
+| 13 | PR 12 | #14 | `fff6a19` | `guard-redaction-regex` GuardAdapter port + 14-pattern v1 catalog | §3.7 redaction shape |
+| 14 | PR 13 | #15 | `e4036fe` | `engine-ingestion` scaffold + Fastify boot + BullMQ wiring + readiness probes | §3.0 process-shape |
+| 15 | PR 14 | #16 | `03711c1` | intake + dedupe + webhook receiver + sticky `signature_ok` OR-stickify | §3.1 webhook-mode |
+| 16 | PR 15 | #17 | `2b14f97` | classifier + XML spotlighting + injection corpus (sentinel→amp→xmlbody order) | §3.4 full |
+| 17 | PR 16 | #18 | `8c1c850` | compiler — atomic per-run `wikiWrite` + `page_citations` + `Worldview-Impact` trailer | invariant 2 |
+| 18 | PR 17 | #19 | `11aecf7` | 5 ingestion pipelines + `WikiAdapter.listMarkdown` + `SourceAdapter` port | §3.0 pipeline-shape |
+| 19 | PR 18 | #20 | `4039438` | `engine-self-operating` scaffold + UI host + scaffold promotion to shared | §3.8 process-shape |
+| 20 | PR 19 | #21 | `d8f3bf9` | agent harness + spotlight promotion + invariant-8 carve-out (agent_runs terminalisation) | §3.5 memory poisoning, invariant 8 |
+| 21 | PR 20A | #22 | `4fc1150` | Heartbeat + Lint reader agents + OutputChannel/MCP ports + writer-shape ledger probe | §3.5 reader-only |
+| 22 | PR 20B | #23 | `68aa79e` | Chat agent + automation_drift detector + `callerPat` propagation + scope-domain SQL filter | §3.5 cross-tenant SQL leak fix |
+| 23 | PR 21 | #24 | `b522215` | Surfacer + Builder + 3 gates (gate 3 type-level: `AutomationAdapter.deployWorkflow` only) | invariant 7 full (Gate 3 type + grep + schema + runtime) |
+| 24 | PR 22 | #25 | `ffa4161` | Worldview compilation pipeline + sovereignty spy + 24KB cap retry + debounce policy | §3.4 worldview, §3.5 wikiWrite, §3.7 sovereignty |
 
 **What's complete structurally:**
-- §1.2.1 Shared foundations — **COMPLETE** (7 of 7 PRs). Foundations checkpoint passed 2026-04-24 — all tests in-memory, zero Docker, zero network.
+- §1.2.1 Shared foundations — **COMPLETE** (7 of 7 PRs).
 - §1.2.2 wiki-write + MCP — **COMPLETE** (2 of 2 PRs).
-- §1.2.3 Document conversion + guards — **1 of 3 PRs** (PR 10 converter-docling done; PRs 11 wiki-gitea + 12 guard-redaction-regex pending).
+- §1.2.3 Document conversion + guards — **COMPLETE** (3 of 3 PRs: PRs 10 / 11 / 12).
+- §1.2.4 Engine-ingestion — **COMPLETE** (5 of 5 PRs: PRs 13–17).
+- §1.2.5 Engine-self-operating + agents + worldview — **COMPLETE** (5 of 5 PRs: PRs 18, 19, 20, 21, 22).
+- §1.2.6 SourceAdapters + `catalog-workflows` — **0 of 5 PRs** (PRs 23–27 pending).
+- §1.2.7 Review Dashboard + Management UI + CLI — **0 of 3 PRs** (PRs 28–30 pending).
+- §1.2.8 Prompt-injection corpus + phase-a e2e — **0 of 2 PRs** (PRs 31–32 pending).
 
-**Team workflow in use:** per-PR team cycle via the `opencoo-phase-a` agent team — planner drafts plan, orchestrator approves, implementer executes TDD, simplifier refines, reviewer gates (with explicit `/security-review` on THREAT-MODEL-touching PRs). Squash-merge to main after CI green. Each PR's closed GitHub branch preserves the full TDD-ordered commit history for bisect.
+**Team workflow in use:** per-PR team cycle via the `opencoo-phase-a` agent team — planner drafts plan, orchestrator approves, implementer executes TDD, simplifier refines, reviewer gates (with explicit `/security-review` on THREAT-MODEL-touching PRs). GitHub Copilot auto-review triaged before every merge. Squash-merge to main after CI green. Each PR's closed GitHub branch preserves the full TDD-ordered commit history for bisect.
 
-**Residual advisories filed across PRs 7-11** (all non-blocking, v0.2 hardening or future-PR reactivity): listed in each PR's body on GitHub. Tracked for the phase-a exit-gate `CHANGES-v0.1.md` draft.
+**Residual advisories filed across PRs 7-22** (all non-blocking, v0.2 hardening or future-PR reactivity): listed in each PR's body on GitHub. Tracked for the phase-a exit-gate `CHANGES-v0.1.md` draft.
 
-**Next PR** (paused): PR 11 `packages/adapters/wiki-gitea` — first PR that definitely needs Docker (Gitea service-containers for contract-tier tests). Colima install lands with it per the orchestrator plan (`~/.claude/plans/we-are-starting-implementation-radiant-diffie.md`).
+**Next PR**: PR 23 `packages/adapters/source-drive` — reference SourceAdapter + the shared SourceAdapter contract test suite. First of five §1.2.6 source adapters.
 
 ---
 
