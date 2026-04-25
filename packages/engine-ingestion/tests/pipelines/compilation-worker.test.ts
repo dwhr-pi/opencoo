@@ -15,6 +15,7 @@ import { InMemoryWikiAdapter } from "@opencoo/shared/wiki-write/testing";
 import { LlmRouter, type LlmProvider } from "@opencoo/shared/llm-router";
 import { MockLlmClient } from "@opencoo/shared/llm-router/testing";
 import { ConsoleLogger } from "@opencoo/shared/logger";
+import type { GuardAdapter } from "@opencoo/shared/adapter-contract-tests/guard";
 
 import { runCompilationWorker } from "../../src/pipelines/compilation-worker.js";
 import type { ScannerClassifyJob } from "../../src/pipelines/scanner.js";
@@ -31,6 +32,23 @@ const COMPILER_AUTHOR = {
   name: "opencoo-compiler",
   email: "compiler@opencoo.local",
 } as const;
+
+/**
+ * Pass-through guard fixture — emits no events, returns the
+ * input verbatim. Used by document-branch tests that don't care
+ * about the guard pass.
+ */
+function passThroughGuard(): GuardAdapter {
+  return {
+    slug: "guard-passthrough-test",
+    role: "redaction",
+    categories: [],
+    patternVersion: "v1-test",
+    async classify(input) {
+      return { events: [], transformedText: input.text };
+    },
+  };
+}
 
 async function makeFixture(provider: LlmProvider): Promise<{
   router: LlmRouter;
@@ -132,6 +150,7 @@ describe("runCompilationWorker — happy path", () => {
       router: f.router,
       wikiDeps: f.wikiDeps,
       author: COMPILER_AUTHOR,
+      guardAdapter: passThroughGuard(),
       job: buildJob({ bindingId: f.bindingId, intakeId: f.intakeId }),
     });
     expect(result.classifiedDomains).toBe(1);
@@ -161,6 +180,7 @@ describe("runCompilationWorker — binding lookup", () => {
         router: f.router,
         wikiDeps: f.wikiDeps,
         author: COMPILER_AUTHOR,
+        guardAdapter: passThroughGuard(),
         job: buildJob({ bindingId: f.bindingId, intakeId: f.intakeId }),
       }),
     ).rejects.toThrow();

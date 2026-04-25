@@ -274,8 +274,19 @@ function runPollingAssertions(
     }
   });
 
-  // 5. revision change surfaces as new SourceChangedDocument
-  it("a new sourceRevision on an existing sourceDocId surfaces as a new SourceChangedDocument", async () => {
+  // 5. revision change surfaces as new SourceChangedDocument.
+  //
+  // Note: this assertion checks BEHAVIOR ("the bumped doc
+  // surfaces with a revision distinct from the prior scan"),
+  // not a specific revision string. Adapters that derive
+  // sourceRevision from content bytes (e.g. source-n8n in PR
+  // 26 — `sha256(canonicalBytes).slice(0,16)`) cannot produce
+  // a caller-chosen revision label; pass-through adapters like
+  // source-drive trivially see `'rev-b'` because the simulator
+  // sets it directly. The shape we lock is: doc-1 is in the
+  // second-scan output AND its revision differs from the first
+  // scan's revision for the same doc.
+  it("a new revision on an existing sourceDocId surfaces as a new SourceChangedDocument with a different revision", async () => {
     const handle = await options.makeAdapter();
     try {
       handle.seed([
@@ -286,14 +297,23 @@ function runPollingAssertions(
         },
       ]);
       const first = await handle.adapter.scan({ cursor: null });
+      const firstRevision = first.documents.find(
+        (d) => d.sourceDocId === "doc-1",
+      )?.sourceRevision;
+      expect(firstRevision).toBeDefined();
       handle.simulate.bumpRevision("doc-1", "rev-b", Buffer.from("v2"));
       const second = await handle.adapter.scan({
         cursor: first.nextCursor,
       });
-      const ids = second.documents.map(
-        (d) => `${d.sourceDocId}@${d.sourceRevision}`,
+      const bumped = second.documents.find(
+        (d) => d.sourceDocId === "doc-1",
       );
-      expect(ids).toContain("doc-1@rev-b");
+      expect(bumped, "doc-1 should re-surface after bumpRevision").toBeDefined();
+      // Strict — `expect(bumped).toBeDefined()` plus optional
+      // chaining could let an unexpectedly-undefined revision
+      // pass; this asserts the field is present AND distinct.
+      expect(bumped?.sourceRevision).toBeDefined();
+      expect(bumped!.sourceRevision).not.toBe(firstRevision);
     } finally {
       await handle.cleanup();
     }

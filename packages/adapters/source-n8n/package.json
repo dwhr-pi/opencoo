@@ -1,0 +1,36 @@
+{
+  "name": "@opencoo/source-n8n",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SourceAdapter for n8n — polls the n8n REST API for tagged workflows and emits each as a catalog-workflow document. Lossless round-trip: workflow JSON → fenced-block in markdown → re-parsed JSON deep-equals the original (modulo top-level updatedAt).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/mock-n8n-listing.d.ts",
+      "default": "./dist/testing/mock-n8n-listing.js"
+    }
+  },
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:contract": "vitest run -t 'sourceAdapterContract'"
+  },
+  "dependencies": {
+    "@opencoo/shared": "workspace:*",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "~5.7.2",
+    "vitest": "^3.0.5"
+  }
+}

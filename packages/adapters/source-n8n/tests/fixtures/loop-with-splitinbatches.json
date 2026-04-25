@@ -1,0 +1,67 @@
+{
+  "id": "wf-303",
+  "name": "Loop With Split In Batches",
+  "active": false,
+  "tags": ["catalog", "looping"],
+  "nodes": [
+    {
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "position": [100, 300],
+      "parameters": {}
+    },
+    {
+      "name": "Items",
+      "type": "n8n-nodes-base.set",
+      "position": [300, 300],
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "list", "value": "[\"a\",\"b\",\"c\",\"d\",\"e\"]" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [500, 300],
+      "parameters": { "batchSize": 2, "options": {} }
+    },
+    {
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [700, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://example.test/items",
+        "options": {}
+      }
+    },
+    {
+      "name": "Done",
+      "type": "n8n-nodes-base.noOp",
+      "position": [900, 300],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{ "node": "Items", "type": "main", "index": 0 }]]
+    },
+    "Items": {
+      "main": [[{ "node": "Split In Batches", "type": "main", "index": 0 }]]
+    },
+    "Split In Batches": {
+      "main": [
+        [{ "node": "Done", "type": "main", "index": 0 }],
+        [{ "node": "HTTP Request", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP Request": {
+      "main": [[{ "node": "Split In Batches", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1", "saveDataSuccessExecution": "none" },
+  "updatedAt": "2026-04-23T16:45:00.000Z"
+}

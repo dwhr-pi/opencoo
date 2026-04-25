@@ -28,6 +28,19 @@ export {
   type RecordPageCitationsArgs,
 } from "./page-citations.js";
 export {
+  CATALOG_WORKFLOW_PROMPT_VERSION,
+  buildCatalogWorkflowBody,
+  catalogPagePathForWorkflow,
+  compileCatalogWorkflow,
+  parseCatalogWorkflowBody,
+  slugifyName,
+  type BuildCatalogWorkflowBodyArgs,
+  type BuildCatalogWorkflowBodyResult,
+  type CatalogWorkflowInput,
+  type CompileCatalogWorkflowArgs,
+  type CompileCatalogWorkflowResult,
+} from "./catalog-workflow.js";
+export {
   MERGED_PAGE_BODY_SCHEMA,
   type MergedPageBody,
   type MergedPageBodyWire,

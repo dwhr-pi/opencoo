@@ -1,0 +1,49 @@
+{
+  "id": "wf-202",
+  "name": "Branched With IF",
+  "active": false,
+  "tags": ["catalog", "branching"],
+  "nodes": [
+    {
+      "name": "Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "position": [100, 300],
+      "parameters": {}
+    },
+    {
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "position": [400, 300],
+      "parameters": {
+        "conditions": {
+          "string": [{ "value1": "={{$json[\"flag\"]}}", "operation": "equal", "value2": "yes" }]
+        }
+      }
+    },
+    {
+      "name": "Yes Branch",
+      "type": "n8n-nodes-base.set",
+      "position": [700, 200],
+      "parameters": { "values": { "string": [{ "name": "branch", "value": "yes" }] } }
+    },
+    {
+      "name": "No Branch",
+      "type": "n8n-nodes-base.set",
+      "position": [700, 400],
+      "parameters": { "values": { "string": [{ "name": "branch", "value": "no" }] } }
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [[{ "node": "If", "type": "main", "index": 0 }]]
+    },
+    "If": {
+      "main": [
+        [{ "node": "Yes Branch", "type": "main", "index": 0 }],
+        [{ "node": "No Branch", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "updatedAt": "2026-04-24T08:30:00.000Z"
+}

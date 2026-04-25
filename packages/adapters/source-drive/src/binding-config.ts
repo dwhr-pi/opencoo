@@ -16,6 +16,8 @@
  */
 import { z } from "zod";
 
+import { CONTENT_KINDS } from "@opencoo/shared/db";
+
 /**
  * Default mime-type whitelist for v0.1 — derived from the
  * design-partner PoC which currently handles google_doc + pdf
@@ -42,14 +44,13 @@ export const driveBindingConfigSchema = z
       .min(1)
       .default([...DRIVE_DEFAULT_MIME_TYPES]),
     /**
-     * Content kind for downstream routing (Q1 override).
-     * `'document'` is the v0.1 default and the only branch
-     * the v0.1 compiler implements. PR 26 adds the
-     * `'n8n-workflow'` and `'skill-bundle'` paths.
+     * Content kind for downstream routing (Q1 override). Imports
+     * the enum from `@opencoo/shared/db` (PR 26 / plan #122) so
+     * source-drive and source-n8n share a single source of truth.
+     * `'document'` is the v0.1 default; PR 26 adds the
+     * `'n8n-workflow'` compile path.
      */
-    contentKind: z
-      .enum(["document", "n8n-workflow", "skill-bundle"])
-      .default("document"),
+    contentKind: z.enum(CONTENT_KINDS).default("document"),
     // Note: review_mode lives on the `sources_bindings.review_mode`
     // column (shared schema, `reviewMode` enum: auto | approve |
     // review) — NOT in this JSON config blob. The engine reads it
