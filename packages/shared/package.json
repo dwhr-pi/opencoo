@@ -65,6 +65,10 @@
     "./adapter-contract-tests/wiki-adapter": {
       "types": "./dist/adapter-contract-tests/wiki-adapter.d.ts",
       "default": "./dist/adapter-contract-tests/wiki-adapter.js"
+    },
+    "./webhook-verifier": {
+      "types": "./dist/webhook-verifier/index.d.ts",
+      "default": "./dist/webhook-verifier/index.js"
     }
   },
   "files": [

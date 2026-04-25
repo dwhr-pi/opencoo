@@ -98,6 +98,9 @@ importers:
       bullmq:
         specifier: 5.76.1
         version: 5.76.1
+      drizzle-orm:
+        specifier: 0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.4.4)(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(pg@8.20.0)
       fastify:
         specifier: 5.8.5
         version: 5.8.5
@@ -111,6 +114,9 @@ importers:
         specifier: 4.3.6
         version: 4.3.6
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.4.4
+        version: 0.4.4
       '@types/node':
         specifier: ^22.10.5
         version: 22.19.17

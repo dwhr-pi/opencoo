@@ -38,3 +38,30 @@ export type {
   PipelineDefinition,
   PipelineContext,
 } from "./types.js";
+
+// Intake surface (PR 14): receiver + reusable record helpers + DI types.
+export {
+  AdapterNotFoundError,
+  IntakeValidationError,
+  WebhookSignatureError,
+} from "./intake/errors.js";
+export {
+  InMemoryAdapterRegistry,
+  type SourceAdapterStub,
+} from "./intake/adapter-registry.js";
+export {
+  recordIntake,
+  type RecordIntakeArgs,
+  type RecordIntakeResult,
+} from "./intake/record-intake.js";
+export {
+  recordWebhook,
+  type RecordWebhookArgs,
+  type RecordWebhookResult,
+} from "./intake/record-webhook.js";
+export {
+  buildWebhookReceiver,
+  WEBHOOK_BODY_LIMIT_BYTES,
+  type WebhookReceiverOptions,
+  type WebhookQueueLike,
+} from "./intake/webhook-receiver.js";

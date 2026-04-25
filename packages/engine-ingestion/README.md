@@ -104,6 +104,63 @@ interface PipelineContext {
 
 The DLQ convention (architecture.md §6.5) suffixes `.dead`: `ingestion.scanner.dead`. The factory rejects slugs containing `.` so a typo can't accidentally produce a queue that collides with the DLQ namespace.
 
+The intake DLQ (PR 14) uses a separate name shape: `ingestion.dlq.intake`. It's constructed directly via `new Queue(...)` in the runtime composition root (PR 30 CLI), bypassing `buildIngestionQueue` since the prefix has multiple dots.
+
+## Intake module (PR 14)
+
+The intake module turns an inbound webhook delivery (or a Scanner-discovered source change in PR 15+) into a row in `webhook_events` / `ingestion_intake` and a job on the Scanner BullMQ queue. It owns:
+
+- **`recordIntake(args)`** — INSERT-or-skip into `ingestion_intake`, idempotent per `(binding_id, source_doc_id, source_revision)`. Used by both the webhook receiver below and the Scanner pipeline (PR 15+).
+- **`recordWebhook(args)`** — INSERT-or-bump into `webhook_events`. Per Q12 of the approved plan, a duplicate `(provider, event_id)` UPDATEs `delivery_count = delivery_count + 1` rather than creating a new row. The `webhookEvents` table is intentionally NOT in the `no-update-append-only` ESLint rule's allowlist (only the 6 audit-trail tables are).
+- **`buildWebhookReceiver(deps)`** — a Fastify plugin that mounts a single route, `POST /webhooks/:bindingId`, with a 5MB body cap.
+- **`InMemoryAdapterRegistry`** — engine-ingestion looks up the source adapter for an inbound binding by `adapter_slug`. v0.1 stub holds just `{slug}`; PR 23+ widens to the full SourceAdapter contract.
+
+### Webhook receiver flow
+
+```
+POST /webhooks/:bindingId
+  → resolve binding by id            (404 if unknown, no DB writes)
+  → require adapter for binding.adapter_slug
+                                     (500 + DLQ if not registered)
+  → credentialStore.read(binding.credentials_id)
+                                     (audit log fires; 500 + DLQ if missing)
+  → webhookVerifier.verify({body, secret, signature})
+  → recordWebhook(...)                (Q12 dedupe)
+  → on signature_ok + fresh insert: scannerQueue.add(...)
+  → on signature mismatch:           401 + dlqQueue.add(...)
+  → on duplicate event-id:           200 with delivery_count:N — NO scanner enqueue
+```
+
+The receiver captures the **raw request body** via Fastify's `addContentTypeParser({parseAs: 'buffer'})` so HMAC verification operates on the exact bytes the sender hashed (JSON parsing happens downstream). Required headers:
+
+- `X-Signature` — `sha256=<hex>` (Gitea/GitHub style) or raw 64-char hex.
+- `X-Event-Id` — provider's idempotency key (optional). Without it, every delivery becomes a new row.
+- `X-Provider` — short slug for the upstream provider (`gitea`, `github`, `drive`, …). Defaults to `binding.adapter_slug`.
+
+`payload` is stored as `null` by default for privacy (Q13). PR 23+ adapters opt in to retaining the payload by setting an explicit retention policy on the binding.
+
+### Wiring
+
+```ts
+import {
+  buildWebhookReceiver,
+  InMemoryAdapterRegistry,
+} from "@opencoo/engine-ingestion";
+import { HmacSha256Verifier } from "@opencoo/shared/webhook-verifier";
+
+const adapterRegistry = new InMemoryAdapterRegistry();
+adapterRegistry.register({ slug: "drive" });
+
+const app = buildWebhookReceiver({
+  db,                     // drizzle(pg.Pool, { schema })
+  credentialStore,        // DrizzleCredentialStore in prod
+  adapterRegistry,
+  verifier: new HmacSha256Verifier(),
+  scannerQueue,           // BullMQ Queue: ingestion.scanner
+  dlqQueue,               // BullMQ Queue: ingestion.dlq.intake
+});
+```
+
 ## Pinned versions
 
 Pinned at branch start (2026-04-25):
@@ -128,4 +185,4 @@ Pinned at branch start (2026-04-25):
 pnpm --filter @opencoo/engine-ingestion test
 ```
 
-Six modules, six test files, 43 assertions (config: 13, types: 5, registry: 6, probes-postgres: 5, probes-redis: 4, queue: 4, server: 6). All hermetic — `vi.fn` mocks for Postgres, `ioredis-mock` for Redis, no external services required.
+Eleven test files, 79 assertions across two tiers: scaffolding (config 13, types 5, registry 6, probes-postgres 5, probes-redis 4, queue 4, server 8, start 5) and intake (adapter-registry 8, record-intake 5, record-webhook 8, webhook-receiver 8). All hermetic — `vi.fn` mocks for the postgres probe, `ioredis-mock` for Redis, `@electric-sql/pglite` (in-process Postgres, real semantics) for the DB-write tests, no external services required.
