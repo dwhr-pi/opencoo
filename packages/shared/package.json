@@ -70,6 +70,10 @@
       "types": "./dist/adapter-contract-tests/wiki-adapter.d.ts",
       "default": "./dist/adapter-contract-tests/wiki-adapter.js"
     },
+    "./adapter-contract-tests/source-adapter": {
+      "types": "./dist/adapter-contract-tests/source-adapter.d.ts",
+      "default": "./dist/adapter-contract-tests/source-adapter.js"
+    },
     "./webhook-verifier": {
       "types": "./dist/webhook-verifier/index.d.ts",
       "default": "./dist/webhook-verifier/index.js"

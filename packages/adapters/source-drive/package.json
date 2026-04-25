@@ -1,0 +1,36 @@
+{
+  "name": "@opencoo/source-drive",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reference SourceAdapter implementation for Google Drive (polling). Implements `SourceAdapter` from @opencoo/shared.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/mock-drive.d.ts",
+      "default": "./dist/testing/mock-drive.js"
+    }
+  },
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:contract": "vitest run -t 'sourceAdapterContract'"
+  },
+  "dependencies": {
+    "@opencoo/shared": "workspace:*",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "~5.7.2",
+    "vitest": "^3.0.5"
+  }
+}
