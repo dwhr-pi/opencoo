@@ -10,7 +10,7 @@
 
 ## Progress snapshot (as of 2026-04-25)
 
-**Phase-a: 28 / 32 PRs merged** (plus the §0 pre-coding gate). `main` is at commit `3aa9b56`; full repo 1549 passed | 2 skipped. Docker installed via colima for the wiki-gitea contract suite.
+**Phase-a: 29 / 32 PRs merged** (plus the §0 pre-coding gate). `main` is at commit `044f261`; full repo 1561 passed | 2 skipped. Docker installed via colima for the wiki-gitea contract suite.
 
 | # | IMPL PR | GitHub PR | Merge commit | Title | THREAT-MODEL coverage |
 |---|---|---|---|---|---|
@@ -44,6 +44,7 @@
 | 28 | PR 26 | #29 | `8c09365` | `source-n8n` REST scanner + `catalog-workflow` Compiler template + guard wiring + shared `CONTENT_KINDS` const + lossless round-trip across 3 fixture shapes | §3.4 fenced-block parser, §3.6 invariant 11, §3.7 unconditional guard wiring |
 | 29 | PR 27 | #30 | `353426d` | `source-fireflies` webhook SourceAdapter (HMAC + replay-stable eventId + non-empty title + collision guard + original-body contentBytes + allowlist filter) | §3.1 webhook-mode, §3.6 invariant 11, §3.7 review_mode default `'approve'` |
 | 30 | PR 28 | #31 | `3aa9b56` | Review Dashboard server-side admin-API plugin (auth + CSRF + audit-log + sovereignty-diff token primitives + state-machine guards) | §2 invariant 8 (admin_audit_log append-only), §3.13 admin authz |
+| 31 | PR 29 | #32 | `044f261` | Management UI (Vite+React 19 SPA, 4 admin tabs, 5 design-system components + Glyph trio) + LLM-policy editor + 4 new admin endpoints (`domains`, `domains-llm-policy` preview/apply with `confirmDiff: true`, `prompts`, `logout`) + version-manifest compile-time guard | §3.13 admin authz, §3.0 process-shape, sovereignty-diff editor with replay protection |
 
 **What's complete structurally:**
 - §1.2.1 Shared foundations — **COMPLETE** (7 of 7 PRs).
@@ -52,14 +53,14 @@
 - §1.2.4 Engine-ingestion — **COMPLETE** (5 of 5 PRs: PRs 13–17).
 - §1.2.5 Engine-self-operating + agents + worldview — **COMPLETE** (5 of 5 PRs: PRs 18, 19, 20, 21, 22).
 - §1.2.6 SourceAdapters + `catalog-workflows` — **COMPLETE** (5 of 5 PRs: PRs 23 / 24 / 25 / 26 / 27).
-- §1.2.7 Review Dashboard + Management UI + CLI — **1 of 3 PRs** (PR 28 done; PRs 29–30 pending).
+- §1.2.7 Review Dashboard + Management UI + CLI — **2 of 3 PRs** (PRs 28 / 29 done; PR 30 pending).
 - §1.2.8 Prompt-injection corpus + phase-a e2e — **0 of 2 PRs** (PRs 31–32 pending).
 
 **Team workflow in use:** per-PR team cycle via the `opencoo-phase-a` agent team — planner drafts plan, orchestrator approves, implementer executes TDD, simplifier refines, reviewer gates (with explicit `/security-review` on THREAT-MODEL-touching PRs). GitHub Copilot auto-review triaged before every merge. Squash-merge to main after CI green. Each PR's closed GitHub branch preserves the full TDD-ordered commit history for bisect.
 
-**Residual advisories filed across PRs 7-28** (all non-blocking, v0.2 hardening or future-PR reactivity): listed in each PR's body on GitHub. Tracked for the phase-a exit-gate `CHANGES-v0.1.md` draft.
+**Residual advisories filed across PRs 7-29** (all non-blocking, v0.2 hardening or future-PR reactivity): listed in each PR's body on GitHub. Tracked for the phase-a exit-gate `CHANGES-v0.1.md` draft.
 
-**Next PR**: PR 29 `packages/ui` — Management UI (Playwright-tier e2e). Domains / sources / LLM policy / prompts tabs. Credential-schema form rendering respects `x-credential-field: { secret: true }`; prompt-override diff banner on new defaults. `next-intl` (or equivalent) i18n scaffolding wired; `en.json` populated, `pl.json` placeholder (per §17 Resolved). Reuses `design_system/ui_kits/management-console/` as the starting shape per orchestrator plan.
+**Next PR**: PR 30 `packages/cli` — `opencoo migrate / setup / doctor / source test / source forget / recompile` + the production composition root that wires PR 28 admin-API plugin + PR 29 UI build + real fetch-based GiteaClient + env reads (`ADMIN_TEAM_SLUG`, `SESSION_HMAC_KEY`, `GITEA_BASE_URL`, `LLM_DEBUG_LOG`, `UI_DIST_PATH`). Final §1.2.7 PR before §1.2.8 (injection corpus + e2e).
 
 ---
 
