@@ -112,7 +112,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "fixtures:regen": "tsx scripts/regen-injection-fixtures.ts",
+    "fixtures:check": "tsx scripts/regen-injection-fixtures.ts --check"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "~3.0.71",
@@ -134,6 +136,7 @@
     "@types/pg": "8.20.0",
     "drizzle-kit": "0.31.10",
     "ioredis-mock": "8.13.1",
+    "tsx": "^4.21.0",
     "typescript": "~5.7.2",
     "vitest": "^3.0.5"
   }

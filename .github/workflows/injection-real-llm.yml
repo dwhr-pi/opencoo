@@ -1,0 +1,68 @@
+name: prompt-injection-corpus (real-LLM tier)
+
+# Manual-trigger only. Default-tier deterministic-stub coverage is
+# the phase-a ship-blocker (in `ci.yml`); this workflow is the
+# optional supplement that calls a real LLM through the existing
+# engine-ingestion classifier injection driver. Per planner #145
+# Q3, real-LLM cadence is operator-on-demand for v0.1, not on
+# every PR — calling OpenRouter on every push would burn the $100
+# budget cap inside a week.
+#
+# Operator pre-flight:
+#   - Have OPENROUTER_API_KEY in repository secrets.
+#   - Confirm the model in `RUN_REAL_LLM_MODEL` is within the
+#     budget cap (default: moonshotai/kimi-k2.6 per memory).
+#
+# The job intentionally has NO `pull_request` or `push` trigger.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "OpenRouter model id (defaults to moonshotai/kimi-k2.6)"
+        required: false
+        default: "moonshotai/kimi-k2.6"
+
+jobs:
+  real-llm:
+    name: real-LLM injection corpus (manual)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUN_REAL_LLM: "1"
+      RUN_REAL_LLM_MODEL: ${{ inputs.model }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Refuse if no API key
+        run: |
+          if [ -z "${OPENROUTER_API_KEY}" ]; then
+            echo "::error::OPENROUTER_API_KEY secret is empty; refusing to call OpenRouter without authentication. Set the repo secret first."
+            exit 1
+          fi
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @opencoo/eslint-plugin
+        run: pnpm --filter @opencoo/eslint-plugin build
+
+      - name: "Run engine-ingestion classifier injection corpus (real LLM)"
+        # The real-LLM tier runs against the existing classifier
+        # corpus driver (PR 15) — that's where the LlmRouter +
+        # OpenRouter provider integration is wired today. The
+        # shared per-prompt corpus added by PR 31 is
+        # deterministic-stub only; expanding it to real-LLM is a
+        # follow-up.
+        run: pnpm --filter @opencoo/engine-ingestion test -- --run tests/classifier/injection.test.ts

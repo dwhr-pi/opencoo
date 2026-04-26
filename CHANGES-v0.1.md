@@ -38,6 +38,23 @@ is stable in at least one partner deployment. Phase definitions live in
   `packages/gitea-wiki-mcp-server/package-lock.json` removed in favour of the
   workspace lockfile.
 
+- **Prompt-injection corpus (`IMPLEMENTATION-PLAN.md` §1.2.8 PR 31, phase-a
+  ship-blocker).** Per-prompt fixture matrix at
+  `packages/shared/src/prompts/__fixtures__/injection/{locale}/{prompt}/{category}.json`
+  — 86 generated fixtures spanning the 9 v0.1 prompts × 2 locales × 6 attack
+  categories from `THREAT-MODEL.md` §4.2 (direct-injection,
+  indirect-via-quoted-content, cross-domain-write, path-traversal,
+  unicode-homoglyph, data-exfiltration), minus 11 documented inapplicable cells
+  whose `_skips.ts` rationale is rendered as the test name. The deterministic
+  tier (CI default) verifies prompt-version drift, single-envelope structure,
+  spotlight escape efficacy, directive-leak guard, refusal-language presence,
+  and a per-category attack-shape assertion — no LLM provider is contacted.
+  `pnpm fixtures:regen` rebuilds the matrix byte-deterministically;
+  `pnpm fixtures:check` is the CI drift guard. Real-LLM tier moved to a
+  separate manual workflow (`.github/workflows/injection-real-llm.yml`,
+  `RUN_REAL_LLM=1` + `OPENROUTER_API_KEY` secret); v0.1 default cadence is
+  operator-on-demand to keep the OpenRouter spend cap intact.
+
 ### Deferred
 
 - `eslint-plugin-import-x/no-cycle` is enabled against `packages/**` but relies

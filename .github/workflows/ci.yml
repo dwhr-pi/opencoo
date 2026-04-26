@@ -76,3 +76,47 @@ jobs:
             fi
           done
           echo "All five boundary rules fired on the negative fixtures."
+
+  prompt-injection-corpus:
+    # Phase-a ship-blocker per IMPLEMENTATION-PLAN.md §1.2.8 row 31
+    # and THREAT-MODEL.md §4.2. Runs in deterministic-stub mode by
+    # default — no LLM provider is contacted. The optional real-LLM
+    # tier lives in `injection-real-llm.yml` (manual workflow_dispatch).
+    name: prompt-injection-corpus (deterministic tier)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @opencoo/eslint-plugin
+        run: pnpm --filter @opencoo/eslint-plugin build
+
+      - name: "Fixture-regen drift guard"
+        # If a contributor edited a fixture by hand without
+        # updating the generator template, this catches it before
+        # the suite runs and the failing test surfaces opaquely.
+        run: pnpm fixtures:check
+
+      - name: Build @opencoo/shared
+        # The engine-ingestion classifier injection test imports
+        # `@opencoo/shared/llm-router` via the package's subpath
+        # exports (which resolve to `dist/`). Vitest doesn't run
+        # tsc transparently, so we build shared explicitly before
+        # the injection suite so subpath imports resolve.
+        run: pnpm --filter @opencoo/shared build
+
+      - name: "Run injection corpus (deterministic tier)"
+        run: pnpm test:injection
