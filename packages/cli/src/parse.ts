@@ -17,6 +17,7 @@ import { Command } from "commander";
 import { runDoctor, type DoctorArgs } from "./commands/doctor.js";
 import { runMigrate, type MigrateArgs } from "./commands/migrate.js";
 import { runRecompile, type RecompileArgs } from "./commands/recompile.js";
+import { runServe, type ServeArgs } from "./commands/serve.js";
 import {
   runSourceForget,
   type SourceForgetArgs,
@@ -45,6 +46,11 @@ export interface ParseAndDispatchArgs {
     ) => Promise<void>;
     readonly sourceForget?: (a: SourceForgetArgs) => Promise<void>;
     readonly recompile?: (a: RecompileArgs) => Promise<void>;
+    /** Bare-command runner — the long-running boot verb (phase-a
+     *  appendix). `program.action(...)` fires only when no
+     *  subcommand matches, which is exactly the no-arg
+     *  `opencoo` boot path. */
+    readonly serve?: (a: ServeArgs) => Promise<void>;
   };
 }
 
@@ -57,11 +63,28 @@ export async function parseAndDispatch(
   // we skip the strip so the first arg is treated as a command.
   program
     .name("opencoo")
-    .description("opencoo operator CLI — bootstrap, diagnose, recompile")
+    .description(
+      "opencoo operator CLI. Run `opencoo` with no subcommand to boot the long-running engine.",
+    )
     .version(args.version)
     .exitOverride(); // throw on parse failure instead of process.exit
 
   const runners = args.runners ?? {};
+
+  // Bare-command dispatch: `opencoo` (no subcommand, no flags)
+  // boots the long-running engine (phase-a appendix; spec
+  // architecture.md §14.5). `program.action(...)` fires only
+  // when no subcommand matches AND no `--help`/`--version`
+  // sentinel was triggered (commander handles those before
+  // reaching the action).
+  program.action(async () => {
+    const fn = runners.serve ?? runServe;
+    await fn({
+      env: args.env,
+      stdout: args.stdout,
+      stderr: args.stderr,
+    });
+  });
 
   program
     .command("migrate")

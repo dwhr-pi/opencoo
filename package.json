@@ -20,7 +20,8 @@
     "lint": "pnpm run lint:root",
     "lint:root": "eslint . --ignore-pattern 'tests/eslint-fixtures/**'",
     "lint:fixtures": "eslint --no-warn-ignored --no-error-on-unmatched-pattern 'tests/eslint-fixtures/**/*.{ts,tsx}'",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "opencoo": "node packages/cli/dist/bin.js"
   },
   "devDependencies": {
     "@opencoo/eslint-plugin": "workspace:*",

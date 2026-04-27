@@ -1,0 +1,87 @@
+# opencoo local-dev backing services (phase-a appendix / plan radiant-diffie).
+#
+# Brings up postgres + redis + gitea on standard host ports so the engine
+# (run separately via `pnpm opencoo` from the workspace root) can dial them.
+# The engine binds `PORT=8080` on the host (avoiding Gitea on 3000); see
+# `setup.ts` defaults.
+#
+# Container names deliberately omit the `e2e-` prefix used by
+# `compose.e2e.yml` so the two stacks can coexist if you're testing a
+# release branch (`docker compose -f compose.e2e.yml up -d`) while iterating
+# on local dev (`docker compose up -d`).
+#
+# WARNING — local development only. `POSTGRES_PASSWORD=opencoo` is inline
+# below; this matches the `DATABASE_URL` default in `.env.example` for
+# friction-free `git clone → docker compose up -d → pnpm opencoo` UX. Partner
+# deployments require a separate compose file with `_FILE` Docker secrets
+# and a hardened password. See `THREAT-MODEL.md` and the README quickstart
+# for the production migration path (a phase-c PR ships the partner
+# variant).
+#
+# Usage:
+#   docker compose up -d            # boot all three
+#   docker compose ps               # expect 3 services healthy
+#   docker compose down             # stop, KEEP volumes
+#   docker compose down -v          # stop + WIPE all data (destructive)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: opencoo-postgres
+    environment:
+      POSTGRES_USER: opencoo
+      POSTGRES_PASSWORD: opencoo
+      POSTGRES_DB: opencoo
+    ports:
+      - "5432:5432"
+    volumes:
+      - opencoo-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opencoo -d opencoo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: opencoo-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  gitea:
+    image: gitea/gitea:1.22.6
+    container_name: opencoo-gitea
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__service__DISABLE_REGISTRATION: "false"
+      GITEA__service__REQUIRE_SIGNIN_VIEW: "false"
+      GITEA__server__ROOT_URL: http://localhost:3000/
+      GITEA__server__SSH_DOMAIN: localhost
+      GITEA__log__MODE: console
+      GITEA__log__LEVEL: warn
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    volumes:
+      - opencoo-gitea-data:/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/v1/version || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  opencoo-postgres-data:
+  opencoo-gitea-data:

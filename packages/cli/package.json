@@ -23,6 +23,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@opencoo/engine-self-operating": "workspace:*",
     "@opencoo/shared": "workspace:*",
     "@opencoo/source-asana": "workspace:*",
     "@opencoo/source-drive": "workspace:*",

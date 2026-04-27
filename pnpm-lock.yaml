@@ -215,6 +215,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@opencoo/engine-self-operating':
+        specifier: workspace:*
+        version: link:../engine-self-operating
       '@opencoo/shared':
         specifier: workspace:*
         version: link:../shared

@@ -63,7 +63,7 @@
 
 **Residual advisories filed across PRs 7-31** (all non-blocking, v0.2 hardening or future-PR reactivity): listed in each PR's body on GitHub. Tracked for the phase-a exit-gate `CHANGES-v0.1.md` draft.
 
-**Next**: phase-a is feature-complete. The §1.3 phase-a exit gate is now the active checklist — PRD §5 criteria 1–10 verification, pilot cutover sign-off, THREAT-MODEL §5 PR-checklist run on the phase-merge commit, and the `CHANGES-v0.1.md` draft. Once those land, `0.1.0-a` is ready to tag (maintainer call) and phase-b entry-gate work (§2.1) can begin.
+**Next**: phase-a is feature-complete. The phase-a appendix (bare `opencoo` boot verb + local-dev `compose.yml`, §1.2.9) closes the last gap so the system is bootable end-to-end against compose-spun postgres + redis + gitea. The §1.3 phase-a exit gate is now the active checklist — PRD §5 criteria 1–10 verification, pilot cutover sign-off, THREAT-MODEL §5 PR-checklist run on the phase-merge commit, and the `CHANGES-v0.1.md` draft. Once those land, `0.1.0-a` is ready to tag (maintainer call) and phase-b entry-gate work (§2.1) can begin.
 
 ---
 
@@ -178,6 +178,14 @@ Schema first (per CLAUDE.md + `architecture.md` §14.4 "schema-ownership rule"),
 |---|---|---|---|---|---|---|
 | 31 | Prompt-injection corpus at `packages/shared/prompts/__fixtures__/injection/` | All prompt-loading PRs | Fixtures-as-tests: every prompt under `packages/shared/prompts/{locale}/` has matching fixture set covering direct-injection, indirect-via-quoted-content, cross-domain-write, path-traversal, unicode-homoglyph, data-exfiltration (THREAT-MODEL §4.2) | CI job `pnpm test:injection` **fails** when a prompt change regresses a fixture; this is the phase-a ship-blocker | `pnpm test:injection` | ~fixtures per agent/locale |
 | 32 ✅ `f7eba78` (#35) | Phase-a e2e: ingest-to-wiki + Heartbeat + forget | PRs 17, 20, 22, 30 | Three e2e tests from PRD §5 criteria 2, 3, 9 — run against a compose-spun fixture Gitea + Postgres + Redis | Runs on release tags; < 10 minutes wall-clock | `pnpm test:e2e` | ~6 |
+
+#### 1.2.9 Phase-a appendix — bootable-locally `opencoo` verb (post-32)
+
+Small, reviewer-flagged scope-stretch landed AFTER the §1.2.1–§1.2.8 set so a partner (or maintainer) can `git clone → docker compose up -d → pnpm exec opencoo` against the merged phase-a code. Architecture.md §14.5 already specifies bare `opencoo` (no subcommand) as the long-running boot verb; PR 30 shipped six other verbs but not the boot path. This row closes that gap.
+
+| PR | Title | Depends on | Test-first artifact | Acceptance | Verify | Files est. |
+|---|---|---|---|---|---|---|
+| appendix | Bare `opencoo` boot verb + local-dev `compose.yml` | PR 30 (CLI), PR 18 (engine-self-operating `start({env})`) | `cli.test.ts` runServe cases — SIGTERM wires `engine.close()` + `exit(0)`; idempotent on repeated SIGTERM; surfaces start failures via `exitRuntimeError(2)` | `runServe` is pure orchestration — dynamic-imports `start({env})` from `@opencoo/engine-self-operating`, registers SIGTERM/SIGINT, memoises shutdown; `compose.yml` brings up postgres + redis + gitea on standard host ports for local dev (partner-deploy compose with `_FILE` secrets is a phase-c PR) | `pnpm --filter @opencoo/cli test` + manual `pnpm exec opencoo` smoke against the compose stack | ~9 |
 
 ### 1.3 Phase-a exit gate
 
