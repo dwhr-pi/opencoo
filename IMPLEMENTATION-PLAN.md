@@ -181,11 +181,11 @@ Schema first (per CLAUDE.md + `architecture.md` §14.4 "schema-ownership rule"),
 
 #### 1.2.9 Phase-a appendix — bootable-locally `opencoo` verb (post-32)
 
-Small, reviewer-flagged scope-stretch landed AFTER the §1.2.1–§1.2.8 set so a partner (or maintainer) can `git clone → docker compose up -d → pnpm exec opencoo` against the merged phase-a code. Architecture.md §14.5 already specifies bare `opencoo` (no subcommand) as the long-running boot verb; PR 30 shipped six other verbs but not the boot path. This row closes that gap.
+Small, reviewer-flagged scope-stretch landed AFTER the §1.2.1–§1.2.8 set so a partner (or maintainer) can `git clone → docker compose up -d → pnpm opencoo` against the merged phase-a code. Architecture.md §14.5 already specifies bare `opencoo` (no subcommand) as the long-running boot verb; PR 30 shipped six other verbs but not the boot path. This row closes that gap.
 
 | PR | Title | Depends on | Test-first artifact | Acceptance | Verify | Files est. |
 |---|---|---|---|---|---|---|
-| appendix | Bare `opencoo` boot verb + local-dev `compose.yml` | PR 30 (CLI), PR 18 (engine-self-operating `start({env})`) | `cli.test.ts` runServe cases — SIGTERM wires `engine.close()` + `exit(0)`; idempotent on repeated SIGTERM; surfaces start failures via `exitRuntimeError(2)` | `runServe` is pure orchestration — dynamic-imports `start({env})` from `@opencoo/engine-self-operating`, registers SIGTERM/SIGINT, memoises shutdown; `compose.yml` brings up postgres + redis + gitea on standard host ports for local dev (partner-deploy compose with `_FILE` secrets is a phase-c PR) | `pnpm --filter @opencoo/cli test` + manual `pnpm exec opencoo` smoke against the compose stack | ~9 |
+| appendix ✅ `a90f0f9` (#36) | Bare `opencoo` boot verb + local-dev `compose.yml` | PR 30 (CLI), PR 18 (engine-self-operating `start({env})`) | `cli.test.ts` runServe cases — SIGTERM wires `engine.close()` + `exit(0)`; idempotent on repeated SIGTERM; surfaces start failures via `exitRuntimeError(2)` | `runServe` is pure orchestration — dynamic-imports `start({env})` from `@opencoo/engine-self-operating`, registers SIGTERM/SIGINT, memoises shutdown; `compose.yml` brings up postgres + redis + gitea on standard host ports for local dev (partner-deploy compose with `_FILE` secrets is a phase-c PR) | `pnpm --filter @opencoo/cli test` + manual `pnpm opencoo` smoke against the compose stack | ~9 |
 
 ### 1.3 Phase-a exit gate
 
