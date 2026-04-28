@@ -37,6 +37,8 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type { Logger } from "@opencoo/shared/logger";
 
+import { buildAdminCookieLine } from "./cookie-attrs.js";
+
 type Db = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 /** Per-PAT cache TTL — 60 seconds (planner Q11). */
@@ -233,17 +235,15 @@ export function buildVerifyAdmin(
     // PAT anyway. This cookie is NOT a session bearer; it
     // carries continuity across same-tab navigation and lets
     // the SPA remember "who am I" without repeating whoami.
-    // SameSite=Strict + HttpOnly + Secure block CSRF-via-cookie
-    // and cross-site reads. Path=/api/admin scopes it tightly.
+    // HttpOnly blocks JS reads; SameSite=Strict + Path=/ +
+    // conditional Secure are enforced by `buildAdminCookieLine`.
     reply.header(
       "set-cookie",
-      [
-        `opencoo_session=${context.userId}`,
-        "Path=/api/admin",
-        "SameSite=Strict",
-        "HttpOnly",
-        "Secure",
-      ].join("; "),
+      buildAdminCookieLine({
+        name: "opencoo_session",
+        value: context.userId,
+        httpOnly: true,
+      }),
     );
 
     // The session HMAC key is here so a future refactor can

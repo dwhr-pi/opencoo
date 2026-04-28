@@ -13,7 +13,7 @@
  * `automation-candidates/:id/decision` POST so we assert the
  * end-to-end path (auth → CSRF → handler).
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { extractCsrfCookie } from "../../src/admin-api/csrf.js";
 
@@ -145,7 +145,7 @@ describe("admin-api csrf — state-changing route gate", () => {
     expect(body.status).toBe("approved");
   });
 
-  it("CSRF cookie has SameSite=Strict + Secure attributes (defense-in-depth)", async () => {
+  it("CSRF cookie carries SameSite=Strict and is NOT HttpOnly (SPA must read it)", async () => {
     const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
     cleanup = f.close;
     await setupAdmin(f);
@@ -161,7 +161,6 @@ describe("admin-api csrf — state-changing route gate", () => {
       : setCookie ?? "";
     expect(cookieStr).toMatch(/opencoo_csrf=/);
     expect(cookieStr).toContain("SameSite=Strict");
-    expect(cookieStr).toContain("Secure");
     // Per-cookie assertion: the CSRF cookie line MUST NOT include
     // HttpOnly (the SPA needs to read it client-side to mirror as
     // header); the session cookie line MUST include HttpOnly.
@@ -177,5 +176,61 @@ describe("admin-api csrf — state-changing route gate", () => {
       // on first-call semantics; only assert when present.
       expect(sessionLine.includes("HttpOnly")).toBe(true);
     }
+  });
+});
+
+describe("admin-api csrf — opencoo_csrf cookie attributes (Path + conditional Secure)", () => {
+  let cleanup: (() => Promise<void>) | null = null;
+  afterEach(async () => {
+    if (cleanup !== null) {
+      await cleanup();
+      cleanup = null;
+    }
+    vi.unstubAllEnvs();
+  });
+
+  async function fetchCsrfCookieLine(): Promise<string> {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const res = await f.app.inject({
+      method: "GET",
+      url: "/api/admin/_csrf",
+      headers: { authorization: "Bearer admin-pat" },
+    });
+    expect(res.statusCode).toBe(200);
+    const setCookie = res.headers["set-cookie"];
+    const lines = Array.isArray(setCookie) ? setCookie : [setCookie ?? ""];
+    const csrfLine = lines.find((l) => l.includes("opencoo_csrf="));
+    expect(csrfLine).toBeDefined();
+    return csrfLine!;
+  }
+
+  it("opencoo_csrf cookie is Path=/ (not Path=/api/admin) so the SPA at / can read it", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const csrfLine = await fetchCsrfCookieLine();
+    expect(csrfLine).toContain("Path=/");
+    expect(csrfLine).not.toContain("Path=/api/admin");
+  });
+
+  it("opencoo_csrf cookie omits Secure ONLY when NODE_ENV === 'development' (http://localhost dev)", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const csrfLine = await fetchCsrfCookieLine();
+    expect(csrfLine).not.toMatch(/(?:^|;\s)Secure(?:;|$)/);
+  });
+
+  it("opencoo_csrf cookie sets Secure when NODE_ENV === 'production'", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const csrfLine = await fetchCsrfCookieLine();
+    expect(csrfLine).toMatch(/(?:^|;\s)Secure(?:;|$)/);
+  });
+
+  it("opencoo_csrf cookie sets Secure when NODE_ENV is 'staging' (secure-by-default for non-dev deploys)", async () => {
+    // Anything that isn't an explicit `development` opts INTO Secure
+    // so a forgotten/typo'd NODE_ENV on a non-prod-but-internet-facing
+    // deploy doesn't silently lose the flag (Copilot triage on PR #39).
+    vi.stubEnv("NODE_ENV", "staging");
+    const csrfLine = await fetchCsrfCookieLine();
+    expect(csrfLine).toMatch(/(?:^|;\s)Secure(?:;|$)/);
   });
 });

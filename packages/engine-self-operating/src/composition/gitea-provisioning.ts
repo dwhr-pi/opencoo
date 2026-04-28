@@ -103,9 +103,16 @@ export interface ProvisionDomainRepoResult {
 /**
  * Provision a fresh Gitea repo for a new opencoo domain. Steps:
  *   1. POST /api/v1/orgs/{org}/repos — create the repo private.
- *   2. PUT /api/v1/repos/{org}/{slug}/contents/index.md  — seed.
- *   3. PUT /api/v1/repos/{org}/{slug}/contents/log.md    — seed.
- *   4. PUT /api/v1/repos/{org}/{slug}/contents/schema.md — seed.
+ *   2. POST /api/v1/repos/{org}/{slug}/contents/index.md  — seed.
+ *   3. POST /api/v1/repos/{org}/{slug}/contents/log.md    — seed.
+ *   4. POST /api/v1/repos/{org}/{slug}/contents/schema.md — seed.
+ *
+ * Each seed POST is Gitea's "Create a file" endpoint — it creates
+ * the default branch automatically when the repo has no commits,
+ * which is the case immediately after step 1. PUT (the "Update a
+ * file" endpoint) is never used here: PUT on a fresh empty repo
+ * returns 422 [SHA]: Required, which a previous carve-out
+ * silently swallowed → empty repo (bug C).
  *
  * Returns `{repoUrl}` (Gitea's `html_url` if available, else a
  * deterministic concat of `${baseUrl}/${org}/${slug}`).
@@ -142,11 +149,19 @@ export async function provisionDomainRepo(
     }
   }
 
-  // 2-4) Seed three files. Each PUT is idempotent: 409 (race
-  //      between two provisioning calls) AND 422 with the
-  //      `[SHA]: Required` body (Gitea returns this when a file
-  //      already exists and the caller didn't pass `sha`) are
-  //      both treated as "already provisioned, skip".
+  // 2-4) Seed three files. Each POST is idempotent on the
+  //      already-provisioned signal: callGitea swallows 409 by
+  //      returning the Response untouched (race between two
+  //      provisioning calls or re-running against an already-
+  //      seeded repo), and below we additionally swallow the
+  //      422 + "already exists" body Gitea returns when the
+  //      target path is occupied. The previous code used PUT
+  //      and matched 422 [SHA]: Required, which silently
+  //      swallowed the empty-repo failure mode (PUT on a fresh
+  //      repo always returns 422 SHA-required) → empty repo.
+  //      Now POST creates the file and the default branch
+  //      atomically, so the "fresh repo" case is the success
+  //      path, not an error.
   const seeds = buildSeedFiles({
     slug: args.slug,
     domainClass: args.domainClass,
@@ -160,24 +175,29 @@ export async function provisionDomainRepo(
       message: `[provisioning] seed ${file.path}`,
       content: Buffer.from(file.content, "utf8").toString("base64"),
     };
+    // 409 ("file already exists") doesn't throw — `callGitea`
+    // returns the Response directly on 409 (line ~273); inline
+    // check is the only place 409 can be observed.
+    let seedRes;
     try {
-      await callGitea(fetchFn, fileUrl, args.pat, "PUT", JSON.stringify(seedBody));
+      seedRes = await callGitea(fetchFn, fileUrl, args.pat, "POST", JSON.stringify(seedBody));
     } catch (err) {
-      // Gitea responds 422 `[SHA]: Required` for PUTs onto an
-      // existing file when the caller did not include the
-      // current blob sha. Treat that as the same idempotency
-      // signal as a 409 — provisioning is supposed to be
-      // re-runnable without surfacing benign already-seeded
-      // states as an error.
+      // Idempotency: 422 with body matching /already exists/i is
+      // "already provisioned, skip". Matching /already exists/
+      // rather than a specific Gitea phrasing defends against
+      // i18n / wording drift. A 422 with any OTHER body (including
+      // the legacy [SHA]: Required) MUST propagate — that was the
+      // bug-C failure mode and the negative regression test pins it.
       if (
         err instanceof GiteaProvisioningUpstreamError &&
         err.status === 422 &&
-        /\[SHA\]\s*:\s*Required/i.test(err.message)
+        /already exists/i.test(err.message)
       ) {
         continue;
       }
       throw err;
     }
+    if (seedRes.status === 409) continue;
   }
 
   return { repoUrl };
@@ -226,7 +246,7 @@ async function callGitea(
   fetchFn: typeof fetch,
   url: string,
   pat: string,
-  method: "GET" | "POST" | "PUT",
+  method: "GET" | "POST",
   body: string | undefined,
 ): Promise<Response> {
   const init: RequestInit = {

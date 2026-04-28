@@ -13,7 +13,7 @@
  *   - The session cookie has SameSite=Strict + HttpOnly +
  *     Secure attributes.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeAdminFixture } from "./_fixture.js";
 
@@ -88,7 +88,10 @@ describe("admin-api auth — verifyAdmin preHandler", () => {
     expect(body.username).toBe("alice");
     expect(body.csrfToken.length).toBeGreaterThan(40);
 
-    // Session cookie set.
+    // Session cookie set. SameSite=Strict + HttpOnly are
+    // unconditional; Secure is gated on NODE_ENV=production
+    // (asserted in its own describe block below) so that
+    // http://localhost dev doesn't get its cookies rejected.
     const setCookie = res.headers["set-cookie"];
     const cookieStr = Array.isArray(setCookie)
       ? setCookie.join(", ")
@@ -96,7 +99,6 @@ describe("admin-api auth — verifyAdmin preHandler", () => {
     expect(cookieStr).toMatch(/opencoo_session=/);
     expect(cookieStr).toContain("SameSite=Strict");
     expect(cookieStr).toContain("HttpOnly");
-    expect(cookieStr).toContain("Secure");
 
     // User row upserted with gitea_teams.
     const usersResult = await f.raw.query<{
@@ -166,5 +168,61 @@ describe("admin-api auth — verifyAdmin preHandler", () => {
       url: "/api/admin/source-bindings",
     });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe("admin-api auth — opencoo_session cookie attributes (Path + conditional Secure)", () => {
+  let cleanup: (() => Promise<void>) | null = null;
+  afterEach(async () => {
+    if (cleanup !== null) {
+      await cleanup();
+      cleanup = null;
+    }
+    vi.unstubAllEnvs();
+  });
+
+  async function fetchSessionCookieLine(): Promise<string> {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    f.gitea.responses.set("admin-pat", {
+      username: "alice",
+      teams: ["opencoo-admins"],
+    });
+    const res = await f.app.inject({
+      method: "GET",
+      url: "/api/admin/_csrf",
+      headers: { authorization: "Bearer admin-pat" },
+    });
+    expect(res.statusCode).toBe(200);
+    const setCookie = res.headers["set-cookie"];
+    const lines = Array.isArray(setCookie) ? setCookie : [setCookie ?? ""];
+    const sessionLine = lines.find((l) => l.includes("opencoo_session="));
+    expect(sessionLine).toBeDefined();
+    return sessionLine!;
+  }
+
+  it("opencoo_session cookie is Path=/ (not Path=/api/admin) — matches CSRF cookie scope", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const sessionLine = await fetchSessionCookieLine();
+    expect(sessionLine).toContain("Path=/");
+    expect(sessionLine).not.toContain("Path=/api/admin");
+  });
+
+  it("opencoo_session cookie omits Secure ONLY when NODE_ENV === 'development' (http://localhost dev)", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const sessionLine = await fetchSessionCookieLine();
+    expect(sessionLine).not.toMatch(/(?:^|;\s)Secure(?:;|$)/);
+  });
+
+  it("opencoo_session cookie sets Secure when NODE_ENV === 'production'", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const sessionLine = await fetchSessionCookieLine();
+    expect(sessionLine).toMatch(/(?:^|;\s)Secure(?:;|$)/);
+  });
+
+  it("opencoo_session cookie sets Secure when NODE_ENV is 'staging' (secure-by-default for non-dev deploys)", async () => {
+    vi.stubEnv("NODE_ENV", "staging");
+    const sessionLine = await fetchSessionCookieLine();
+    expect(sessionLine).toMatch(/(?:^|;\s)Secure(?:;|$)/);
   });
 });

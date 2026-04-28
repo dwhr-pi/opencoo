@@ -13,6 +13,7 @@ import type { FastifyInstance } from "fastify";
 
 import { writeAuditLog } from "../audit-log.js";
 import { requireAdminContext } from "../auth.js";
+import { buildAdminCookieLine } from "../cookie-attrs.js";
 import { requireCsrf } from "../csrf.js";
 
 type Db = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
@@ -28,12 +29,24 @@ export function registerLogoutRoute(args: RegisterLogoutRouteArgs): void {
     { preHandler: requireCsrf },
     async (req, reply) => {
       const ctx = requireAdminContext(req);
-      // Set-Cookie with Max-Age=0 clears both cookies on the
-      // /api/admin scope. Browsers treat the matching name +
-      // path as a clear directive.
+      // Set-Cookie with Max-Age=0 clears both cookies. Browsers
+      // only delete when (name, Path, Domain) match the issuing
+      // attributes — `buildAdminCookieLine` is the single source
+      // of truth shared with csrf.ts and auth.ts so the CLEAR
+      // path cannot drift from the SET path.
       reply.header("set-cookie", [
-        "opencoo_session=; Path=/api/admin; SameSite=Strict; HttpOnly; Secure; Max-Age=0",
-        "opencoo_csrf=; Path=/api/admin; SameSite=Strict; Secure; Max-Age=0",
+        buildAdminCookieLine({
+          name: "opencoo_session",
+          value: "",
+          httpOnly: true,
+          maxAge: 0,
+        }),
+        buildAdminCookieLine({
+          name: "opencoo_csrf",
+          value: "",
+          httpOnly: false,
+          maxAge: 0,
+        }),
       ]);
       await writeAuditLog(args.db, {
         action: "session.logout",
