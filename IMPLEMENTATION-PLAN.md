@@ -8,9 +8,17 @@
 
 ---
 
-## Progress snapshot (as of 2026-04-27)
+## Progress snapshot (as of 2026-04-28)
 
-**Phase-a: 32 / 32 PRs merged — phase-a complete + 2 appendix PRs.** `main` is at commit `78079fc` (appendix #2 squash). Phase-a §1.2.1–§1.2.8: 32/32 of the planned table rows merged (plus the §0 pre-coding gate). Two appendix PRs landed AFTER §1.2.8 closing operator-UX gaps that the row scope didn't cover: appendix #1 §1.2.9 (`a90f0f9` / #36) — bare `opencoo` boot verb + local-dev `compose.yml`; appendix #2 §1.2.10 (`78079fc` / #37) — `POST /api/admin/{domains,source-bindings}` + `GET /api/admin/adapters` + `+ New` modals, closing the architecture.md §13 "Sources — list + add" promise PR 29 missed. Full repo: 1648 passed | 2 skipped (use-case + adapter-contract tiers) + 88 prompt-injection deterministic-tier passed | 11 skipped (separate `pnpm test:injection` lane), and the `pnpm test:e2e` lane now runs **4** e2e specs (`ingest-to-wiki`, `heartbeat`, `forget`, `domain-and-binding-create`) against compose-spun Gitea + Postgres + Redis on the release-tag CI job. Docker via colima.
+**Phase-a: 32 / 32 PRs merged — phase-a complete + 5 post-32 PRs.** `main` is at commit `5a5b51e` (appendix #3 fix-up squash). Phase-a §1.2.1–§1.2.8: 32/32 of the planned table rows merged (plus the §0 pre-coding gate). Five PRs landed AFTER §1.2.8 closing operator-UX gaps and smoke-test fallout that the row scope didn't cover:
+
+- **§1.2.9 / #36** (`a90f0f9`) — bare `opencoo` boot verb + local-dev `compose.yml`. Closes the "system isn't bootable on a laptop" gap.
+- **§1.2.10 / #37** (`78079fc`) — `POST /api/admin/{domains,source-bindings}` + `GET /api/admin/adapters` + `+ New` modals. Closes the architecture.md §13 "Sources — list + add" promise PR 29 missed.
+- **§1.3 exit-gate / #38** (`e3a1da6`) — `CHANGES-v0.1.md` drafted (368 lines covering 34 PRs, 8 migrations, 21 env vars, 17 internet-facing surfaces, ~25 residual advisories). Ticks the §1.3 CHANGES checkbox; maintainer-edit before the tag.
+- **§1.2.11 / #39** (`95ad58d`) — fix-up: admin cookies `Path=/` + NODE_ENV-conditional `Secure` (dev-friendly + secure-by-default for staging); Gitea provisioning helper switches PUT→POST so seed files actually commit on a fresh repo; logout cookie clears mirror SET attributes; new `cookie-attrs.ts` helper. Three smoke-test bugs from #37 + one coupled drift bug.
+- **§1.2.11 / #40** (`5a5b51e`) — fix-up: drop the `WHERE review_mode = 'review' OR enabled = false` filter on `GET /api/admin/source-bindings` so the Sources tab actually lists every binding (the architecture §13 promise; the legacy filter was a needs-attention queue mis-scoped onto the operator-config tab).
+
+Full repo: **1660+** passed | 2 skipped (use-case + adapter-contract tiers) + 88 prompt-injection deterministic-tier passed | 11 skipped (separate `pnpm test:injection` lane), and the `pnpm test:e2e` lane runs **4** e2e specs (`ingest-to-wiki`, `heartbeat`, `forget`, `domain-and-binding-create`) against compose-spun Gitea + Postgres + Redis on the release-tag CI job. Docker via colima.
 
 | # | IMPL PR | GitHub PR | Merge commit | Title | THREAT-MODEL coverage |
 |---|---|---|---|---|---|
@@ -63,7 +71,7 @@
 
 **Residual advisories filed across PRs 7-31** (all non-blocking, v0.2 hardening or future-PR reactivity): listed in each PR's body on GitHub. Tracked for the phase-a exit-gate `CHANGES-v0.1.md` draft.
 
-**Next**: phase-a is feature-complete. Two appendix PRs landed AFTER the §1.2.1–§1.2.8 set: §1.2.9 (bare `opencoo` boot verb + local-dev `compose.yml`) makes the system bootable end-to-end; §1.2.10 (domain + source-binding create flow) closes the regression PR 29 introduced — `+ New domain` / `+ New binding` modals on the Management UI now create both primitives end-to-end without operators touching psql. The §1.3 phase-a exit gate is the active checklist — PRD §5 criteria 1–10 verification, pilot cutover sign-off, THREAT-MODEL §5 PR-checklist run on the phase-merge commit, and the `CHANGES-v0.1.md` draft. Once those land, `0.1.0-a` is ready to tag (maintainer call) and phase-b entry-gate work (§2.1) can begin.
+**Next**: phase-a is feature-complete and end-to-end demoable through the Management UI. Five post-32 PRs (above) closed every operator-UX gap surfaced by smoke testing: domain + binding create flows render, cookies work on `http://localhost`, Gitea seed files commit, the Sources tab lists every binding, and `CHANGES-v0.1.md` is drafted. The §1.3 phase-a exit gate is the active checklist — what's left is PRD §5 criteria 1–10 verification (CI green, mostly), pilot cutover sign-off (the partner-side action), and the THREAT-MODEL §5 PR-checklist run on the phase-merge commit `5a5b51e`. Once those land, `0.1.0-a` is ready to tag (maintainer call) and phase-b entry-gate work (§2.1) can begin.
 
 ---
 
@@ -197,15 +205,24 @@ Closes the regression PR 29 introduced: architecture.md §13 promised "Sources �
 
 §1.2.10 deferred to phase-a-appendix #3: `setup --bootstrap-domain` CLI shortcut for partners who want a one-shot domain bootstrap from the command line. Out of scope here — the Management UI flow is enough to unblock the pilot cutover.
 
+#### 1.2.11 Phase-a smoke-test fix-ups (post-37)
+
+Two reactive PRs that closed bugs surfaced by exercising the §1.2.10 binding-create flow end-to-end through Chrome on `http://localhost:8080`. Both bugs escaped #37's TDD harness because the fixtures didn't exercise a real browser cookie jar against a real fresh-empty Gitea repo, and the post-create list query had been mis-scoped as a needs-attention queue.
+
+| PR | Title | Depends on | Test-first artifact | Acceptance | Verify | Files est. |
+|---|---|---|---|---|---|---|
+| appendix #3 ✅ `95ad58d` (#39) | Cookie scope + provisioning verb | PR 37 | `csrf.test.ts` + `auth.test.ts` cookie-attribute blocks (Path=/ and NODE_ENV-conditional Secure with staging-coverage assertions); `gitea-provisioning.test.ts` (POST not PUT, idempotent on `409` OR `422 + already exists`, no [SHA]:Required swallow) | `Path=/` so SPA at `/` can read the CSRF cookie; `Secure` only when NODE_ENV !== "development" (secure-by-default for staging/test/unset); seed files committed via Gitea's create-file POST endpoint; logout cookie clears mirror SET attributes; new `cookie-attrs.ts` helper as single source of truth for SET + CLEAR | `pnpm --filter @opencoo/engine-self-operating test` (374 → kept across the staging assertions) + manual `pnpm opencoo` smoke through the UI | ~7 |
+| appendix #3 ✅ `5a5b51e` (#40) | List every source binding (drop needs-attention WHERE) | PRs 28/29, 37 | `source-bindings-list.test.ts` (3 assertions: auto+enabled visible — the bug pin; review-mode visible — regression pin; disabled visible — regression pin) | `GET /api/admin/source-bindings` returns every binding ordered newest-first, capped at 200; the Sources-tab list now renders every operator-created binding (was filtering `auto`-mode + enabled rows out, mis-scoped as Review Dashboard surface) | `pnpm --filter @opencoo/engine-self-operating test source-bindings-list` (3/3) + manual UI confirmation against compose-spun stack | ~3 |
+
 ### 1.3 Phase-a exit gate
 
 All must hold before tagging `0.1.0-a.N` and starting phase b:
 
 - [ ] PRD §5 criteria 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 all green in CI. (Criteria 11 and 12 are phase-b and phase-c gates respectively; see §2.3 / §3.3.)
 - [ ] **Pilot cuts over on phase-a code.** At least one pipeline runs on opencoo in parallel with the n8n equivalent; opencoo output quality ≥ n8n baseline on reviewer sign-off. The design partner begins operating on phase-a without waiting for SkillMiner — **SkillMiner adoption is a dedicated post-cutover sub-task in phase b** (CLAUDE.md "v0.1 ship sequence"; `architecture.md` §17 Resolved "Pilot migration path"). This is the single most important exit criterion.
-- [ ] THREAT-MODEL §5 PR checklist run on the phase-merge commit — every box ticked or residual risk added to §7.
-- [ ] `CHANGES-v0.1.md` drafted with breaking-change list from pre-release to `a.N`.
-- [ ] Fresh `docker compose up -d` → operator can create one domain + one binding through the Management UI without psql, exercised by `pnpm test:e2e -- domain-and-binding-create` (phase-a appendix #2).
+- [ ] THREAT-MODEL §5 PR checklist run on the phase-merge commit `5a5b51e` — every box ticked or residual risk added to §7.
+- [x] `CHANGES-v0.1.md` drafted with breaking-change list from pre-release to `a.N`. _(PR #38 / `e3a1da6`. Maintainer-edit before tagging; flagged human-follow-up items in the PR body.)_
+- [x] Fresh `docker compose up -d` → operator can create one domain + one binding through the Management UI without psql, exercised by `pnpm test:e2e -- domain-and-binding-create` (phase-a appendix #2) **and** confirmed live in Chrome against the user's compose stack (PR #37 + #39 + #40 cycle).
 
 ---
 
