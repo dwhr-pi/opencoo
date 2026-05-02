@@ -47,10 +47,28 @@ export interface DoctorCheck {
   readonly detail?: Readonly<Record<string, unknown>>;
 }
 
+/** One enumerated webhook intake surface from `sources_bindings`. */
+export interface WebhookSurface {
+  /** The HTTP path that receives inbound webhooks, e.g. `/webhooks/asana`
+   *  or `/webhooks/<binding_id>` for the generic adapter. */
+  readonly path: string;
+  readonly bindingId: string;
+  readonly adapterSlug: string;
+  readonly domainSlug: string;
+  readonly enabled: boolean;
+  /** Human-readable label for the path segment (generic `webhook` adapter
+   *  only). `undefined` for named adapters (asana/fireflies/gitea). */
+  readonly pathSegmentLabel?: string;
+}
+
 export interface DoctorReport {
   readonly checks: ReadonlyArray<DoctorCheck>;
   readonly internetFacing: ReadonlyArray<string>;
   readonly secrets: ReadonlyArray<RedactedSecret>;
+  /** Webhook intake surfaces resolved from `sources_bindings`. Added by
+   *  PR-L to close THREAT-MODEL §7 "Generic webhook intake paths not
+   *  enumerated in `opencoo doctor`". */
+  readonly webhookSurfaces: ReadonlyArray<WebhookSurface>;
 }
 
 const REQUIRED_SECRETS = [
@@ -287,6 +305,118 @@ async function checkGiteaTeam(args: DoctorArgs): Promise<DoctorCheck> {
   }
 }
 
+/** Adapter slugs that receive inbound HTTP webhooks (have a path under
+ *  `/webhooks/`). Used to filter `sources_bindings` rows. `gitea` is
+ *  absent because Gitea webhooks are currently a system-level route
+ *  not wired through `sources_bindings`; it appears in the static
+ *  INTERNET_FACING_PATHS list instead. */
+const WEBHOOK_ADAPTER_SLUGS = new Set(["asana", "fireflies", "webhook"]);
+
+/** Row shape returned by the webhook-bindings DB query.
+ *  Includes `config` JSONB so we can resolve `pathSegment` for the
+ *  generic `webhook` adapter. */
+interface WebhookBindingRow {
+  readonly id: string;
+  readonly adapter_slug: string;
+  readonly domain_slug: string;
+  readonly config: Record<string, unknown> | null;
+  readonly enabled: boolean;
+}
+
+/** Compute the URL path for a webhook binding row.
+ *  Named adapters (asana/fireflies/gitea) use a fixed slug-based path.
+ *  The generic `webhook` adapter routes by binding_id UUID. */
+function computeWebhookPath(row: WebhookBindingRow): string {
+  if (row.adapter_slug === "webhook") {
+    return `/webhooks/${row.id}`;
+  }
+  return `/webhooks/${row.adapter_slug}`;
+}
+
+/** Query `sources_bindings` for webhook-mode rows and build the surface
+ *  list. Returns a `DoctorCheck` + the resolved `WebhookSurface[]`.
+ *
+ *  Errors here are warn-level: the DB is already checked by `checkDb`;
+ *  if `sources_bindings` doesn't exist yet (fresh install, migrations
+ *  not run) we warn and continue. */
+async function checkWebhookBindings(
+  args: DoctorArgs,
+): Promise<{ check: DoctorCheck; surfaces: ReadonlyArray<WebhookSurface> }> {
+  let pool: import("pg").Pool | null = null;
+  try {
+    const factory = args.poolFactory ?? ((e): import("pg").Pool => openPool({ env: e }));
+    pool = factory(args.env);
+    const result = await pool.query<WebhookBindingRow>(
+      `SELECT
+         sb.id,
+         sb.adapter_slug,
+         d.slug AS domain_slug,
+         sb.config,
+         sb.enabled
+       FROM sources_bindings sb
+       JOIN domains d ON d.id = sb.domain_id
+       WHERE sb.adapter_slug = ANY($1)
+       ORDER BY sb.created_at ASC`,
+      [Array.from(WEBHOOK_ADAPTER_SLUGS)],
+    );
+
+    if (result.rows.length === 0) {
+      return {
+        check: {
+          id: "webhook_surfaces",
+          level: "ok",
+          message: "webhook_surfaces: no webhook bindings configured",
+          detail: { count: 0 },
+        },
+        surfaces: [],
+      };
+    }
+
+    const surfaces: WebhookSurface[] = result.rows.map((row) => {
+      const path = computeWebhookPath(row);
+      const surface: WebhookSurface = {
+        path,
+        bindingId: row.id,
+        adapterSlug: row.adapter_slug,
+        domainSlug: row.domain_slug,
+        enabled: row.enabled,
+      };
+      if (row.adapter_slug === "webhook") {
+        const seg = typeof row.config?.["pathSegment"] === "string"
+          ? row.config["pathSegment"]
+          : undefined;
+        if (seg !== undefined) {
+          return { ...surface, pathSegmentLabel: seg };
+        }
+      }
+      return surface;
+    });
+
+    return {
+      check: {
+        id: "webhook_surfaces",
+        level: "ok",
+        message: `webhook_surfaces: ${surfaces.length} binding(s) enumerated`,
+        detail: { count: surfaces.length },
+      },
+      surfaces,
+    };
+  } catch (err) {
+    return {
+      check: {
+        id: "webhook_surfaces",
+        level: "warn",
+        message: `webhook_surfaces: could not enumerate bindings — ${err instanceof Error ? err.message : String(err)}`,
+      },
+      surfaces: [],
+    };
+  } finally {
+    if (pool !== null) {
+      await pool.end().catch(() => undefined);
+    }
+  }
+}
+
 export async function runDoctor(args: DoctorArgs): Promise<void> {
   const secrets = REQUIRED_SECRETS.map((name) => inspectSecret(args.env, name));
   const secretChecks: DoctorCheck[] = secrets.map((s) => ({
@@ -298,18 +428,33 @@ export async function runDoctor(args: DoctorArgs): Promise<void> {
   const dbCheck = await checkDb(args);
   const migCheck = dbCheck.level === "ok" ? await checkMigrations(args) : null;
   const giteaCheck = await checkGiteaTeam(args);
+  // Fix #5: gate webhook check on DB availability — if checkDb already failed,
+  // a second connection attempt adds noise without new information.
+  const webhookResult = dbCheck.level === "ok"
+    ? await checkWebhookBindings(args)
+    : {
+        check: {
+          id: "webhook_surfaces",
+          level: "ok" as const,
+          message: "webhook_surfaces: skipped — db unavailable",
+          detail: { count: 0, skipped: true },
+        },
+        surfaces: [] as ReadonlyArray<WebhookSurface>,
+      };
 
   const checks: DoctorCheck[] = [
     ...secretChecks,
     dbCheck,
     ...(migCheck !== null ? [migCheck] : []),
     giteaCheck,
+    webhookResult.check,
   ];
 
   const report: DoctorReport = {
     checks,
     internetFacing: INTERNET_FACING_PATHS,
     secrets,
+    webhookSurfaces: webhookResult.surfaces,
   };
 
   if (args.json) {
@@ -325,6 +470,25 @@ export async function runDoctor(args: DoctorArgs): Promise<void> {
     args.stdout.write(pc.bold("internet-facing surfaces (operator should gate via reverse proxy):\n"));
     for (const p of INTERNET_FACING_PATHS) {
       args.stdout.write(`  ${p}\n`);
+    }
+    args.stdout.write("\n");
+    args.stdout.write(pc.bold("webhook intake surfaces:\n"));
+    // Fix #6: distinguish three states — no bindings, bindings exist, and
+    // enumeration failed — rather than collapsing the last two into the same
+    // "no webhook bindings configured" message.
+    if (webhookResult.check.level === "warn") {
+      // Enumeration failed — the check message already contains the reason.
+      args.stdout.write(`  could not enumerate (${webhookResult.check.message.replace(/^webhook_surfaces:\s*/i, "")})\n`);
+    } else if (webhookResult.surfaces.length === 0) {
+      args.stdout.write("  no webhook bindings configured\n");
+    } else {
+      for (const s of webhookResult.surfaces) {
+        const status = s.enabled ? pc.green("enabled") : pc.yellow("paused");
+        const label = s.pathSegmentLabel !== undefined ? `  (${s.pathSegmentLabel})` : "";
+        args.stdout.write(
+          `  ${s.path.padEnd(40)} binding=${s.bindingId}  domain=${s.domainSlug}  ${status}${label}\n`,
+        );
+      }
     }
   }
 

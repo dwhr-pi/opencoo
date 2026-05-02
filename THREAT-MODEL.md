@@ -367,7 +367,6 @@ Open risks we've consciously accepted or deferred. Each entry names what we're l
 | LLM provider ToS retention (partner-owned) | Per-domain `llm_policy` is the control; partner owns provider-account settings | Provider ToS change; incident |
 | No hard LLM spend cap today | Cost tracker + UI visibility | **Phase-a target** — `llm_budget_monthly_cap_usd` with fail-closed enforcement |
 | Custom-agent authoring UI threats | v2+ feature per §17 Open questions | Re-run §3.8 against the UX when it lands |
-| Generic webhook intake paths not enumerated in `opencoo doctor` | Appendix #4 PR-I `source-webhook` adapter creates operator-named paths at `/webhooks/{pathSegment}`. `doctor` lists the three static provider paths (`asana`, `fireflies`, `gitea`) but not operator-created generic paths. HMAC + replay-stable event_id are still enforced per-binding at the receiver — this is an ops-visibility gap, not an auth bypass. | Extend `doctor` to query `sources_bindings` for webhook-mode bindings and enumerate their computed paths. |
 
 ---
 

@@ -117,6 +117,11 @@ export function registerEventsRoute(args: RegisterEventsRouteArgs): void {
       const offRun = args.bus.onRunEvent((e) => {
         writeEvent(reply, "agent_run", e);
       });
+      // PR-L: broadcast output-delivery DLQ alerts so operators see
+      // permanent delivery failures in the Activity feed.
+      const offDlq = args.bus.onOutputDeliveryDlq((e) => {
+        writeEvent(reply, "output_delivery_dlq", e);
+      });
 
       // Heartbeat to keep the connection alive through idle-closing proxies.
       // Resolves setInterval lazily so vitest fake timers applied after route
@@ -130,6 +135,7 @@ export function registerEventsRoute(args: RegisterEventsRouteArgs): void {
         doClearInterval(heartbeat);
         offToken();
         offRun();
+        offDlq();
         reply.raw.end();
       });
 

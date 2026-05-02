@@ -32,6 +32,12 @@ interface FeedEntry {
   readonly type: string;
   readonly at: string;
   readonly text: string;
+  /** Optional tone override. `undefined` = neutral (default ink-2 color).
+   *  `'alert'` = alert-red, used for output_delivery_dlq events (PR-L). */
+  readonly tone?: "alert";
+  /** Full delivery UUID for DLQ entries — shown truncated in the feed but
+   *  available as a tooltip and `data-delivery-id` attr for audit lookup. */
+  readonly deliveryId?: string;
 }
 
 interface AgentRunsResponse {
@@ -131,6 +137,32 @@ function FeedView(): JSX.Element {
       ]);
     });
 
+    // PR-L: output-delivery DLQ alerts — permanent delivery failures
+    // surface in the Activity feed as alert-toned entries.
+    const offDlq = client.on<{
+      type: string;
+      outputBindingId: string;
+      deliveryId: string;
+      error: string;
+      occurredAt: string;
+    }>("output_delivery_dlq", (evt) => {
+      const d = evt.data;
+      // deliveryId shown truncated (first 8 chars) for readability; full UUID
+      // is accessible via the `data-delivery-id` attribute for audit lookup.
+      const shortId = d.deliveryId.slice(0, 8);
+      setEntries((prev) => [
+        {
+          id: d.deliveryId,
+          type: "output_delivery_dlq",
+          at: d.occurredAt,
+          text: `${t("activity.feed.dlqAlert")} binding=${d.outputBindingId} ${t("activity.feed.dlqDeliveryId")}=${shortId} — ${d.error}`,
+          tone: "alert" as const,
+          deliveryId: d.deliveryId,
+        },
+        ...prev.slice(0, 99),
+      ]);
+    });
+
     // In test environments EventSource is not available and the client
     // marks itself as "open" immediately — treat that as connected.
     if (client.readyState === "open") {
@@ -140,6 +172,7 @@ function FeedView(): JSX.Element {
     return () => {
       offConnected();
       offRun();
+      offDlq();
       client.close();
     };
   }, []);
@@ -178,16 +211,24 @@ function FeedView(): JSX.Element {
       {entries.map((e) => (
         <div
           key={e.id}
+          data-delivery-id={e.deliveryId}
+          title={e.deliveryId !== undefined ? `${t("activity.feed.dlqDeliveryId")}: ${e.deliveryId}` : undefined}
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: 12,
-            color: "var(--ink-2)",
-            borderLeft: "2px solid var(--rule)",
+            color: e.tone === "alert" ? "var(--alert)" : "var(--ink-2)",
+            borderLeft: `2px solid ${e.tone === "alert" ? "var(--alert)" : "var(--rule)"}`,
             paddingLeft: 10,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
           }}
         >
-          <span style={{ color: "var(--ink-3)", marginRight: 8 }}>{e.at}</span>
-          {e.text}
+          <span style={{ color: "var(--ink-3)" }}>{e.at}</span>
+          {e.tone === "alert" && (
+            <StatusPill tone="alert">{t("activity.feed.dlq")}</StatusPill>
+          )}
+          <span>{e.text}</span>
         </div>
       ))}
     </div>

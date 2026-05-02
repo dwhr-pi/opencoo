@@ -133,3 +133,23 @@ export interface LlmPolicyApplyResult {
   readonly ok: true;
   readonly id: string;
 }
+
+/**
+ * SSE event shape for output-delivery DLQ alerts (PR-L).
+ *
+ * Emitted when an OutputAdapter's retry loop exhausts all attempts and
+ * the delivery is permanently failed. Surfaced in the Activity feed as
+ * an alert-toned entry so operators see permanent failures without
+ * polling the audit log.
+ *
+ * Broadcast on the SSE channel as `event: output_delivery_dlq`.
+ */
+export interface OutputDeliveryDlqEvent {
+  readonly type: "output_delivery_dlq";
+  readonly outputBindingId: string;
+  readonly deliveryId: string;
+  /** Stringified error message. THREAT-MODEL §3.6 inv 11: no secret bytes. */
+  readonly error: string;
+  /** ISO timestamp when the DLQ event was emitted by the bus. */
+  readonly occurredAt: string;
+}
