@@ -51,6 +51,12 @@ import { writeAuditLog } from "../audit-log.js";
 import { requireAdminContext } from "../auth.js";
 import { requireCsrf } from "../csrf.js";
 
+const reviewModeUpdateSchema = z
+  .object({
+    reviewMode: z.enum(["auto", "review", "approve"]),
+  })
+  .strict();
+
 type Db = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 /** 3-state health, or `null` for neutral (paused or never-fired binding).
@@ -77,6 +83,10 @@ interface BindingRow {
    *  Prefers `error_text` (free-form message) over `error_class` (enum literal).
    *  THREAT-MODEL §3.6 invariant 11: no credential bytes in the response. */
   readonly lastError: string | null;
+  /** Count of webhook_events rows with status='pending' for this binding.
+   *  Used by the Review Dashboard to surface bindings that need attention.
+   *  Phase-a appendix #4 PR-C addition. */
+  readonly pendingEventsCount: number;
 }
 
 /** Coerce pg's timestamp result (Date when node-postgres parsed it,
@@ -157,7 +167,13 @@ export function registerSourceBindingsRoutes(
                  AND ii.created_at >= NOW() - INTERVAL '24 hours'
                ORDER BY ii.created_at DESC
                LIMIT 1
-             ) AS latest_error_class
+             ) AS latest_error_class,
+             (
+               SELECT COUNT(*)::int
+               FROM webhook_events w
+               WHERE w.binding_id = b.id
+                 AND w.status = 'pending'
+             ) AS pending_events_count
       FROM sources_bindings b
       JOIN domains d ON d.id = b.domain_id
       ORDER BY b.created_at DESC
@@ -175,6 +191,7 @@ export function registerSourceBindingsRoutes(
         last_event_at: Date | string | null;
         sig_fail_count_24h: number;
         latest_error_class: string | null;
+        pending_events_count: number;
       }>;
     };
 
@@ -208,6 +225,7 @@ export function registerSourceBindingsRoutes(
         status,
         lastEventAt,
         lastError,
+        pendingEventsCount: r.pending_events_count,
       };
     });
     return { rows };
@@ -391,6 +409,98 @@ export function registerSourceBindingsRoutes(
       });
 
       return reply.code(201).send({ id });
+    },
+  );
+
+  // Review-mode update — flip a binding's review_mode in one
+  // audited action. The UI uses this to approve ('auto') or
+  // revert a binding to manual review ('review').
+  args.app.post(
+    "/api/admin/source-bindings/:id/review-mode",
+    { preHandler: requireCsrf },
+    async (req, reply) => {
+      const ctx = requireAdminContext(req);
+      const id = (req.params as { id: string }).id;
+      // Validate id is a UUID before passing to SQL.
+      if (!z.string().uuid().safeParse(id).success) {
+        return reply.code(400).send({ error: "invalid_id" });
+      }
+      const parsed = reviewModeUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(422).send({
+          error: "validation_failed",
+          issues: parsed.error.issues,
+        });
+      }
+      const { reviewMode } = parsed.data;
+
+      // Fetch the current row to get prev_mode + existence check.
+      const existing = (await args.db.execute(sql`
+        SELECT review_mode::text AS review_mode
+        FROM sources_bindings
+        WHERE id = ${id}::uuid
+        LIMIT 1
+      `)) as unknown as { rows: Array<{ review_mode: string }> };
+      const row = existing.rows[0];
+      if (row === undefined) {
+        return reply.code(404).send({ error: "not_found", id });
+      }
+      const prevMode = row.review_mode;
+      if (prevMode === reviewMode) {
+        return reply.code(409).send({
+          error: "already_in_target_mode",
+          review_mode: reviewMode,
+        });
+      }
+
+      // UPDATE — atomic with prevMode guard so concurrent updates
+      // don't silently overwrite a race. The condition mirrors the
+      // automation-candidates pattern (update WHERE status = old).
+      const updateResult = (await args.db.execute(sql`
+        UPDATE sources_bindings
+        SET review_mode = ${reviewMode}::review_mode,
+            updated_at = NOW()
+        WHERE id = ${id}::uuid
+          AND review_mode = ${prevMode}::review_mode
+      `)) as unknown as { rowCount: number };
+
+      // If rowCount === 0, another operator raced us to the update.
+      // Re-SELECT to get the current mode and return it in the 409.
+      if (updateResult.rowCount === 0) {
+        const current = (await args.db.execute(sql`
+          SELECT review_mode::text AS review_mode
+          FROM sources_bindings
+          WHERE id = ${id}::uuid
+          LIMIT 1
+        `)) as unknown as { rows: Array<{ review_mode: string }> };
+        return reply.code(409).send({
+          error: "concurrent_update",
+          current_mode: current.rows[0]?.review_mode ?? prevMode,
+        });
+      }
+
+      // Map the user's intent to the correct audit action verb.
+      // approve ≡ moving to 'auto' (hands-off), reject ≡ any mode
+      // that keeps the operator in the loop ('review').
+      const auditAction =
+        reviewMode === "auto"
+          ? "source_binding.review.approve"
+          : "source_binding.review.reject";
+
+      await writeAuditLog(args.db, {
+        action: auditAction,
+        userId: ctx.userId,
+        metadata: {
+          binding_id: id,
+          prev_mode: prevMode,
+          new_mode: reviewMode,
+          caller_username: ctx.username,
+        },
+        sourceIp: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+
+      return reply.code(200).send({ reviewMode });
     },
   );
 }

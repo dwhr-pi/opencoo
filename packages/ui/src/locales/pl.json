@@ -11,6 +11,7 @@
     "llmPolicy": "llm policy",
     "prompts": "prompts",
     "activity": "activity",
+    "review": "review",
     "reports": "reports",
     "logout": "log out"
   },
@@ -176,6 +177,53 @@
     },
     "pipelines": {
       "empty": "No pipelines wired."
+    }
+  },
+  "review": {
+    "title": "Review",
+    "tabs": {
+      "sourceBindings": "source bindings",
+      "lintFindings": "lint findings",
+      "candidates": "surfacer candidates"
+    },
+    "upcoming": "skill candidates (phase-b) and marketplace updates (phase-c) ship later",
+    "sourceBindings": {
+      "empty": "No bindings need review.",
+      "approve": "approve",
+      "columns": {
+        "name": "name",
+        "status": "status",
+        "pending": "pending events",
+        "mode": "review mode",
+        "actions": "actions"
+      }
+    },
+    "sovereigntyConfirm": {
+      "title": "LLM policy — sovereignty diff",
+      "body": "Approving \"{{name}}\" may change the effective LLM routing for this binding. Confirm to continue.",
+      "confirm": "Confirm"
+    },
+    "lintFindings": {
+      "empty": "No lint findings.",
+      "acknowledge": "ack",
+      "columns": {
+        "kind": "kind",
+        "path": "path",
+        "detail": "detail",
+        "actions": "actions"
+      }
+    },
+    "candidates": {
+      "empty": "No proposed candidates.",
+      "approve": "approve",
+      "reject": "reject",
+      "conflict": "already decided — reload",
+      "columns": {
+        "proposal": "proposal",
+        "sourcePages": "source pages",
+        "created": "created",
+        "actions": "actions"
+      }
     }
   },
   "reports": {

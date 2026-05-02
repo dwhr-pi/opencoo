@@ -159,3 +159,17 @@ export async function fetchAdmin<T = unknown>(
   }
   throw new ApiTransientError(res.status, `HTTP ${res.status}`);
 }
+
+/**
+ * Build `fetchAdmin`'s options object only when an override is provided.
+ *
+ * `exactOptionalPropertyTypes` is on, so passing `{ fetchImpl: undefined }`
+ * is *not* the same as omitting the field — the literal `undefined` would
+ * shadow the prop's optional default. Routes that thread `fetchImpl` from
+ * a test seam should funnel it through this helper to stay safe.
+ */
+export function fetchOptsFor(
+  fetchImpl: typeof fetch | undefined,
+): { fetchImpl?: typeof fetch } {
+  return fetchImpl !== undefined ? { fetchImpl } : {};
+}

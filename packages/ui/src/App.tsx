@@ -18,6 +18,7 @@ import { Domains } from "./routes/Domains.js";
 import { LlmPolicy } from "./routes/LlmPolicy.js";
 import { Prompts } from "./routes/Prompts.js";
 import { Reports } from "./routes/Reports.js";
+import { Review } from "./routes/Review.js";
 import { Sources } from "./routes/Sources.js";
 import type { Tab } from "./types.js";
 
@@ -96,6 +97,7 @@ export function App(): JSX.Element {
     llmPolicy: <LlmPolicy />,
     prompts: <Prompts />,
     activity: <Activity />,
+    review: <Review />,
     reports: <Reports />,
   };
 
@@ -105,6 +107,7 @@ export function App(): JSX.Element {
     llmPolicy: t("llmPolicy.title"),
     prompts: t("prompts.title"),
     activity: t("activity.title"),
+    review: t("review.title"),
     reports: t("reports.title"),
   };
 
