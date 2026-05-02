@@ -178,4 +178,19 @@ Items routinely raised that are not v0.1:
 
 ---
 
+## 10. Competitive context (lessons)
+
+Adjacent open-source projects targeting the same "company brain" framing have appeared (notably Agno's `scout`, surfaced 2026-04). Reading their architecture sharpens what opencoo deliberately is and is not. The lessons below are observational — they reinforce existing scope and non-goals; they do not introduce new ones.
+
+- **"Navigation over search" is now industry-validated.** Independent teams have converged on opencoo's anti-RAG thesis. The remaining split is *when* navigation happens: query-time (live-source navigation per request) vs. ingest-time (pre-compiled wiki — this PRD §3.1, `architecture.md` §3.1, `docs/ARCHITECTURE.md` §2.1). opencoo bets on the latter; the former is a different product, traded for audit, sovereignty, and proactive curation. We do not chase setup-speed parity at the cost of these properties.
+- **The wiki must be the durable artifact, not a side effect.** Tools that build a wiki incidentally as conversations occur — and reset it on container restart, or persist it only inside a vendor-hosted control plane — treat the company brain as cache. opencoo's invariant: compiled pages survive every engine restart, image upgrade, and provider migration. Captured as load-bearing decision §2.10 in `docs/ARCHITECTURE.md`; tested via success criteria #2 (page lands in Gitea) and #10 (upgrade preserves edits and overrides).
+- **Proactive curation is part of the product, not a feature on top of it.** A reactive-only company brain decays into contradictions and orphans within months. Heartbeat / Lint / Index rebuilder are non-negotiable surfaces — captured as load-bearing decision §2.12 and tested via success criteria #3 (Heartbeat delivers and audits) and #5 (every pipeline has a use-case test).
+- **Self-hosted means self-controlled.** No external SaaS dashboard for auth, UI, or runtime config. Customers own the loop end to end — captured as load-bearing decision §2.11; its corollary in this PRD is the §8 parking-lot entry "Managed opencoo hosting." If a hosted control plane ever becomes load-bearing for a customer, sovereignty leaks.
+- **Multi-domain partitioning is a sovereignty choice, not a scaling shortcut.** Regulated and multi-team customers cannot share one model surface across HR, exec, and ops. opencoo's per-domain LLM policy + worldview model exists for this reason (`architecture.md` §3, §8.2; this PRD §3.4). Tools that default to one-wiki-one-policy are tuned for small Slack-first teams and do not address this constraint at the architectural layer.
+- **Adapters hide source quirks from the main agent's context.** Useful framing absorbed from the comparison: "a sub-agent behind each adapter owns the source's quirks; the main agent's context never sees them" describes opencoo's `SourceAdapter` / `OutputAdapter` / `AutomationAdapter` contract more concisely than current copy. Worth folding into `docs/ARCHITECTURE.md` §7 on the next editorial pass; recorded here so the language doesn't get lost.
+
+If a future PR proposes loosening any of the above ("let's let the wiki rebuild on demand", "let's add an external auth dashboard", "let's drop scheduled curation for a query-only mode"), it goes through `DECISIONS.md` first — this section is the standing rationale for refusing the trade.
+
+---
+
 *Derived from `architecture.md` v0.1 (2026-04-23), `THREAT-MODEL.md` v1, `DECISIONS.md` 2026-04-23, and CLAUDE.md. When this document drifts from any of those, the source is authoritative; update this PRD in the same PR.*
