@@ -53,7 +53,7 @@ export function Badge(props: BadgeProps): JSX.Element {
     <span
       style={{
         fontFamily: "var(--font-mono)",
-        fontSize: 10,
+        fontSize: 12,
         textTransform: "uppercase",
         letterSpacing: "0.08em",
         padding: "3px 7px",

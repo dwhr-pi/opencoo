@@ -73,7 +73,7 @@
       "status": "status"
     },
     "status": {
-      "ok": "ok",
+      "ok": "OK",
       "paused": "paused",
       "alert": "alert"
     },
