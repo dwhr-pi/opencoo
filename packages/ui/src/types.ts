@@ -1,7 +1,10 @@
 /**
  * Cross-route shared types (PR 29 / plan #131).
  */
-export type Tab = "domains" | "sources" | "llmPolicy" | "prompts" | "activity";
+// Phase-a appendix #4: 'activity' = 5th tab (PR-B), 'review' = 6th (PR-C),
+// 'reports' = 7th (PR-D). Merge order: PR-C lands first, then PR-D rebases;
+// Chrome.tsx TABS order will be [..., 'activity', 'review', 'reports'].
+export type Tab = "domains" | "sources" | "llmPolicy" | "prompts" | "activity" | "reports";
 
 export interface Domain {
   readonly id: string;
@@ -73,6 +76,50 @@ export interface Pipeline {
   readonly dlqCount: number;
   readonly lastRunAt: string | null;
   readonly lastFailureAt: string | null;
+}
+
+/** One alert from a Heartbeat agent run (subset of HeartbeatOutput). */
+export interface HeartbeatAlert {
+  readonly priority: number;
+  readonly title: string;
+  readonly body: string;
+  readonly citations: readonly string[];
+}
+
+/** Heartbeat output stored in agent_runs.output for definitionSlug='heartbeat'. */
+export interface HeartbeatOutput {
+  readonly version: string;
+  readonly summary: string;
+  readonly alerts: readonly HeartbeatAlert[];
+}
+
+/** One heartbeat report row from GET /api/admin/heartbeat. */
+export interface HeartbeatReport {
+  readonly runId: string;
+  readonly instanceId: string | null;
+  readonly instanceName: string | null;
+  readonly startedAt: string | null;
+  readonly output: HeartbeatOutput;
+}
+
+/**
+ * One redaction event row from GET /api/admin/redaction-events.
+ *
+ * THREAT-MODEL §3.3: matchedByteRanges is NEVER returned.
+ * Only matchedByteRangesCount (integer count) is present.
+ */
+export interface RedactionEvent {
+  readonly id: string;
+  readonly pipeline: string;
+  readonly domainId: string | null;
+  readonly bindingId: string | null;
+  readonly guardSlug: string;
+  readonly category: string;
+  readonly patternVersion: string;
+  /** Count of matched byte ranges — NOT the ranges themselves. §3.3. */
+  readonly matchedByteRangesCount: number;
+  readonly failMode: string;
+  readonly createdAt: string | null;
 }
 
 /** Server response shape for `POST /api/admin/domains/:id/llm-policy/apply`.

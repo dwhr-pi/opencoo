@@ -10,6 +10,7 @@
     "llmPolicy": "llm policy",
     "prompts": "prompts",
     "activity": "activity",
+    "reports": "reports",
     "logout": "log out"
   },
   "auth": {
@@ -177,6 +178,21 @@
     },
     "pipelines": {
       "empty": "No pipelines wired."
+    }
+  },
+  "reports": {
+    "title": "Reports",
+    "tabs": {
+      "heartbeat": "heartbeat",
+      "redaction": "redaction events"
+    },
+    "heartbeat": {
+      "empty": "No heartbeat reports yet.",
+      "noInstance": "(no instance)",
+      "priorityLabel": "P{{n}}:"
+    },
+    "redaction": {
+      "empty": "No redaction events yet."
     }
   },
   "debug": {

@@ -190,6 +190,41 @@ const TABLES_DDL = `
     error_text text,
     created_at timestamp with time zone NOT NULL DEFAULT now()
   );
+
+  -- Phase-a appendix #4 PR-D: redaction events surface.
+  -- APPEND-ONLY per THREAT-MODEL §2 invariant 8. Metadata-only per §3.3:
+  -- matched_byte_ranges stores offsets only; matched CONTENT is never persisted.
+  CREATE TABLE IF NOT EXISTS redaction_events (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    pipeline text NOT NULL,
+    domain_id uuid REFERENCES domains(id) ON DELETE RESTRICT,
+    binding_id uuid REFERENCES sources_bindings(id) ON DELETE RESTRICT,
+    guard_slug text NOT NULL,
+    category text NOT NULL,
+    pattern_version text NOT NULL,
+    matched_byte_ranges jsonb NOT NULL,
+    fail_mode guard_fail_mode NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS redaction_events_pipeline_created_at_idx
+    ON redaction_events (pipeline, created_at);
+
+  -- Phase-a appendix #4 PR-D: agent_instances table (needed for
+  -- heartbeat reader JOIN). Omit the unique constraint so the test
+  -- can insert multiple instances with the same name for isolation.
+  CREATE TABLE IF NOT EXISTS agent_instances (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    definition_slug text NOT NULL,
+    name text NOT NULL,
+    scope_domain_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    output_channel_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
+    schedule_cron text,
+    memory jsonb DEFAULT '{}'::jsonb NOT NULL,
+    locale text NOT NULL DEFAULT 'en',
+    enabled boolean NOT NULL DEFAULT true,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+  );
 `;
 
 export class MockGiteaClient implements GiteaClient {

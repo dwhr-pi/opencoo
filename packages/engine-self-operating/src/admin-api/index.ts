@@ -43,11 +43,13 @@ import {
   type ProvisionDomainRepoFn,
 } from "./routes/domains.js";
 import { registerEventsRoute } from "./routes/events.js";
+import { registerHeartbeatRoutes } from "./routes/heartbeat.js";
 import { registerLintFindingsRoutes } from "./routes/lint-findings.js";
 import { registerLogoutRoute } from "./routes/logout.js";
 import { registerMarketplaceUpdatesRoutes } from "./routes/marketplace-updates.js";
 import { registerPipelinesRoutes } from "./routes/pipelines.js";
 import { registerPromptsRoutes } from "./routes/prompts.js";
+import { registerRedactionEventsRoutes } from "./routes/redaction-events.js";
 import { registerSourceBindingsRoutes } from "./routes/source-bindings.js";
 
 type Db = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
@@ -202,6 +204,10 @@ export async function registerAdminApi(
       ? [{ name: args.ingestionQueue.name ?? "ingestion.scanner", ...args.ingestionQueue }]
       : [],
   });
+
+  // Phase-a appendix #4 PR-D — Reports tab routes.
+  registerHeartbeatRoutes({ app: guardedApp, db: args.db });
+  registerRedactionEventsRoutes({ app: guardedApp, db: args.db });
 
   // Debug banner: registered LAST so it sees every JSON
   // response regardless of which route built it.

@@ -33,6 +33,10 @@ const TABS: ReadonlyArray<{ key: Tab; labelKey: string }> = [
   { key: "prompts", labelKey: "nav.prompts" },
   // Phase-a appendix #4 PR-B: Activity tab (5th tab).
   { key: "activity", labelKey: "nav.activity" },
+  // Phase-a appendix #4 PR-D: Reports tab (7th tab, after Review=6th from PR-C).
+  // Merge order: PR-C adds 'review' before this entry; after rebase the array
+  // order will be [..., 'activity', 'review', 'reports'].
+  { key: "reports", labelKey: "nav.reports" },
 ];
 
 export function Sidebar(props: SidebarProps): JSX.Element {
