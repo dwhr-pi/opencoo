@@ -114,6 +114,10 @@ const INTERNET_FACING_PATHS: ReadonlyArray<string> = [
   "/api/admin/logout",
   "/api/admin/domains/:id/llm-policy/preview",
   "/api/admin/domains/:id/llm-policy/apply",
+  // Round-2 fix #3 (PR-M2 follow-up) — read-only scheduler listing.
+  // Same auth model as the rest of /api/admin/* (verifyAdmin); the
+  // operator gates it via the same reverse-proxy posture.
+  "/api/admin/scheduler",
   "/webhooks/asana",
   "/webhooks/fireflies",
   "/webhooks/gitea",

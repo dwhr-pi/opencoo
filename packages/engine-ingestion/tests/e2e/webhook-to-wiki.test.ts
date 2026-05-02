@@ -250,6 +250,63 @@ describe("webhook → wiki end-to-end (PR-M1)", () => {
     expect(afterIntake.rows[0]?.status).toBe("classified");
   });
 
+  it("composeProductionWorkerContext → startIngestionWorkers wires every required dep (PR-M2)", async () => {
+    // Validates the production composition root: feed
+    // composeProductionWorkerContext stub ingredients (matches what
+    // the orchestrator wires from env), then check the returned
+    // WorkerContext drives startIngestionWorkers without throwing
+    // and exposes every required field. Pins that PR-M2's
+    // composition root and PR-M1's worker boot are wire-compatible.
+    const { composeProductionWorkerContext } = await import(
+      "../../src/workers/production-context.js"
+    );
+    const { InMemoryCredentialStore } = await import(
+      "@opencoo/shared/credential-store"
+    );
+
+    const fixture = await freshPipelineDb();
+    const wikiAdapter = new InMemoryWikiAdapter();
+    const redis = new IORedisMock();
+    const credentialStore = new InMemoryCredentialStore({
+      logger: silentLogger(),
+    });
+
+    const ctx = await composeProductionWorkerContext({
+      db: fixture.db as unknown as Parameters<
+        typeof composeProductionWorkerContext
+      >[0]["db"],
+      logger: silentLogger(),
+      redisConnection: {
+        url: "redis://stub",
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+      },
+      credentialStore,
+      sourceAdapterFactories: {},
+      wikiAdapter: wikiAdapter as unknown as Parameters<
+        typeof composeProductionWorkerContext
+      >[0]["wikiAdapter"],
+      router: makeRouter(fixture, new MockLlmClient()),
+      guardAdapter: passThroughGuard(),
+      author: STUB_AUTHOR,
+      instanceId: "test-instance",
+    });
+
+    const handle = startIngestionWorkers({
+      ctx,
+      connection: redis as unknown as Parameters<
+        typeof startIngestionWorkers
+      >[0]["connection"],
+      autorun: false,
+    });
+
+    expect(handle.scanner.name).toBe("ingestion.scanner");
+    expect(handle.compile.name).toBe("ingestion.scanner.classify");
+    await handle.closeAll(5_000);
+    await ctx.closeProducers();
+    redis.disconnect();
+  });
+
   it("startIngestionWorkers + closeAll() drains all workers cleanly (SIGTERM-equiv)", async () => {
     const fixture = await freshPipelineDb();
     const wikiAdapter = new InMemoryWikiAdapter();

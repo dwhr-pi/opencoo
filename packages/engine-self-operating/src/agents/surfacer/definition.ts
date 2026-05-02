@@ -19,4 +19,7 @@ export const SURFACER_DEFINITION: AgentDefinition = {
   // Read-only tool surface; Lint's automation_drift detector
   // flags any past tool_calls[].name not in this set.
   toolNames: ["worldview.read", "index.search", "wiki.read_page"],
+  // Daily 7am UTC — Surfacer runs once per day so candidate
+  // proposals land in the operator's morning Review queue. PR-M2.
+  defaultScheduleCron: "0 7 * * *",
 };

@@ -20,4 +20,6 @@ export const LINT_DEFINITION: AgentDefinition = {
   // plus wiki.read_page for the contradictions detector's
   // body fetch.
   toolNames: ["worldview.read", "index.search", "wiki.read_page"],
+  // Weekly Monday 9am UTC — architecture.md §9.3 cadence. PR-M2.
+  defaultScheduleCron: "0 9 * * 1",
 };

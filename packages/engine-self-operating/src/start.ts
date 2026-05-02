@@ -36,6 +36,7 @@ import {
   loadEncryptionKey,
 } from "@opencoo/shared/credential-store";
 import { ConsoleLogger, type Logger } from "@opencoo/shared/logger";
+import { scrubPat } from "@opencoo/shared/scrub";
 import { drizzle } from "drizzle-orm/node-postgres";
 import {
   PipelineRegistry,
@@ -55,6 +56,11 @@ import {
   createSseBus,
   type SseBus,
 } from "./admin-api/sse-bus.js";
+import { AgentDefinitionRegistry } from "./agent-harness/index.js";
+import {
+  AgentDispatcher,
+  type AgentRunnerRegistry,
+} from "./scheduler/agent-dispatcher.js";
 import {
   loadAdminApiCompositionEnv,
   type AdminApiCompositionEnv,
@@ -68,7 +74,12 @@ export type SelfOperatingRegistry = PipelineRegistry;
 /** Extended StartedEngine — exposes the SSE bus the engine wired
  *  so the orchestrator (CLI `serve.ts`) can thread it into
  *  engine-ingestion's worker boot. The bus carries Activity-feed
- *  events from BOTH engines so the operator sees a single stream. */
+ *  events from BOTH engines so the operator sees a single stream.
+ *
+ *  PR-M2 also exposes the in-process AgentDispatcher (when one was
+ *  successfully constructed at boot — failure to compose surfaces
+ *  as a logged warning rather than a crash). The orchestrator
+ *  drains it on SIGTERM via `engine.scheduler?.stop()`. */
 export type StartedEngine = BaseStartedEngine<
   EngineConfig,
   SelfOperatingRegistry
@@ -77,6 +88,10 @@ export type StartedEngine = BaseStartedEngine<
    *  caller-supplied `options.sseBus` (PR-M1) or a fresh bus
    *  the engine constructed at boot. */
   readonly sseBus: SseBus;
+  /** Present iff the dispatcher was successfully constructed AND
+   *  started. Absent when the dispatcher composition failed (logged)
+   *  or no `agentRunners` were passed in `StartOptions`. */
+  readonly scheduler?: AgentDispatcher;
 };
 
 export { PipelineRegistry } from "@opencoo/shared/engine-scaffold";
@@ -140,6 +155,35 @@ export interface StartOptions
   readonly ingestionQueue?: Parameters<
     typeof productionServerFactory
   >[0]["ingestionQueue"];
+  /** Phase-a appendix #5 PR-M2 — agent runner registry. The
+   *  orchestrator wires one runner per schedulable definition slug
+   *  (Heartbeat / Lint / Surfacer in v0.1). When provided, `start()`
+   *  constructs the AgentDispatcher and starts it after the Fastify
+   *  listener is up. Absent or empty registry → dispatcher is NOT
+   *  constructed (no scheduled agents fire); the read-only
+   *  `/api/admin/scheduler` route still registers and returns an
+   *  empty list. */
+  readonly agentRunners?: AgentRunnerRegistry;
+  /** Phase-a appendix #5 PR-M2 — agent definition registry. Required
+   *  alongside `agentRunners` for the dispatcher to validate that
+   *  every dispatched instance's `definition_slug` resolves to a
+   *  known definition before invoking the runner. When undefined,
+   *  the dispatcher synthesises an empty registry — runners that
+   *  don't depend on definition lookups still work. */
+  readonly agentDefinitions?: AgentDefinitionRegistry;
+}
+
+/** Round-3 fix #4: scrub-and-cap helper for `scheduler.*` error
+ *  log sites. BullMQ / Redis / pg connection failures can carry
+ *  connection strings or auth tokens in their `Error.message`;
+ *  THREAT-MODEL §3.6 invariant 11 says scrub. Mirrors the
+ *  `safeError` helper in
+ *  `engine-ingestion/src/workers/production-context.ts` and
+ *  `cli/src/provision/production-composition.ts`. */
+const ERROR_MESSAGE_MAX_LENGTH = 200;
+function safeError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  return scrubPat(raw).slice(0, ERROR_MESSAGE_MAX_LENGTH);
 }
 
 function defaultDbFactory(config: EngineConfig): StartDb {
@@ -283,6 +327,47 @@ export async function start(
   // both engines emit through the same channel.
   const sseBus: SseBus = options.sseBus ?? createSseBus();
 
+  // PR-M2, phase-a appendix #5 — construct the AgentDispatcher
+  // EARLY so the production server factory can wire it as the
+  // SchedulerSource for `GET /api/admin/scheduler`. The dispatcher
+  // is only useful when the orchestrator passed `agentRunners` AND
+  // we have a real pg pool + Redis URL — otherwise it has nothing
+  // to dispatch and would just open BullMQ connections for nothing.
+  // start()ing the dispatcher itself is deferred until AFTER the
+  // base engine boots (we want the Fastify listener up before any
+  // scheduled job could fire).
+  let dispatcher: AgentDispatcher | undefined;
+  if (options.agentRunners !== undefined && pgPool !== null) {
+    try {
+      const definitions =
+        options.agentDefinitions ?? new AgentDefinitionRegistry();
+      dispatcher = new AgentDispatcher({
+        db: drizzle(pgPool) as unknown as ConstructorParameters<
+          typeof AgentDispatcher
+        >[0]["db"],
+        connection: {
+          url: config.redisUrl,
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
+        },
+        definitions,
+        runners: options.agentRunners,
+        logger,
+        sseBus,
+      });
+    } catch (err) {
+      logger.error("scheduler.compose_failed", {
+        reason:
+          "AgentDispatcher constructor threw — Redis connection or BullMQ wiring failure",
+        // Round-3 fix #4: scrub + cap. THREAT-MODEL §3.6
+        // invariant 11. Redis / BullMQ failures can carry
+        // connection strings or auth tokens.
+        error: safeError(err),
+      });
+      dispatcher = undefined;
+    }
+  }
+
   // Pick the serverFactory:
   //   - test-supplied override → use it,
   //   - production wiring (env complete + pool present) →
@@ -314,6 +399,7 @@ export async function start(
       sseBus,
       ...(credentialStore !== null ? { credentialStore } : {}),
       ...(ingestionQueue !== undefined ? { ingestionQueue } : {}),
+      ...(dispatcher !== undefined ? { schedulerSource: dispatcher } : {}),
     });
   };
 
@@ -330,13 +416,55 @@ export async function start(
   const baseEngine = await startEngine<EngineConfig, SelfOperatingRegistry>(
     baseOptions,
   );
-  // Attach the bus to the returned engine so the orchestrator
-  // can thread it into engine-ingestion's worker boot. The
-  // production serverFactory already attached the same bus to
-  // the Fastify instance (`Object.assign(app, { sseBus })`); we
-  // expose it at the engine level too so callers don't have to
-  // dig through `engine.app`.
-  return Object.assign(baseEngine, { sseBus });
+  // Start the dispatcher AFTER the Fastify listener is up. A
+  // failure to start does NOT crash the engine — operator can
+  // still use the management UI and trigger agents manually
+  // (CLI / MCP). The dispatcher's own log line names the failure;
+  // we tag the engine field as `undefined` so the orchestrator's
+  // SIGTERM hook knows there's nothing to drain.
+  let attachedDispatcher: AgentDispatcher | undefined = dispatcher;
+  if (attachedDispatcher !== undefined) {
+    try {
+      await attachedDispatcher.start();
+    } catch (err) {
+      logger.error("scheduler.start_failed", {
+        reason:
+          "AgentDispatcher.start() threw — no recurring jobs registered",
+        // Round-3 fix #4: scrub + cap. THREAT-MODEL §3.6
+        // invariant 11.
+        error: safeError(err),
+      });
+      // Best-effort cleanup of the partially-started dispatcher
+      // so we don't leak the BullMQ Worker / Queue handles.
+      await attachedDispatcher.stop().catch(() => undefined);
+      attachedDispatcher = undefined;
+    }
+  }
+
+  // Attach the bus + scheduler to the returned engine so the
+  // orchestrator can thread the bus into engine-ingestion AND
+  // drain the scheduler on SIGTERM.
+  const baseClose = baseEngine.close.bind(baseEngine);
+  const engine: StartedEngine = Object.assign(baseEngine, {
+    sseBus,
+    ...(attachedDispatcher !== undefined ? { scheduler: attachedDispatcher } : {}),
+    async close(): Promise<void> {
+      // Drain dispatcher BEFORE the base engine closes pg + Redis
+      // — if pg goes away first, the harness's terminalize-run
+      // UPDATE inside the dispatcher's in-flight job throws.
+      if (attachedDispatcher !== undefined) {
+        await attachedDispatcher.stop().catch((err: unknown) => {
+          logger.warn("scheduler.stop_failed", {
+            // Round-3 fix #4: scrub + cap. THREAT-MODEL §3.6
+            // invariant 11.
+            error: safeError(err),
+          });
+        });
+      }
+      await baseClose();
+    },
+  });
+  return engine;
 }
 
 // Re-export the default factories for tests that want to

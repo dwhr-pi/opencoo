@@ -55,6 +55,13 @@ export interface AgentDefinition {
    *  the harness's deny-list is a destructive-tool floor and
    *  the definition is the per-agent ceiling. */
   readonly toolNames: readonly string[];
+  /** Default cron pattern for the `opencoo agents seed` CLI to
+   *  populate `agent_instances.schedule_cron` with when the
+   *  operator hasn't explicitly set one. Only set on agents that
+   *  belong to the scheduled-class set (Heartbeat, Lint, Surfacer);
+   *  on-demand agents (Chat, Builder) leave this undefined so the
+   *  seeder skips them. UTC; PR-M2 (phase-a appendix #5). */
+  readonly defaultScheduleCron?: string;
 }
 
 /**

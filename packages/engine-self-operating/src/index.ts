@@ -29,6 +29,26 @@ export {
   type StartServer,
 } from "./start.js";
 
+// Phase-a appendix #5 PR-M2 — agent dispatcher (production
+// scheduler). The orchestrator (CLI `serve.ts`) imports
+// `AgentDispatcher` + `AgentRunnerRegistry` to construct the
+// per-agent runner map; the dispatcher itself is wired by `start()`
+// when `agentRunners` is set on `StartOptions`.
+export {
+  AgentDispatcher,
+  DISPATCH_QUEUE_NAME,
+  type AgentDispatcherOptions,
+  type AgentRunner,
+  type AgentRunnerRegistry,
+  type DispatchJobData,
+  type RegisteredSchedule,
+} from "./scheduler/agent-dispatcher.js";
+export {
+  validateCron,
+  nextFireAt,
+  type ValidateCronResult,
+} from "./scheduler/cron-validate.js";
+
 // Concrete reader agents (PR 20, plan #92 part A + plan #97
 // part B). Read-only — every tool call flows through the
 // harness; no agent in this PR registers a writer tool.

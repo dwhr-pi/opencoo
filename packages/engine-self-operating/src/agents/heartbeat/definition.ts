@@ -21,4 +21,8 @@ export const HEARTBEAT_DEFINITION: AgentDefinition = {
   // (plan #97 Q6) flags any past tool_calls[].name not in this
   // set — evidence of a tool slipped in without being declared.
   toolNames: ["worldview.read", "index.search"],
+  // Weekday mornings, 8am UTC. The PoC heartbeat fires at the
+  // start of the operator's working day; the OSS spec carries
+  // that cadence forward (architecture.md §9.4). PR-M2.
+  defaultScheduleCron: "0 8 * * 1-5",
 };

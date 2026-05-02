@@ -262,6 +262,9 @@ importers:
       '@opencoo/engine-self-operating':
         specifier: workspace:*
         version: link:../engine-self-operating
+      '@opencoo/guard-redaction-regex':
+        specifier: workspace:*
+        version: link:../adapters/guard-redaction-regex
       '@opencoo/shared':
         specifier: workspace:*
         version: link:../shared
@@ -280,12 +283,21 @@ importers:
       '@opencoo/source-webhook':
         specifier: workspace:*
         version: link:../adapters/source-webhook
+      '@opencoo/wiki-gitea':
+        specifier: workspace:*
+        version: link:../adapters/wiki-gitea
+      bullmq:
+        specifier: 5.76.1
+        version: 5.76.1
       commander:
         specifier: 12.1.0
         version: 12.1.0
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2(@electric-sql/pglite@0.4.4)(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(pg@8.20.0)
+      ioredis:
+        specifier: 5.10.1
+        version: 5.10.1
       pg:
         specifier: 8.20.0
         version: 8.20.0
@@ -378,6 +390,12 @@ importers:
       '@opencoo/shared':
         specifier: workspace:*
         version: link:../shared
+      bullmq:
+        specifier: 5.76.1
+        version: 5.76.1
+      cron-parser:
+        specifier: 4.9.0
+        version: 4.9.0
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2(@electric-sql/pglite@0.4.4)(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(pg@8.20.0)

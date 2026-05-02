@@ -14,6 +14,10 @@
  */
 import { Command } from "commander";
 
+import {
+  runAgentsSeed,
+  type AgentsSeedArgs,
+} from "./commands/agents-seed.js";
 import { runDoctor, type DoctorArgs } from "./commands/doctor.js";
 import { runMigrate, type MigrateArgs } from "./commands/migrate.js";
 import { runRecompile, type RecompileArgs } from "./commands/recompile.js";
@@ -37,6 +41,7 @@ export interface ParseAndDispatchArgs {
     readonly migrate?: (a: MigrateArgs) => Promise<void>;
     readonly setup?: (a: SetupArgs) => Promise<void>;
     readonly doctor?: (a: DoctorArgs) => Promise<void>;
+    readonly agentsSeed?: (a: AgentsSeedArgs) => Promise<void>;
     /** `source test` runner — the parse layer doesn't have an
      *  AdapterRegistry to inject (that's bin.ts's job). The runner
      *  contract here OMITS `registry`; the production wrapper in
@@ -129,6 +134,25 @@ export async function parseAndDispatch(
         ...(typeof adminPat === "string" && adminPat.length > 0
           ? { adminPat }
           : {}),
+        stdout: args.stdout,
+        stderr: args.stderr,
+      });
+    });
+
+  // `agents` namespace — seed default scheduled agent rows.
+  const agents = program
+    .command("agents")
+    .description("Agent-instance operations");
+
+  agents
+    .command("seed")
+    .description(
+      "Idempotently insert default agent_instances rows for every scheduled-class agent (heartbeat, lint, surfacer)",
+    )
+    .action(async () => {
+      const fn = runners.agentsSeed ?? runAgentsSeed;
+      await fn({
+        env: args.env,
         stdout: args.stdout,
         stderr: args.stderr,
       });

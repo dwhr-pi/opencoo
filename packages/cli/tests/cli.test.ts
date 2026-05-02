@@ -743,6 +743,112 @@ describe("runServe", () => {
     expect(exit).toHaveBeenCalledWith(0);
   });
 
+  // Round-2 fix #1 (PR-M2 follow-up) — the orchestrator MUST
+  // forward the self-op engine's SseBus into the ingestion factory
+  // call so per-job lifecycle events (compile / scanner / etc.)
+  // emitted by the PR-M1 sse-bridge land on the SAME bus the
+  // management UI streams from. Without this thread the bridge has
+  // no bus to emit on and the Activity feed misses ingestion runs.
+  it("forwards self-op SseBus into the ingestion factory args (round-2 fix)", async () => {
+    const stdout = new CapturingStream();
+    const stderr = new CapturingStream();
+    // Self-op engine carries a sentinel `sseBus` object — the
+    // orchestrator should pass it verbatim to the ingestion
+    // factory. Identity comparison verifies the SAME instance
+    // reaches both ends, not a clone.
+    const sseBus = {
+      emitRunEvent: vi.fn(),
+    };
+    const selfOpEngine = {
+      ...makeFakeEngine(),
+      sseBus,
+    };
+    const ingestionEngine = makeFakeEngine();
+    const startFactory = vi.fn(
+      async () => selfOpEngine as unknown as Awaited<
+        ReturnType<ServeArgs["startFactory"]>
+      >,
+    );
+    const startIngestionFactory = vi.fn(
+      async () => ingestionEngine as unknown as Awaited<
+        ReturnType<ServeArgs["startFactory"]>
+      >,
+    );
+    const exit = vi.fn();
+    const signalSource = new EventEmitter();
+
+    const serve = runServe({
+      env: { DATABASE_URL: "postgres://x" },
+      stdout,
+      stderr,
+      startFactory,
+      startIngestionFactory,
+      signalSource,
+      exit: exit as unknown as ServeArgs["exit"],
+    });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    // The factory was called with the SAME sseBus instance the
+    // self-op engine exposed. Identity comparison (`toBe`) — a
+    // structural-equal clone would silently drop emit-event
+    // routing in production.
+    expect(startIngestionFactory).toHaveBeenCalledTimes(1);
+    const ingestionCall = startIngestionFactory.mock.calls[0]?.[0] as {
+      readonly sseBus?: typeof sseBus;
+    };
+    expect(ingestionCall.sseBus).toBe(sseBus);
+
+    signalSource.emit("SIGTERM");
+    await serve;
+  });
+
+  // Round-2 fix #1 corollary — when self-op DOESN'T expose a bus
+  // (test seam / boot-tolerance fallback), the orchestrator omits
+  // the field entirely rather than passing `sseBus: undefined`.
+  // This matches `exactOptionalPropertyTypes` semantics in the
+  // factory's TS surface.
+  it("omits sseBus from ingestion args when self-op did not expose one", async () => {
+    const stdout = new CapturingStream();
+    const stderr = new CapturingStream();
+    const selfOpEngine = makeFakeEngine(); // no sseBus
+    const ingestionEngine = makeFakeEngine();
+    const startFactory = vi.fn(
+      async () => selfOpEngine as unknown as Awaited<
+        ReturnType<ServeArgs["startFactory"]>
+      >,
+    );
+    const startIngestionFactory = vi.fn(
+      async () => ingestionEngine as unknown as Awaited<
+        ReturnType<ServeArgs["startFactory"]>
+      >,
+    );
+    const exit = vi.fn();
+    const signalSource = new EventEmitter();
+
+    const serve = runServe({
+      env: { DATABASE_URL: "postgres://x" },
+      stdout,
+      stderr,
+      startFactory,
+      startIngestionFactory,
+      signalSource,
+      exit: exit as unknown as ServeArgs["exit"],
+    });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const ingestionCall = startIngestionFactory.mock.calls[0]?.[0] as {
+      readonly sseBus?: unknown;
+    };
+    expect("sseBus" in ingestionCall).toBe(false);
+
+    signalSource.emit("SIGTERM");
+    await serve;
+  });
+
   it("does not abort if engine-ingestion fails to boot — logs and continues", async () => {
     // Boot-tolerant: if engine-ingestion fails (missing prod
     // composition deps in PR-M1), the operator still gets

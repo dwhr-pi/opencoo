@@ -39,3 +39,12 @@ export {
   createOpenRouterProvider,
   type OpenRouterProviderOptions,
 } from "./providers/openrouter.js";
+
+// Production multi-provider dispatcher factory (PR-M2, phase-a
+// appendix #5). The CLI's serve.ts composition root calls
+// `createProvider(name, opts)` per `LlmProviderCall.provider` to
+// route the LLM call to the right `@ai-sdk/*` package.
+export {
+  createProvider,
+  type ProviderOptions,
+} from "./providers/index.js";

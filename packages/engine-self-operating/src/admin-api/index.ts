@@ -50,6 +50,10 @@ import { registerMarketplaceUpdatesRoutes } from "./routes/marketplace-updates.j
 import { registerPipelinesRoutes } from "./routes/pipelines.js";
 import { registerPromptsRoutes } from "./routes/prompts.js";
 import { registerRedactionEventsRoutes } from "./routes/redaction-events.js";
+import {
+  registerSchedulerRoute,
+  type SchedulerSource,
+} from "./routes/scheduler.js";
 import { registerSourceBindingsRoutes } from "./routes/source-bindings.js";
 
 type Db = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
@@ -101,6 +105,12 @@ export interface RegisterAdminApiArgs {
   /** @internal Test seam — override `clearInterval`. Receives the opaque
    *  handle returned by `sseSetIntervalFn`. */
   readonly sseClearIntervalFn?: (id: unknown) => void;
+  /** Phase-a appendix #5 PR-M2 — read-only scheduler source for
+   *  `GET /api/admin/scheduler`. Production passes the in-process
+   *  `AgentDispatcher`; when undefined the route is registered with
+   *  an empty source (operator sees `{ schedules: [] }`) so the
+   *  endpoint stays reachable even if the scheduler failed to boot. */
+  readonly schedulerSource?: SchedulerSource;
 }
 
 export async function registerAdminApi(
@@ -208,6 +218,16 @@ export async function registerAdminApi(
   // Phase-a appendix #4 PR-D — Reports tab routes.
   registerHeartbeatRoutes({ app: guardedApp, db: args.db });
   registerRedactionEventsRoutes({ app: guardedApp, db: args.db });
+
+  // Phase-a appendix #5 PR-M2 — read-only scheduler listing.
+  // Falls back to an empty source when the orchestrator did not
+  // wire one (e.g. dispatcher composition failed at boot — same
+  // boot-tolerance pattern as the other admin routes).
+  registerSchedulerRoute({
+    app: guardedApp,
+    db: args.db,
+    source: args.schedulerSource ?? { listSchedules: () => [] },
+  });
 
   // Debug banner: registered LAST so it sees every JSON
   // response regardless of which route built it.

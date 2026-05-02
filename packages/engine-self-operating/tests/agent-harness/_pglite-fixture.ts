@@ -216,6 +216,11 @@ export interface FreshOptions {
   readonly definitionSlug?: string;
   readonly instanceName?: string;
   readonly memory?: Record<string, unknown>;
+  /** Scheduler tests use this; defaults to NULL (no schedule). */
+  readonly scheduleCron?: string | null;
+  /** Defaults to true. Tests that exercise the scheduler's
+   *  enabled-row filter pass `false` here. */
+  readonly enabled?: boolean;
 }
 
 export interface SeededInstance {
@@ -244,12 +249,21 @@ export async function seedAgentInstance(
   const definitionSlug = opts.definitionSlug ?? "heartbeat";
   const instanceName = opts.instanceName ?? "default";
   const memory = JSON.stringify(opts.memory ?? { type: "none" });
+  const enabled = opts.enabled ?? true;
+  const scheduleCron = opts.scheduleCron ?? null;
   const result = await fixture.raw.query<{ id: string }>(
     `INSERT INTO agent_instances
-       (definition_slug, name, scope_domain_ids, memory, locale, enabled)
-     VALUES ($1, $2, $3::uuid[], $4::jsonb, 'en', true)
+       (definition_slug, name, scope_domain_ids, memory, locale, enabled, schedule_cron)
+     VALUES ($1, $2, $3::uuid[], $4::jsonb, 'en', $5, $6)
      RETURNING id`,
-    [definitionSlug, instanceName, [fixture.domainId], memory],
+    [
+      definitionSlug,
+      instanceName,
+      [fixture.domainId],
+      memory,
+      enabled,
+      scheduleCron,
+    ],
   );
   return { instanceId: result.rows[0]!.id, definitionSlug };
 }

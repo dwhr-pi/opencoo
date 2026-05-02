@@ -1,0 +1,377 @@
+/**
+ * `composeProductionWorkerContext` — production-shape composition
+ * root for the ingestion `WorkerContext` (PR-M2, phase-a appendix #5).
+ *
+ * # Composition order
+ *
+ *   1. Caller (orchestrator / `serve.ts`) constructs the
+ *      ingredients (pg.Pool → Drizzle handle, ioredis Redis, SseBus,
+ *      LlmRouter, GuardAdapter, WikiAdapter, CredentialStore, plus
+ *      the slug → adapter-factory map from the shared adapter-
+ *      registry contract). The CALLER owns the network-touching
+ *      bits because the CLI's `serve.ts` already opens the pg
+ *      pool + Redis once for both engines, and the admin-API
+ *      composition root has already validated the env shape — we
+ *      reuse those handles rather than re-reading env here.
+ *
+ *   2. This factory wires those ingredients into the
+ *      `WorkerContext` shape the ingestion workers consume:
+ *        - `wikiDeps` ← `{ adapter, queue, deleteCap, logger,
+ *           clock, instanceId }` (in-memory queue + delete-cap; the
+ *           queue is single-process per the v0.1 distributable
+ *           shape).
+ *        - `adapterRegistry` ← lazy-resolved per-binding registry
+ *           that reads `sources_bindings` + the credential vault
+ *           on each `get(slug)`. Memoised after first resolution
+ *           so the scanner doesn't hit pg per-document.
+ *        - `enqueue` ← producer-side BullMQ Queue handle for
+ *           `ingestion.scanner.classify`. Multi-dot prefix
+ *           bypasses `buildEngineQueue` (which rejects dotted
+ *           slugs), constructed via `new Queue(...)` directly per
+ *           the same convention pipelines/scanner.ts uses.
+ *
+ *   3. Caller passes the returned context to
+ *      `engine-ingestion.start({ mode: 'workers', workerContext,
+ *      workerConnection })`. The orchestrator drains
+ *      `closeProducers()` on SIGTERM AFTER the workers stop — it
+ *      closes the producer-side queue handle this factory opened.
+ *
+ * # Why no env reads
+ *
+ * The CLAUDE.md / THREAT-MODEL invariant 9 forbids feature config
+ * via env. The composition root reads env at the orchestrator
+ * level (DATABASE_URL, REDIS_URL, GITEA_URL, ENCRYPTION_KEY) once;
+ * this factory takes the already-resolved handles. New env vars
+ * are NOT introduced here.
+ *
+ * # Boot tolerance
+ *
+ * If the caller passes incomplete ingredients (e.g. no
+ * `sourceAdapterFactories` because the bindings table is empty),
+ * the registry returns `undefined` for every `get(slug)` and the
+ * scanner pipeline's `scanner.adapter_missing` log line fires —
+ * graceful degradation, not a crash.
+ */
+import { Queue, type ConnectionOptions } from "bullmq";
+import type { Redis } from "ioredis";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+
+import type {
+  CredentialStore,
+} from "@opencoo/shared/credential-store";
+import type { CredentialId } from "@opencoo/shared/db";
+import type { LlmRouter } from "@opencoo/shared/llm-router";
+import type { Logger } from "@opencoo/shared/logger";
+import { scrubPat } from "@opencoo/shared/scrub";
+import type { GuardAdapter } from "@opencoo/shared/adapter-contract-tests/guard";
+import type { SourceAdapter } from "@opencoo/shared/source-adapter";
+import {
+  InMemoryDeleteCap,
+  InMemoryWikiWriteQueue,
+  type WikiAdapter,
+  type WikiAuthor,
+  type WikiWriteDeps,
+} from "@opencoo/shared/wiki-write";
+
+import {
+  SCANNER_CLASSIFY_QUEUE_SLUG,
+  type ScannerClassifyJob,
+} from "../pipelines/scanner.js";
+
+import type { IngestionRunEventEmitter, WorkerContext } from "./context.js";
+
+type Db = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
+
+/** Scrub credential patterns + cap free-text error messages before
+ *  they reach the operator log. Round-2 fix #2: applied uniformly
+ *  to every error log site that surfaces a thrown `Error.message`
+ *  from a credential-vault read or an adapter factory call.
+ *  THREAT-MODEL §3.6 invariant 11 / §2 invariant 11. Defense in
+ *  depth — these errors realistically wouldn't carry creds (UUIDs
+ *  + decryption-failure strings), but the documented invariant
+ *  says scrub them and the rest of the codebase follows the same
+ *  pattern (see engine-ingestion/src/workers/sse-bridge.ts). */
+const ERROR_MESSAGE_MAX_LENGTH = 200;
+function safeError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  return scrubPat(raw).slice(0, ERROR_MESSAGE_MAX_LENGTH);
+}
+
+/** Per-adapter factory — same shape as the shared
+ *  `AdapterRegistry`'s `SourceAdapterFactory`, narrowed here to
+ *  what the production composition needs (the slug union is
+ *  open-ended at this layer; the orchestrator passes only the
+ *  factories it ships). */
+export type ProductionSourceAdapterFactory = (args: {
+  readonly credentialStore: CredentialStore;
+  readonly credentialId: CredentialId;
+  readonly config: unknown;
+}) => SourceAdapter;
+
+export interface ComposeProductionContextArgs {
+  /** Shared Drizzle handle the orchestrator opened once. */
+  readonly db: Db;
+  /** Shared logger. */
+  readonly logger: Logger;
+  /** BullMQ ConnectionOptions for the producer-side `enqueue`
+   *  Queue. Same Redis the orchestrator's other Queue handles
+   *  use — required for the scanner's `add()` calls to land on
+   *  the same backlog the consumer-side worker reads. */
+  readonly redisConnection: ConnectionOptions;
+  /** Optional Redis client passed for cleanup / introspection.
+   *  When present, `closeProducers()` does NOT disconnect it —
+   *  the orchestrator owns its lifecycle. */
+  readonly redisClient?: Redis;
+  /** Credential vault — the per-binding `credentials_id` lookup
+   *  goes through this. */
+  readonly credentialStore: CredentialStore;
+  /** Slug → factory map. The orchestrator imports each adapter
+   *  package (drive / asana / n8n / fireflies / webhook) and
+   *  passes a factory closure that bakes in any production-only
+   *  client deps (e.g. drive's `makeDrive`). When a slug is
+   *  missing here, the registry's `get()` returns `undefined`
+   *  for that slug. */
+  readonly sourceAdapterFactories: Readonly<
+    Record<string, ProductionSourceAdapterFactory>
+  >;
+  /** Production WikiAdapter (typically `giteaWikiAdapter(...)`). */
+  readonly wikiAdapter: WikiAdapter;
+  /** Production LlmRouter. */
+  readonly router: LlmRouter;
+  /** Production GuardAdapter (typically `guardRedactionRegex()`). */
+  readonly guardAdapter: GuardAdapter;
+  /** Service-account author stamped on every machine wiki commit. */
+  readonly author: WikiAuthor;
+  /** Deployment instance id baked into commit trailers
+   *  (`Opencoo-Instance: <instanceId>`). v0.1: a stable string
+   *  per deployment, not per-instance. */
+  readonly instanceId: string;
+  /** Optional shared SseBus. When set, run-lifecycle events from
+   *  every worker emit through here so the Activity feed shows
+   *  ingestion runs alongside agent runs. */
+  readonly sseBus?: IngestionRunEventEmitter;
+  /** Optional clock for deterministic test commit timestamps. */
+  readonly clock?: () => Date;
+}
+
+/** Same shape as the WorkerContext the engine consumes, but
+ *  carries an additional `closeProducers` cleanup hook that
+ *  releases the producer-side BullMQ Queue handle this factory
+ *  opened. */
+export interface ProductionWorkerContext extends WorkerContext {
+  /** Close every producer-side resource this factory opened
+   *  (today: the `ingestion.scanner.classify` Queue handle). The
+   *  orchestrator awaits this AFTER the worker pool drains so
+   *  in-flight scanner enqueues complete first. */
+  closeProducers(): Promise<void>;
+}
+
+/**
+ * Build the production WorkerContext. Returns a fully-populated
+ * context with every required field non-undefined. Errors during
+ * construction throw — the orchestrator's caller catches and falls
+ * back to `mode: 'probes-only'` with a clear stderr line so the
+ * management UI stays up.
+ */
+export async function composeProductionWorkerContext(
+  args: ComposeProductionContextArgs,
+): Promise<ProductionWorkerContext> {
+  // 1. wikiDeps — single-process queue + cap (v0.1 distributable
+  //    shape). The clock is overridable for deterministic tests.
+  const wikiDeps: WikiWriteDeps = {
+    adapter: args.wikiAdapter,
+    queue: new InMemoryWikiWriteQueue(),
+    deleteCap: new InMemoryDeleteCap(),
+    logger: args.logger,
+    clock: args.clock ?? ((): Date => new Date()),
+    instanceId: args.instanceId,
+  };
+
+  // 2. SourceAdapterRegistry — lazy resolution. The scanner
+  //    invokes `registry.get(slug)` per binding scan; we cache
+  //    successful resolutions keyed by `slug` (one adapter
+  //    instance per slug, not per binding).
+  //
+  //    Round-3 fix #2: v0.1 expects ONE enabled binding per slug
+  //    per CLAUDE.md "Multi-project Asana bindings → never". The
+  //    resolver picks the first enabled binding deterministically
+  //    (ORDER BY created_at + LIMIT 1). If a deployment ever has
+  //    multiple bindings sharing a slug, only the first is honored
+  //    — operator-visible behavior should be to disable the
+  //    redundant bindings rather than expect both to fire. v0.2
+  //    revisits this if a real-customer trigger demands per-binding
+  //    adapter instances (would require keying the cache by
+  //    `binding_id` and changing the scanner to dispatch per
+  //    binding rather than per slug).
+  const adapterCache = new Map<string, SourceAdapter>();
+  const adapterRegistry = {
+    /** Resolve the adapter for the FIRST enabled binding with the
+     *  given slug. Memoised. The scanner pipeline calls this once
+     *  per binding scan; the cache avoids re-reading
+     *  `sources_bindings` on the next 4h cron. */
+    get(slug: string): SourceAdapter | undefined {
+      const cached = adapterCache.get(slug);
+      if (cached !== undefined) return cached;
+      // The scanner pipeline calls registry.get() synchronously,
+      // but our resolution requires async pg + credential vault
+      // reads. Trigger a background resolution and return
+      // undefined on first call — the next 4h cron iteration
+      // benefits from the populated cache. The race is acceptable
+      // for v0.1 (the scanner skips with `scanner.adapter_missing`
+      // and the next cron run resolves cleanly).
+      void resolveBindingAdapter(args, slug)
+        .then((resolved) => {
+          if (resolved !== null) {
+            adapterCache.set(slug, resolved);
+          } else {
+            args.logger.warn("adapter_registry.lookup_empty", {
+              adapter_slug: slug,
+              reason:
+                "no enabled binding with this slug + credentials_id resolved cleanly",
+            });
+          }
+        })
+        .catch((err: unknown) => {
+          args.logger.error("adapter_registry.lookup_failed", {
+            adapter_slug: slug,
+            // Round-2 fix #2: scrub + cap. THREAT-MODEL §3.6.
+            error: safeError(err),
+          });
+        });
+      return undefined;
+    },
+  };
+
+  // Eagerly warm the cache for every enabled binding's slug at
+  // boot — pays the round-trip once so the FIRST scanner cron
+  // tick doesn't no-op.
+  await warmAdapterCache(args, adapterCache);
+
+  // 3. Producer-side enqueue handle. Multi-dot slug
+  //    (`ingestion.scanner.classify`) bypasses `buildEngineQueue`
+  //    by constructing `new Queue(...)` directly — same pattern
+  //    pipelines/scanner.ts already documents. The Queue's `add`
+  //    structurally satisfies the narrower `ScannerEnqueue` shape
+  //    the scanner pipeline consumes.
+  const enqueueQueue = new Queue<ScannerClassifyJob>(
+    SCANNER_CLASSIFY_QUEUE_SLUG,
+    { connection: args.redisConnection },
+  );
+
+  // 4. Cleanup hook the orchestrator awaits AFTER worker drain.
+  let closing: Promise<void> | undefined;
+  const closeProducers = async (): Promise<void> => {
+    if (closing !== undefined) return closing;
+    closing = enqueueQueue.close().catch((err: unknown) => {
+      args.logger.warn("production_context.queue_close_failed", {
+        // Round-2 fix #2: scrub + cap. THREAT-MODEL §3.6.
+        error: safeError(err),
+      });
+    });
+    return closing;
+  };
+
+  return {
+    db: args.db,
+    logger: args.logger,
+    router: args.router,
+    wikiDeps,
+    wikiAdapter: args.wikiAdapter,
+    author: args.author,
+    guardAdapter: args.guardAdapter,
+    adapterRegistry,
+    enqueue: enqueueQueue,
+    ...(args.sseBus !== undefined ? { sseBus: args.sseBus } : {}),
+    closeProducers,
+  };
+}
+
+interface BindingRow {
+  readonly id: string;
+  readonly adapter_slug: string;
+  readonly config: unknown;
+  readonly credentials_id: string | null;
+}
+
+/** Resolve the adapter for the FIRST enabled binding with the
+ *  given slug + non-null credentials_id. Returns `null` when no
+ *  matching binding exists or the credential lookup fails. */
+async function resolveBindingAdapter(
+  args: ComposeProductionContextArgs,
+  slug: string,
+): Promise<SourceAdapter | null> {
+  const factory = args.sourceAdapterFactories[slug];
+  if (factory === undefined) {
+    args.logger.warn("adapter_registry.factory_missing", {
+      adapter_slug: slug,
+    });
+    return null;
+  }
+  const result = (await args.db.execute(sql`
+    SELECT id::text             AS id,
+           adapter_slug          AS adapter_slug,
+           config                AS config,
+           credentials_id::text  AS credentials_id
+    FROM sources_bindings
+    WHERE adapter_slug = ${slug}
+      AND enabled = true
+      AND credentials_id IS NOT NULL
+    ORDER BY created_at
+    LIMIT 1
+  `)) as unknown as { rows: BindingRow[] };
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  // Verify the credential is decryptable BEFORE handing the
+  // factory the id — the factory itself reads via the store at
+  // call time but a missing or corrupted credential would surface
+  // there as a confusing "fetch failed" error. Eager check here
+  // converts to a clear log line + null result.
+  try {
+    await args.credentialStore.read(row.credentials_id as CredentialId);
+  } catch (err) {
+    args.logger.error("adapter_registry.credential_unreadable", {
+      adapter_slug: slug,
+      binding_id: row.id,
+      // Round-2 fix #2: scrub + cap. THREAT-MODEL §3.6 invariant 11.
+      error: safeError(err),
+    });
+    return null;
+  }
+  try {
+    return factory({
+      credentialStore: args.credentialStore,
+      credentialId: row.credentials_id as CredentialId,
+      config: row.config,
+    });
+  } catch (err) {
+    args.logger.error("adapter_registry.factory_threw", {
+      adapter_slug: slug,
+      binding_id: row.id,
+      // Round-2 fix #2: scrub + cap. THREAT-MODEL §3.6 invariant 11.
+      error: safeError(err),
+    });
+    return null;
+  }
+}
+
+/** Eagerly resolve every enabled binding's adapter so the
+ *  FIRST scan tick doesn't return undefined and skip its
+ *  documents. */
+async function warmAdapterCache(
+  args: ComposeProductionContextArgs,
+  cache: Map<string, SourceAdapter>,
+): Promise<void> {
+  const result = (await args.db.execute(sql`
+    SELECT DISTINCT adapter_slug
+    FROM sources_bindings
+    WHERE enabled = true
+      AND credentials_id IS NOT NULL
+  `)) as unknown as { rows: Array<{ adapter_slug: string }> };
+  for (const row of result.rows) {
+    const adapter = await resolveBindingAdapter(args, row.adapter_slug);
+    if (adapter !== null) {
+      cache.set(row.adapter_slug, adapter);
+    }
+  }
+}

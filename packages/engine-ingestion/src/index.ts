@@ -36,6 +36,19 @@ export {
   type StartOptions,
 } from "./start.js";
 
+// Production WorkerContext composition (PR-M2, phase-a appendix #5).
+// The orchestrator (CLI `serve.ts`) constructs the heavy ingredients
+// (db pool, Redis, WikiAdapter, GuardAdapter, LlmRouter,
+// CredentialStore, source-adapter factories) and hands them to
+// `composeProductionWorkerContext` which returns the WorkerContext the
+// engine's `start({ mode: 'workers' })` consumes.
+export {
+  composeProductionWorkerContext,
+  type ComposeProductionContextArgs,
+  type ProductionSourceAdapterFactory,
+  type ProductionWorkerContext,
+} from "./workers/production-context.js";
+
 // Workers public surface (PR-M1, phase-a appendix #5). The
 // orchestrator (CLI `serve.ts`) constructs a WorkerContext and
 // passes it into `start({ mode: 'workers', workerContext, ... })`

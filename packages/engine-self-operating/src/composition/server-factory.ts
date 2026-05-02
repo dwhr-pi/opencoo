@@ -36,6 +36,7 @@ import type { Logger } from "@opencoo/shared/logger";
 import { registerAdminApi } from "../admin-api/index.js";
 import type { GiteaClient } from "../admin-api/auth.js";
 import { createSseBus, type SseBus } from "../admin-api/sse-bus.js";
+import type { SchedulerSource } from "../admin-api/routes/scheduler.js";
 import type { EngineConfig } from "../config.js";
 import { registerStaticUi } from "../static-ui.js";
 
@@ -68,6 +69,13 @@ export interface ProductionServerFactoryArgs {
    *  Exposed on the returned object so `start.ts` can thread it to
    *  harness invocations. @internal test seam. */
   readonly sseBus?: SseBus;
+  /** Phase-a appendix #5 PR-M2 — scheduler source for
+   *  `GET /api/admin/scheduler`. The orchestrator passes the
+   *  in-process `AgentDispatcher`; when undefined the route still
+   *  registers but returns an empty list (boot-tolerance: scheduler
+   *  may have failed to compose, but the operator should still be
+   *  able to inspect what's wired). */
+  readonly schedulerSource?: SchedulerSource;
 }
 
 /** Extended return type that exposes the SSE bus so `start.ts` can
@@ -76,7 +84,9 @@ export interface ProductionServerFactoryArgs {
  *  `StartServer.close` have incompatible signatures and TypeScript 5.x
  *  rejects the interface merge (TS2320). The intersection type avoids the
  *  conflict while keeping the structural contract. */
-export type ProductionServer = (FastifyInstance & StartServer) & { readonly sseBus: SseBus };
+export type ProductionServer = (FastifyInstance & StartServer) & {
+  readonly sseBus: SseBus;
+};
 
 export async function productionServerFactory(
   args: ProductionServerFactoryArgs,
@@ -111,6 +121,9 @@ export async function productionServerFactory(
       : {}),
     ...(args.ingestionQueue !== undefined
       ? { ingestionQueue: args.ingestionQueue }
+      : {}),
+    ...(args.schedulerSource !== undefined
+      ? { schedulerSource: args.schedulerSource }
       : {}),
     provisionOrg: args.compositionEnv.giteaProvisionOrg,
     provisionDomainRepo: async (a) => {
