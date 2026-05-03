@@ -188,7 +188,7 @@ export async function runAgentsFire(args: AgentsFireArgs): Promise<void> {
   // warn level (`mcp_http.unavailable` for both the missing token
   // and the pg.Pool path); the operator-facing line names every
   // check so they know where to look.
-  const bundle = composeBundle({ env: args.env, logger });
+  const bundle = await composeBundle({ env: args.env, logger });
   if (bundle === null) {
     args.stderr.write(
       pc.red(
