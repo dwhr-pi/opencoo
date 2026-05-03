@@ -193,6 +193,18 @@ describe("composeProductionWorkerContext", () => {
     expect(ctx.guardAdapter).toBeDefined();
     expect(ctx.adapterRegistry).toBeDefined();
     expect(ctx.enqueue).toBeDefined();
+    // Round-2 fix (Copilot #56): production composition MUST also
+    // populate the four webhook-receiver dependencies so
+    // `start({ mode: 'workers' })` can mount the receiver onto the
+    // engine's Fastify app. Pinning these here means a future
+    // refactor that drops one of them blows up the typecheck +
+    // this test before it reaches a deployment.
+    expect(ctx.credentialStore).toBeDefined();
+    expect(ctx.webhookVerifier).toBeDefined();
+    expect(ctx.webhookScannerQueue).toBeDefined();
+    expect(typeof ctx.webhookScannerQueue?.add).toBe("function");
+    expect(ctx.webhookDlqQueue).toBeDefined();
+    expect(typeof ctx.webhookDlqQueue?.add).toBe("function");
     // Cleanup the queue handle.
     await ctx.closeProducers?.();
   });

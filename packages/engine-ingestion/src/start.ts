@@ -14,21 +14,29 @@
  * `enableReadyCheck: false` must be set — the default factory
  * here applies both.
  */
+import type { FastifyInstance } from "fastify";
 import pg from "pg";
 import { Redis } from "ioredis";
 import type { ConnectionOptions } from "bullmq";
 
 import {
+  buildServer,
   PipelineRegistry,
   startEngine,
+  type ProbeMap,
   type StartDb,
   type StartedEngine as BaseStartedEngine,
   type StartOptions as BaseStartOptions,
   type StartRedis,
+  type StartServer,
 } from "@opencoo/shared/engine-scaffold";
 
 import { loadEngineConfig, type EngineConfig } from "./config.js";
 import type { PipelineDefinition } from "./types.js";
+import {
+  registerWebhookRoute,
+  WEBHOOK_BODY_LIMIT_BYTES,
+} from "./intake/webhook-receiver.js";
 import {
   startIngestionWorkers,
   type IngestionWorkers,
@@ -153,13 +161,93 @@ export async function start(
     }
   }
 
+  // Round-2 fix (Copilot #56): when mode='workers', validate that
+  // the WorkerContext carries the four webhook-receiver
+  // dependencies (credentialStore, webhookVerifier,
+  // webhookScannerQueue, webhookDlqQueue). Without these, the
+  // receiver cannot mount and webhook deliveries would queue in
+  // Redis with no dequeue path.
+  //
+  // Composition-root bugs fail loud at boot, not at first POST —
+  // mirroring the workerContext / workerConnection check above.
+  if (mode === "workers") {
+    const ctx = options.workerContext as WorkerContext;
+    const missing: string[] = [];
+    if (ctx.credentialStore === undefined) missing.push("credentialStore");
+    if (ctx.webhookVerifier === undefined) missing.push("webhookVerifier");
+    if (ctx.webhookScannerQueue === undefined) missing.push("webhookScannerQueue");
+    if (ctx.webhookDlqQueue === undefined) missing.push("webhookDlqQueue");
+    if (missing.length > 0) {
+      throw new Error(
+        `engine-ingestion start: mode='workers' requires WorkerContext.{${missing.join(",")}} for the webhook receiver mount (composition-root bug)`,
+      );
+    }
+  }
+
+  // Wrap (or build) the serverFactory so the engine's primary
+  // Fastify app gets the webhook receiver route registered BEFORE
+  // app.listen(). Round-2 fix (Copilot #56): without this mount,
+  // `buildWebhookReceiver` was exported but never called in
+  // production — `recordWebhook` was dead code on the live
+  // pipeline, the runbook's "drop a tagged Asana task → wait 10s
+  // → see webhook_events row" was a lie, and the
+  // `webhook_receiver.signature_invalid` log added in PR-N1 was
+  // unreachable.
+  //
+  // The wrapper preserves any caller-supplied serverFactory (test
+  // seam) — it simply registers the route on whatever
+  // FastifyInstance the factory returns. The wrapper only fires
+  // in `mode: 'workers'`; probes-only boots with the original
+  // (or user-supplied) factory unchanged.
+  const wrappedServerFactory: BaseStartOptions<
+    EngineConfig,
+    IngestionRegistry
+  >["serverFactory"] =
+    mode === "workers"
+      ? async (probes: ProbeMap): Promise<StartServer> => {
+          const innerFactory =
+            options.serverFactory ??
+            ((p: ProbeMap): StartServer =>
+              buildServer({
+                probes: p,
+                bodyLimit: WEBHOOK_BODY_LIMIT_BYTES,
+              }) as unknown as StartServer);
+          const server = await innerFactory(probes);
+          // Register the webhook route + raw-buffer parser onto
+          // the engine's Fastify app. addContentTypeParser MUST
+          // happen before listen — startEngine calls listen
+          // immediately AFTER serverFactory returns, so this
+          // ordering is guaranteed by construction.
+          //
+          // Cast: the StartServer port is intentionally narrow
+          // (listen+close); the receiver route registration
+          // requires the full FastifyInstance surface. In
+          // production the default factory returns a FastifyInstance
+          // (engine-scaffold defaultServerFactory casts the same
+          // way); in tests the caller-supplied serverFactory is
+          // expected to return a Fastify-compatible value when
+          // mode='workers'.
+          const ctx = options.workerContext as WorkerContext;
+          registerWebhookRoute(server as unknown as FastifyInstance, {
+            db: ctx.db as unknown as Parameters<typeof registerWebhookRoute>[1]["db"],
+            credentialStore: ctx.credentialStore!,
+            adapterRegistry: ctx.adapterRegistry,
+            verifier: ctx.webhookVerifier!,
+            scannerQueue: ctx.webhookScannerQueue!,
+            dlqQueue: ctx.webhookDlqQueue!,
+            appLogger: ctx.logger,
+          });
+          return server;
+        }
+      : options.serverFactory;
+
   const baseOptions: BaseStartOptions<EngineConfig, IngestionRegistry> = {
     config,
     dbFactory: options.dbFactory ?? defaultDbFactory,
     redisFactory: options.redisFactory ?? defaultRedisFactory,
     ...(options.registry !== undefined ? { registry: options.registry } : {}),
-    ...(options.serverFactory !== undefined
-      ? { serverFactory: options.serverFactory }
+    ...(wrappedServerFactory !== undefined
+      ? { serverFactory: wrappedServerFactory }
       : {}),
     ...(options.probeExtender !== undefined
       ? { probeExtender: options.probeExtender }

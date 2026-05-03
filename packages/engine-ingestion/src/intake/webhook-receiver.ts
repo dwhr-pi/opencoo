@@ -52,10 +52,11 @@ import {
 import type { CredentialStore } from "@opencoo/shared/credential-store";
 import type { CredentialId } from "@opencoo/shared/db";
 import type { Logger } from "@opencoo/shared/logger";
+import { scrubPat } from "@opencoo/shared/scrub";
 import type { SourceWebhookHelpers } from "@opencoo/shared/source-adapter";
 import type { WebhookVerifier } from "@opencoo/shared/webhook-verifier";
 
-import type { InMemoryAdapterRegistry } from "./adapter-registry.js";
+import type { SourceAdapterStub } from "./adapter-registry.js";
 import { recordWebhook } from "./record-webhook.js";
 
 export const WEBHOOK_BODY_LIMIT_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -66,14 +67,31 @@ export interface WebhookQueueLike {
   add(name: string, data: unknown, opts?: unknown): Promise<unknown>;
 }
 
+/**
+ * Minimum structural shape the receiver consumes from an adapter
+ * registry. Both the test-only `InMemoryAdapterRegistry` and the
+ * production lazy-resolving registry from
+ * `engine-ingestion/src/workers/production-context.ts` satisfy this
+ * shape — keeping the receiver agnostic to the registry impl
+ * (round-2 fix, Copilot #56: production mount needed a structural
+ * registry type so the same receiver wires up against either).
+ */
+export interface WebhookAdapterRegistry {
+  get(slug: string): SourceAdapterStub | undefined;
+}
+
 export interface WebhookReceiverOptions {
   readonly db: PgDatabase<never, Record<string, never>, Record<string, never>>;
   readonly credentialStore: CredentialStore;
-  readonly adapterRegistry: InMemoryAdapterRegistry;
+  readonly adapterRegistry: WebhookAdapterRegistry;
   readonly verifier: WebhookVerifier;
   readonly scannerQueue: WebhookQueueLike;
   readonly dlqQueue: WebhookQueueLike;
-  /** Enables Fastify's built-in request logger when true. */
+  /** Enables Fastify's built-in request logger when true. Only
+   *  consulted by `buildWebhookReceiver` (which constructs its own
+   *  Fastify app); ignored by `registerWebhookRoute` (which
+   *  registers the route on a caller-provided app whose logger is
+   *  already configured). */
   readonly logger?: boolean;
   /** Application-level structured logger for audit events. */
   readonly appLogger?: Logger;
@@ -106,17 +124,45 @@ function hasWebhookHelpers(
   );
 }
 
-export function buildWebhookReceiver(
+/**
+ * Register the `POST /webhooks/:bindingId` route + its raw-buffer
+ * content-type parser onto an existing Fastify app.
+ *
+ * Used by:
+ *   - `buildWebhookReceiver` (creates a dedicated Fastify app for
+ *     unit tests and standalone usage), AND
+ *   - `engine-ingestion/src/start.ts` (when `mode: 'workers'`
+ *     mounts the receiver onto the engine's primary Fastify
+ *     instance so a real `pnpm opencoo` process actually accepts
+ *     webhook deliveries — round-2 fix, Copilot #56: without this
+ *     mount, `recordWebhook` was dead in production and the
+ *     `webhook_receiver.signature_invalid` log line never fired
+ *     against a real deployment).
+ *
+ * MUST be called BEFORE `app.listen()` — Fastify rejects
+ * `addContentTypeParser` calls after the server is ready. The
+ * caller is responsible for ensuring boot ordering.
+ *
+ * The supplied app's `bodyLimit` is NOT touched here — the caller
+ * is expected to construct the app with `WEBHOOK_BODY_LIMIT_BYTES`
+ * if it serves any webhook traffic. (For an app that only serves
+ * webhook traffic, `buildWebhookReceiver` enforces this; for the
+ * shared engine app, `start.ts` configures the engine's Fastify
+ * with the webhook body limit when `mode === 'workers'`.)
+ */
+export function registerWebhookRoute(
+  app: FastifyInstance,
   options: WebhookReceiverOptions,
-): FastifyInstance {
-  const app = Fastify({
-    logger: options.logger ?? false,
-    bodyLimit: WEBHOOK_BODY_LIMIT_BYTES,
-  });
-
+): void {
   // Capture the RAW request body. Fastify's default JSON parser
   // discards bytes after parsing; we need the exact bytes the
   // sender hashed for HMAC verification.
+  //
+  // Note: this REPLACES Fastify's default JSON parser at the root
+  // context. Health/ready probes are GET routes with no request
+  // body, so they're unaffected. Any future ingestion-engine route
+  // that POSTs JSON would need to opt into the buffer parser via
+  // an explicit `Content-Type` (e.g. `application/x-opencoo-json`).
   app.addContentTypeParser(
     "application/json",
     { parseAs: "buffer" },
@@ -273,6 +319,45 @@ export function buildWebhookReceiver(
 
     // Step 6: signature mismatch path.
     if (!verifyResult.ok) {
+      // (PR-N1, phase-a appendix #6) Pilot runbook §5 directs operators
+      // to grep for this key in LOG_LEVEL=debug output to diagnose
+      // failed-handshake situations. The line is INTENTIONALLY at debug
+      // level — successful webhooks are voluminous in production, and
+      // operators only need this trace when chasing a failure.
+      //
+      // THREAT-MODEL §2 invariant 11 + §3.6 (no raw secrets in logs):
+      //   - We log the signature header NAME ("x-signature"), never
+      //     the header VALUE.
+      //   - We do not log the request body.
+      //   - We `scrubPat` + cap `verifyResult.reason` defensively
+      //     before logging. The current `HmacSha256Verifier` returns
+      //     a closed-enum static string ("signature header missing",
+      //     "signature is malformed (...)", "signature mismatch
+      //     (HMAC differs)", "signature length mismatch (...)") which
+      //     scrubs to itself. But the `WebhookVerifier` type contract
+      //     just permits `string` — a future custom verifier could
+      //     include user-supplied bytes (header values, body
+      //     fragments, credential patterns). Defense in depth: scrub
+      //     credential patterns and cap at 200 chars BEFORE the line
+      //     reaches the operator log, mirroring the `safeError`
+      //     helper in `workers/production-context.ts` and
+      //     `cli/provision/production-composition.ts`.
+      //   - Apply scrubPat BEFORE the slice so a credential pattern
+      //     straddling the 200-char boundary is still redacted as a
+      //     whole match.
+      const ERROR_REASON_MAX_LENGTH = 200;
+      const safeReason = scrubPat(verifyResult.reason).slice(
+        0,
+        ERROR_REASON_MAX_LENGTH,
+      );
+      options.appLogger?.debug("webhook_receiver.signature_invalid", {
+        bindingId,
+        provider: provider ?? binding.adapterSlug,
+        eventId: eventId ?? null,
+        signatureHeaderName: "x-signature",
+        errorReason: safeReason,
+      });
+
       await options.dlqQueue.add("intake.dlq", {
         webhookId: writeResult.webhookId,
         bindingId,
@@ -334,6 +419,30 @@ export function buildWebhookReceiver(
       deliveryCount: writeResult.deliveryCount,
     };
   });
+}
+
+/**
+ * Backwards-compatible factory: construct a dedicated Fastify app
+ * with the webhook body limit and register the receiver route on it.
+ *
+ * Used by every receiver unit test (webhook-receiver.test.ts,
+ * asana-handshake.test.ts, webhook-receiver-enrich.test.ts) that
+ * wants a self-contained Fastify instance to `inject()` against
+ * without needing to construct the engine's full server.
+ *
+ * Production usage goes through `registerWebhookRoute` directly so
+ * the route mounts on the engine's primary Fastify app — see
+ * `engine-ingestion/src/start.ts` mode='workers' branch.
+ */
+export function buildWebhookReceiver(
+  options: WebhookReceiverOptions,
+): FastifyInstance {
+  const app = Fastify({
+    logger: options.logger ?? false,
+    bodyLimit: WEBHOOK_BODY_LIMIT_BYTES,
+  });
+
+  registerWebhookRoute(app, options);
 
   return app;
 }

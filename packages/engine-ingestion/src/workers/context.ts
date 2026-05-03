@@ -19,15 +19,18 @@
 import type { Pool } from "pg";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
+import type { CredentialStore } from "@opencoo/shared/credential-store";
 import type { LlmRouter } from "@opencoo/shared/llm-router";
 import type { Logger } from "@opencoo/shared/logger";
 import type { GuardAdapter } from "@opencoo/shared/adapter-contract-tests/guard";
+import type { WebhookVerifier } from "@opencoo/shared/webhook-verifier";
 import type {
   WikiAdapter,
   WikiAuthor,
   WikiWriteDeps,
 } from "@opencoo/shared/wiki-write";
 
+import type { WebhookQueueLike } from "../intake/webhook-receiver.js";
 import type { SourceAdapterRegistry } from "../pipelines/scanner.js";
 
 /**
@@ -107,6 +110,27 @@ export interface WorkerContext {
    *  from. Optional in test contexts where the Scanner's adapter
    *  registry is empty (so `enqueue.add` is never called). */
   readonly enqueue?: import("../pipelines/scanner.js").ScannerEnqueue;
+  /** Round-2 fix (Copilot #56) — webhook receiver dependencies the
+   *  orchestrator threads through `start({ mode: 'workers' })` so
+   *  the receiver mounts on the engine's primary Fastify app and
+   *  starts accepting deliveries automatically. All four are
+   *  required for production webhook ingest; optional in tests
+   *  that only exercise worker behavior. */
+  readonly credentialStore?: CredentialStore;
+  readonly webhookVerifier?: WebhookVerifier;
+  /** BullMQ Queue handle for the scanner queue (`ingestion.scanner`)
+   *  the webhook receiver enqueues onto when a delivery is
+   *  accepted. Distinct from `enqueue` (which targets
+   *  `ingestion.scanner.classify` and is consumed by the Compile
+   *  worker). The Scanner worker dequeues from `ingestion.scanner`
+   *  and ignores the job payload — the receiver only needs to
+   *  trigger a scan. */
+  readonly webhookScannerQueue?: WebhookQueueLike;
+  /** BullMQ Queue handle for the intake DLQ (`ingestion.intake.dlq`)
+   *  the webhook receiver enqueues onto when a delivery is
+   *  rejected (signature mismatch, missing adapter, missing
+   *  credentials). */
+  readonly webhookDlqQueue?: WebhookQueueLike;
 }
 
 /** Production-shape — narrow type for the raw `pg.Pool` so the

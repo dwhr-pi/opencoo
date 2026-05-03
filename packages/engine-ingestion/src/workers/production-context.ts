@@ -66,6 +66,7 @@ import type { Logger } from "@opencoo/shared/logger";
 import { scrubPat } from "@opencoo/shared/scrub";
 import type { GuardAdapter } from "@opencoo/shared/adapter-contract-tests/guard";
 import type { SourceAdapter } from "@opencoo/shared/source-adapter";
+import { HmacSha256Verifier } from "@opencoo/shared/webhook-verifier";
 import {
   InMemoryDeleteCap,
   InMemoryWikiWriteQueue,
@@ -259,16 +260,47 @@ export async function composeProductionWorkerContext(
     { connection: args.redisConnection },
   );
 
-  // 4. Cleanup hook the orchestrator awaits AFTER worker drain.
+  // 4. Webhook receiver producer-side handles (round-2 fix,
+  //    Copilot #56): the receiver enqueues onto the Scanner queue
+  //    when a delivery is accepted, and onto the intake DLQ when
+  //    a delivery is rejected. Both queues use the standard
+  //    `<prefix>.<slug>` convention (`ingestion.scanner` for the
+  //    Scanner worker dequeue; `ingestion.intake.dlq` for operator
+  //    triage of malformed deliveries).
+  const webhookScannerQueue = new Queue("ingestion.scanner", {
+    connection: args.redisConnection,
+  });
+  const webhookDlqQueue = new Queue("ingestion.intake.dlq", {
+    connection: args.redisConnection,
+  });
+
+  // The webhook verifier itself is stateless — same instance can
+  // serve every binding. v0.1 ships `HmacSha256Verifier` only;
+  // per-adapter verifiers ride along on the SourceAdapter via its
+  // `webhook.verifier` field once PR-G+ adapters use that path.
+  const webhookVerifier = new HmacSha256Verifier();
+
+  // 5. Cleanup hook the orchestrator awaits AFTER worker drain.
+  //    Drains every producer-side BullMQ queue handle this
+  //    factory opened (the scanner-classify enqueue + the two
+  //    webhook-receiver queues). Best-effort: a buggy close on
+  //    one queue must not prevent the others from draining.
   let closing: Promise<void> | undefined;
   const closeProducers = async (): Promise<void> => {
     if (closing !== undefined) return closing;
-    closing = enqueueQueue.close().catch((err: unknown) => {
-      args.logger.warn("production_context.queue_close_failed", {
-        // Round-2 fix #2: scrub + cap. THREAT-MODEL §3.6.
-        error: safeError(err),
+    const closeOne = (q: Queue, label: string): Promise<void> =>
+      q.close().catch((err: unknown) => {
+        args.logger.warn("production_context.queue_close_failed", {
+          queue: label,
+          // Round-2 fix #2: scrub + cap. THREAT-MODEL §3.6.
+          error: safeError(err),
+        });
       });
-    });
+    closing = Promise.all([
+      closeOne(enqueueQueue, SCANNER_CLASSIFY_QUEUE_SLUG),
+      closeOne(webhookScannerQueue, "ingestion.scanner"),
+      closeOne(webhookDlqQueue, "ingestion.intake.dlq"),
+    ]).then(() => undefined);
     return closing;
   };
 
@@ -282,6 +314,10 @@ export async function composeProductionWorkerContext(
     guardAdapter: args.guardAdapter,
     adapterRegistry,
     enqueue: enqueueQueue,
+    credentialStore: args.credentialStore,
+    webhookVerifier,
+    webhookScannerQueue,
+    webhookDlqQueue,
     ...(args.sseBus !== undefined ? { sseBus: args.sseBus } : {}),
     closeProducers,
   };
