@@ -232,6 +232,7 @@ Operator ticks each box before declaring the deployment pilot-ready:
   - **#7** — `wikiWrite` is the sole write path; ESLint boundary `no-direct-gitea-write` enabled.
   - **#8** — `engine-ingestion` and `engine-self-operating` do not import each other (`no-cross-engine-import`).
 - [ ] Operator has read THREAT-MODEL §5 PR checklist + §7 residual risks list and signed off on the residuals as acceptable for the pilot's first weeks.
+- [ ] Maintainer has signed `docs/threat-model-signoff-0.1.0-a.md` (the canonical pre-tag artifact). Pre-fill the §5 automatable items by running `pnpm threat-model:preflight` against the candidate closing commit; spot-check the 8 maintainer-judgment items (items 2, 3, 4, 5, 6, 7, 8, 11) at the cited `path:line` refs; record the GO / STOP / MORE-WORK recommendation in the closure block.
 - [ ] Rollback path (§6) exercised at least once: a binding disabled, the n8n equivalent re-enabled, output verified, the binding re-enabled.
 
 When every box is ticked, the deployment is pilot-ready. the partner's two-week soak begins; phase-b entry gate (`IMPLEMENTATION-PLAN.md` §2.1) opens after a sev-1-incident-free fortnight.

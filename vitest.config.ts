@@ -34,5 +34,27 @@ export default defineConfig({
     ],
     environment: "node",
     testTimeout: 10_000,
+    // Per-file pool override so the THREAT-MODEL §5 pre-flight test
+    // (which spawns a long-running bash subprocess via spawnSync —
+    // ~30s for `pnpm lint` + `pnpm test:injection` on a cold cache)
+    // runs in its OWN forks pool with singleFork: true. This isolates
+    // its worker from the main thread-pool's IPC heartbeat so the
+    // suite doesn't surface the "Timeout calling onTaskUpdate"
+    // unhandled error vitest emits when a busy worker can't reach
+    // the orchestrator within the IPC window. (PR-P1 / phase-a
+    // appendix #8 round-2 finding S4.)
+    //
+    // poolMatchGlobs is deprecated in favour of `projects` in
+    // vitest >=3, but it's still supported and emits a single
+    // deprecation warning at boot. Migration to `projects` is a
+    // v0.2 follow-up — the projects API requires restructuring
+    // every existing test config and isn't worth the churn for
+    // one file's pool override.
+    poolMatchGlobs: [["tests/threat-model-preflight.test.ts", "forks"]],
+    poolOptions: {
+      forks: {
+        singleFork: true,
+      },
+    },
   },
 });

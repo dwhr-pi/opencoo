@@ -23,6 +23,7 @@
     "format": "prettier --write .",
     "opencoo": "node packages/cli/dist/bin.js",
     "smoke:real-data": "node --experimental-strip-types scripts/smoke-real-data.ts",
+    "threat-model:preflight": "bash scripts/threat-model-preflight.sh",
     "prepare": "husky"
   },
   "devDependencies": {
