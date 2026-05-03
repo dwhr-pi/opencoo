@@ -11,6 +11,7 @@ import {
   type GiteaScopeChecker,
 } from "./services/scope-checker.js";
 import { registerWorldviewResource } from "./resources/worldview.js";
+import { registerWikiResources } from "./resources/wiki.js";
 import { registerWikiToc } from "./tools/wiki-toc.js";
 import { registerWikiRead } from "./tools/wiki-read.js";
 import { registerWikiSearch } from "./tools/wiki-search.js";
@@ -49,6 +50,12 @@ export function createServer(config: Config): ServerBundle {
     // Operator-facing only; never exposes the deny reason to clients.
     console.error(
       `[worldview] deny reason=${reason} ${JSON.stringify(detail)}`,
+    );
+  });
+  registerWikiResources(server, registry, scopeChecker, (reason, detail) => {
+    // Operator-facing only; never exposes the deny reason to clients.
+    console.error(
+      `[wiki] deny reason=${reason} ${JSON.stringify(detail)}`,
     );
   });
 

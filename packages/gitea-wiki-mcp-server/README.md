@@ -33,6 +33,7 @@ The server also exposes MCP **resources** — URI-addressable read-only surfaces
 | --- | --- |
 | `worldview://{slug}` | `{slug}/worldview.md` — the Thinker-compiled synthesis for that domain. |
 | `worldview://company` | `{aggregator}/company.md` — cross-domain synthesis. Only available when exactly one `REPOS` entry has `aggregator: true`. |
+| `wiki://{slug}/{path}` | An individual markdown page in the named domain wiki — e.g. `wiki://exec/team/eng.md`. Body returned as `text/markdown` (frontmatter stripped). |
 
 Worldview resources are **authorisation-gated at the MCP boundary** so an agent can only read a domain's synthesis its caller's Gitea PAT can itself see:
 
@@ -42,6 +43,16 @@ Worldview resources are **authorisation-gated at the MCP boundary** so an agent 
 - Fail-closed on 5xx, network errors, or timeouts.
 
 The slug `company` is **reserved** — binding a real repo to it is rejected at boot.
+
+### Wiki page resources
+
+`wiki://{slug}/{path}` exposes individual markdown pages so MCP clients can pull them as URI-addressable grounding context (in addition to calling `wiki_read`). The reader and the lister share the same authorisation model as `worldview://`:
+
+- **Static-token clients** bypass the per-repo scope check.
+- **OAuth-principal clients** are scope-checked against the resolved repo's `(owner, name)` per request, with the same 60 s LRU cache.
+- Path traversal (`..`, absolute paths, null bytes) is rejected by the shared `safeResolve()` guard before any file I/O.
+- Every deny path — unknown slug, missing file, out-of-scope, malformed URI, traversal — returns the same uniform `resource not accessible` error.
+- `resources/list` returns at most **500** entries in v0.1; pagination is the deferred follow-up. Repos the principal cannot see are silently omitted from the listing rather than counted or named.
 
 ## Architecture
 
@@ -227,7 +238,7 @@ Rollback = unset `PUBLIC_URL`. Internal static-bearer path is completely unchang
 - Ripgrep `path_glob` is allow-list-validated; queries are passed as argv, never shell.
 - Rate limit: 60 requests/min per IP on `/mcp` (trust proxy = 1 hop for real client IPs behind Caddy).
 - CORS origin allow-list via `CORS_ORIGINS`; `WWW-Authenticate` / `Mcp-Session-Id` / `Mcp-Protocol-Version` kept in `exposedHeaders`.
-- `worldview://` resources are PAT-scope-enforced per request for OAuth principals (internal static tokens bypass). Deny paths are uniformly reported as `resource not accessible`; 60 s LRU cache on decisions; fail-closed.
+- `worldview://` and `wiki://` resources are PAT-scope-enforced per request for OAuth principals (internal static tokens bypass). Deny paths are uniformly reported as `resource not accessible`; 60 s LRU cache on decisions; fail-closed. `wiki://` adds path-traversal rejection via the shared `safeResolve()` guard and a 500-entry cap on `resources/list`.
 
 ## Known limits
 
