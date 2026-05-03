@@ -15,6 +15,10 @@
 import { Command } from "commander";
 
 import {
+  runAgentsFire,
+  type AgentsFireArgs,
+} from "./commands/agents-fire.js";
+import {
   runAgentsSeed,
   type AgentsSeedArgs,
 } from "./commands/agents-seed.js";
@@ -42,6 +46,7 @@ export interface ParseAndDispatchArgs {
     readonly setup?: (a: SetupArgs) => Promise<void>;
     readonly doctor?: (a: DoctorArgs) => Promise<void>;
     readonly agentsSeed?: (a: AgentsSeedArgs) => Promise<void>;
+    readonly agentsFire?: (a: AgentsFireArgs) => Promise<void>;
     /** `source test` runner — the parse layer doesn't have an
      *  AdapterRegistry to inject (that's bin.ts's job). The runner
      *  contract here OMITS `registry`; the production wrapper in
@@ -157,6 +162,35 @@ export async function parseAndDispatch(
         stderr: args.stderr,
       });
     });
+
+  agents
+    .command("fire <slug>")
+    .description(
+      "manually trigger a scheduled agent's runner without waiting for cron",
+    )
+    .option(
+      "--instance-id <uuid>",
+      "specify which instance row when multiple exist for the slug",
+    )
+    .option("--dry-run", "print the resolution without dispatching")
+    .action(
+      async (
+        slug: string,
+        opts: { instanceId?: string; dryRun?: boolean },
+      ) => {
+        const fn = runners.agentsFire ?? runAgentsFire;
+        await fn({
+          env: args.env,
+          stdout: args.stdout,
+          stderr: args.stderr,
+          slug,
+          ...(opts.instanceId !== undefined
+            ? { instanceId: opts.instanceId }
+            : {}),
+          ...(opts.dryRun !== undefined ? { dryRun: opts.dryRun } : {}),
+        });
+      },
+    );
 
   // `source` namespace: source test / source forget.
   const source = program

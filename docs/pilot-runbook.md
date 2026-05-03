@@ -51,11 +51,13 @@ Run from the repo root, with the env above present in `.env` or the shell:
 ```
 pnpm install
 pnpm build
-opencoo migrate              # apply Drizzle migrations to the Postgres DSN
-opencoo setup                # interactive: writes .env at mode 0600 if missing
-opencoo agents seed          # idempotent INSERT of default Heartbeat/Lint/Surfacer rows
-opencoo doctor               # verifies env + Postgres + Gitea + enumerates ingress paths
-pnpm opencoo                 # boots the management UI + ingestion engine in one process
+opencoo migrate                                  # apply Drizzle migrations to the Postgres DSN
+opencoo setup                                    # interactive: writes .env at mode 0600 if missing
+opencoo agents seed                              # idempotent INSERT of default Heartbeat/Lint/Surfacer rows
+opencoo agents fire heartbeat --dry-run          # verifies the heartbeat runner is registered (dry-run reports the requested slug only)
+opencoo agents fire lint --dry-run               # verifies the lint runner is registered (separate command — repeat the verb per slug)
+opencoo doctor                                   # verifies env + Postgres + Gitea + enumerates ingress paths
+pnpm opencoo                                     # boots the management UI + ingestion engine in one process
 ```
 
 Per-command notes:
@@ -63,6 +65,7 @@ Per-command notes:
 - `opencoo migrate` is idempotent — Drizzle tracks applied rows in `drizzle.__drizzle_migrations`. green output: `migrate: ok`.
 - `opencoo setup` refuses to overwrite an existing `.env`. delete or rename first if rotating secrets.
 - `opencoo agents seed` inserts one `agent_instances` row per scheduled-class agent (Heartbeat, Lint, Surfacer). Chat + Builder are on-demand and intentionally not seeded. re-running is a no-op.
+- `opencoo agents fire <slug> [--dry-run] [--instance-id <uuid>]` manually triggers a scheduled agent's runner without waiting for cron. Resolves the slug to its `agent_instances` row + invokes the harness directly (bypasses BullMQ; no Activity-feed event — operator-side asymmetry by design). Exit codes: `0` dispatch ok / `1` operator error (slug not found, ambiguous slug, mismatched `--instance-id`, malformed UUID, runner missing) / `2` runtime error (`MCP_BEARER_TOKEN` unset, `DATABASE_URL` unset / Postgres unreachable, pg.Pool construction failure, runner threw before recording the row). The dry-run reports the **requested slug only** — re-run the verb per slug to verify each runner. With `MCP_BEARER_TOKEN` set, `agents fire heartbeat --dry-run` and `agents fire lint --dry-run` both report `runner: registered`; `agents fire surfacer --dry-run` reports `runner: NOT in registry` per appendix #6 (Surfacer is omitted by default until the template catalog is wired — see §8).
 - `opencoo doctor` returns exit 0 with all-green checks on a healthy fresh install. one yellow line on the Activity feed surface is expected on first boot — there are no events yet to enumerate. yellow on `gitea_team` means `OPENCOO_ADMIN_PAT` is unset; pass `--admin-pat <pat>` to verify admin-team membership.
 - `pnpm opencoo` boots both engines in a single Node process. expected stdout: `opencoo: starting...` → `opencoo: started`. SIGTERM / SIGINT drains both engines in parallel within ~30s.
 
@@ -126,6 +129,21 @@ The Activity feed (`GET /api/admin/events` SSE bus) emits exactly five SSE chann
 
 When the webhook row, the `agent_run` success event, the `ingestion_intake` `compiled` row, and the wiki page are all in place, the smoke is green. proceed to the §9 sign-off checklist.
 
+### Scheduled-agent smoke (manual fire of Heartbeat)
+
+Independent of the webhook → wiki path: `opencoo agents fire heartbeat` triggers the Heartbeat runner directly via the harness, bypassing BullMQ. With `MCP_BEARER_TOKEN` set + Heartbeat seeded by `opencoo agents seed`, the verb produces an `agent_runs` row within ~30s. Verify the row landed:
+
+```
+psql "$DATABASE_URL" -c "SELECT id, definition_slug, status, started_at, ended_at, latency_ms \
+                         FROM agent_runs ORDER BY started_at DESC LIMIT 1;"
+```
+
+Expected: one row with `definition_slug = 'heartbeat'`, `status = 'success'` (or `'failed'` with the harness-recorded error captured in `output`), and `started_at` within the last minute. The CLI prints `✓ heartbeat instance <uuid> dispatched; agent_runs row <uuid> recorded; status <status>` on stdout.
+
+The CLI does NOT emit onto the SSE bus — Activity-feed events fire only for cron-dispatched runs. This asymmetry is by design: the CLI is operator-side, no UI listens. Operators who want feed visibility wait for the next cron tick (`agents fire` is the cutover-readiness verification, not the production trigger).
+
+If the row's `status = 'failed'`, the harness still records the row + the `output.error` field carries the message (scrubbed via `scrubPat`). Common causes: no domain bound to the instance's `scope_domain_ids` yet (run §3 first), Gitea `wiki-<slug>` repo missing (run `opencoo setup`), MCP wiki resources not registered on the gitea-wiki-mcp-server (PR-O1 in this same appendix; needed for Heartbeat's wiki-read path). For a slug that has no runner registered (Surfacer in v0.1, per appendix #6), the verb exits 1 with the runner-omitted hint pointing back at §8 — no run row is recorded.
+
 ### Scripted probe (webhook → intake → classify-enqueue chain)
 
 `scripts/smoke-real-data.ts` (registered as `pnpm smoke:real-data`) is a separate probe — it tests the **HTTP receiver + HMAC verify + DB persistence + direct-intake fast path** against the generic `source-webhook` adapter. With PR-N2 the smoke now also confirms an `ingestion_intake` row lands inline (the receiver's direct-intake branch fires when the bound adapter exposes `webhook.enrichEvents` AND the orchestrator wired `scannerClassifyQueue` — `source-webhook` satisfies both since PR-N2). The smoke does NOT verify compile → wiki write — that depends on the Compile worker, LLM router, GuardAdapter, and WikiAdapter all being composed and reachable; the §4 manual walk above remains the canonical end-to-end verification against a real Asana / Drive binding.
@@ -173,7 +191,7 @@ Before declaring pilot-ready, the operator runs the following spot-check (mirror
 
 These are deliberate phase-a / phase-b deferrals. tracking each in the appendix #5 follow-up issue:
 
-- **Heartbeat / Lint scheduled agents fire on cron when `MCP_BEARER_TOKEN` is set.** PR-N3 (phase-a appendix #6) wires the production `HttpMcpToolClient` + `AgentRunnerRegistry`. `agents seed` writes the `agent_instances` rows with `schedule_cron` populated, the orchestrator composes the registry at boot, and the `AgentDispatcher` (PR-M2) registers the BullMQ recurring jobs. Per-dispatch domain slug resolution comes from `agent_instances.scope_domain_ids[0]` (no new env var); v0.2 will add a manual-trigger CLI.
+- **Heartbeat / Lint scheduled agents fire on cron when `MCP_BEARER_TOKEN` is set.** PR-N3 (phase-a appendix #6) wires the production `HttpMcpToolClient` + `AgentRunnerRegistry`. `agents seed` writes the `agent_instances` rows with `schedule_cron` populated, the orchestrator composes the registry at boot, and the `AgentDispatcher` (PR-M2) registers the BullMQ recurring jobs. Per-dispatch domain slug resolution comes from `agent_instances.scope_domain_ids[0]` (no new env var). For pre-cutover verification without waiting for the next cron tick, `opencoo agents fire <slug>` (PR-O2, phase-a appendix #7) invokes the runner directly via the harness — see §3 for first-boot dry-run usage and §4 for the scheduled-agent smoke.
 
   **Boot-tolerance — when `MCP_BEARER_TOKEN` is UNSET (or its `_FILE` variant), or `HttpMcpToolClient` construction throws.** The orchestrator's `tryComposeAgentRunnersBundleFromEnv` returns `null` and emits `mcp_http.unavailable` at warn level. `engine-self-operating.start({...})` is then called WITHOUT `agentRunners` / `agentDefinitions` / `agentRouter`, so per `engine-self-operating/src/start.ts:340` the `AgentDispatcher` is NOT constructed at all — there are no recurring BullMQ jobs registered, no scheduled agents fire, no `agent_runs` rows are written by the scheduler path, and the `/api/admin/scheduler` route returns an empty list. The management UI stays alive and the webhook → wiki path still works. Set `MCP_BEARER_TOKEN` to the same static bearer the gitea-wiki-mcp-server is configured with to activate scheduling.
 
