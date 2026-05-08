@@ -247,11 +247,107 @@ describe("admin-api DELETE /api/admin/source-bindings/:id", () => {
     // 409 — the operator must clear append-only audit dependencies first
     // (or, in practice, just disable the binding instead of deleting).
     expect(res.statusCode).toBe(409);
+    expect((JSON.parse(res.body) as { error: string }).error).toBe(
+      "fk_restricted",
+    );
     // The parent row must still be there — transaction rolled back.
     const sb = await f.raw.query(
       `SELECT id FROM sources_bindings WHERE id = $1::uuid`,
       [bindingId],
     );
     expect(sb.rows.length).toBe(1);
+  });
+
+  it("500 when transaction fails for a non-FK reason (db connectivity, mock throw)", async () => {
+    // PR-Q10b — narrow the catch from PR-Q10's "any error → 409"
+    // to "FK violation (SQLSTATE 23503) only → 409". Other errors
+    // (DB connectivity, syntax, permissions) must surface as 500
+    // so they're not masked as fk_restricted.
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { bindingId } = await seedBinding(f.raw);
+
+    // Mock db.transaction to throw a non-FK error.
+    const originalTx = f.db.transaction.bind(f.db);
+    (f.db as unknown as { transaction: typeof originalTx }).transaction =
+      (async () => {
+        throw new Error("connection terminated unexpectedly");
+      }) as unknown as typeof originalTx;
+
+    try {
+      const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+      const res = await f.app.inject({
+        method: "DELETE",
+        url: `/api/admin/source-bindings/${bindingId}`,
+        headers: {
+          authorization: `Bearer ${ADMIN_PAT}`,
+          "x-csrf-token": csrfToken,
+          cookie: `opencoo_csrf=${cookie}`,
+        },
+      });
+      expect(res.statusCode).toBe(500);
+      const body = JSON.parse(res.body) as { error: string };
+      expect(body.error).toBe("internal_error");
+      expect(body.error).not.toBe("fk_restricted");
+    } finally {
+      (f.db as unknown as { transaction: typeof originalTx }).transaction =
+        originalTx;
+    }
+  });
+
+  it("404 + no audit row when concurrent delete races inside the transaction (TOCTOU)", async () => {
+    // PR-Q10b — close the TOCTOU between the existence pre-check and
+    // the transactional DELETE. RETURNING id + rowcount check inside
+    // the tx detects "0 rows deleted" (concurrent delete already ran)
+    // and rolls back with 404 instead of returning 200 + writing a
+    // spurious audit row.
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { bindingId } = await seedBinding(f.raw);
+
+    // Simulate the race by deleting the row directly between the
+    // pre-check and the transaction. We do this by intercepting the
+    // db.transaction call: when the route enters the tx, we already
+    // pulled the row out from underneath it. The cleanest seam is to
+    // wrap db.transaction so the FIRST tx body run sees an
+    // already-deleted row.
+    const originalTx = f.db.transaction.bind(f.db);
+    let deletedExternally = false;
+    (f.db as unknown as { transaction: typeof originalTx }).transaction =
+      (async (cb: Parameters<typeof originalTx>[0]) => {
+        if (!deletedExternally) {
+          await f.raw.query(`DELETE FROM sources_bindings WHERE id = $1::uuid`, [
+            bindingId,
+          ]);
+          deletedExternally = true;
+        }
+        return originalTx(cb);
+      }) as unknown as typeof originalTx;
+
+    try {
+      const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+      const res = await f.app.inject({
+        method: "DELETE",
+        url: `/api/admin/source-bindings/${bindingId}`,
+        headers: {
+          authorization: `Bearer ${ADMIN_PAT}`,
+          "x-csrf-token": csrfToken,
+          cookie: `opencoo_csrf=${cookie}`,
+        },
+      });
+      expect(res.statusCode).toBe(404);
+
+      // No source_binding.delete audit row — the transaction rolled
+      // back because the DELETE returned 0 rows.
+      const auditRows = await f.raw.query(
+        `SELECT id FROM admin_audit_log WHERE action = 'source_binding.delete'`,
+      );
+      expect(auditRows.rows.length).toBe(0);
+    } finally {
+      (f.db as unknown as { transaction: typeof originalTx }).transaction =
+        originalTx;
+    }
   });
 });

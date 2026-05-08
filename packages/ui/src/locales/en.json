@@ -149,8 +149,12 @@
       },
       "errors": {
         "patchFailed": "Could not update the binding. Try again or check the audit log.",
-        "deleteFailed": "Could not delete the binding. Try again or check the audit log.",
-        "deleteFkRestricted": "This binding has audit history that prevents deletion. Disable it instead."
+        "disableFailed": "Could not disable binding (server rejected the request).",
+        "enableFailed": "Could not enable binding (server rejected the request).",
+        "deleteFailed": "Could not delete binding (server rejected the request).",
+        "deleteFkRestricted": "This binding has audit history that prevents deletion. Disable it instead.",
+        "auth": "Sign-in expired or insufficient permissions — re-paste your PAT.",
+        "transient": "Server is unreachable or returned an error. Try again."
       }
     }
   },

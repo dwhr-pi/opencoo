@@ -31,6 +31,8 @@ import { Btn } from "./Btn.js";
 import { GlyphFilledDisc } from "./Glyph.js";
 import { Modal } from "./Modal.js";
 import {
+  ApiAuthError,
+  ApiTransientError,
   ApiValidationError,
   fetchAdmin,
   fetchOptsFor,
@@ -229,6 +231,27 @@ export function SourceBindingDetail(
     setCopyState("manual");
   };
 
+  /** Map a thrown error from `fetchAdmin` to an operator-facing
+   *  i18n string (PR-Q10b). Previously the component leaked
+   *  `err.message` ("Admin API validation error (HTTP 422)") into
+   *  the alert; now structured errors route through `sources.detail.errors.*`
+   *  keys and the raw message never reaches the UI.
+   *
+   *  `defaultKey` is the fallback for unknown errors and for
+   *  `ApiValidationError`s without a specific 409 mapping. */
+  const mapActionError = (err: unknown, defaultKey: string): string => {
+    if (err instanceof ApiAuthError) {
+      return t("sources.detail.errors.auth");
+    }
+    if (err instanceof ApiTransientError) {
+      return t("sources.detail.errors.transient");
+    }
+    // ApiValidationError covers 4xx other than 401/403; the 409
+    // fk_restricted path is handled at the call site (DELETE only)
+    // before falling back here.
+    return t(defaultKey);
+  };
+
   const submitPatch = async (enabled: boolean): Promise<void> => {
     setActionError(null);
     setSubmitting(true);
@@ -246,9 +269,12 @@ export function SourceBindingDetail(
       props.onClose();
     } catch (err) {
       if (!mountedRef.current) return;
-      setActionError(
-        err instanceof Error ? err.message : t("sources.detail.errors.patchFailed"),
-      );
+      // Default to disable/enable-specific copy so the operator's
+      // intent context is preserved in the surfaced message.
+      const defaultKey = enabled
+        ? "sources.detail.errors.enableFailed"
+        : "sources.detail.errors.disableFailed";
+      setActionError(mapActionError(err, defaultKey));
     } finally {
       if (mountedRef.current) setSubmitting(false);
     }
@@ -272,12 +298,13 @@ export function SourceBindingDetail(
       if (!mountedRef.current) return;
       // The DELETE endpoint returns 409 when an append-only audit
       // FK blocks the cascade. Surface a more specific copy so the
-      // operator picks "disable" instead.
+      // operator picks "disable" instead. Everything else routes
+      // through the structured-error i18n mapper.
       if (err instanceof ApiValidationError && err.status === 409) {
         setActionError(t("sources.detail.errors.deleteFkRestricted"));
       } else {
         setActionError(
-          err instanceof Error ? err.message : t("sources.detail.errors.deleteFailed"),
+          mapActionError(err, "sources.detail.errors.deleteFailed"),
         );
       }
     } finally {

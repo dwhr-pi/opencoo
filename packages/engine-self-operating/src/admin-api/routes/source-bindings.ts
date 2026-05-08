@@ -611,11 +611,11 @@ export function registerSourceBindingsRoutes(
         return reply.code(404).send({ error: "not_found", id });
       }
 
-      // No-op fast path. Returning the row keeps the response shape
-      // stable; we still write the audit so the operator's intent is
-      // captured (clicking Disable on an already-disabled binding is
-      // a meaningful audit event — confirms the operator inspected
-      // the state).
+      // The UPDATE always runs (even when `enabled` already matches
+      // the requested value) — clicking Disable on an already-disabled
+      // binding still bumps `updated_at` and writes an audit row so
+      // the operator's intent is captured (the audit confirms the
+      // operator inspected the state, even on a no-op flip).
       const updated = (await args.db.execute(sql`
         UPDATE sources_bindings
         SET enabled = ${enabled},
@@ -657,6 +657,18 @@ export function registerSourceBindingsRoutes(
   // the endpoint surfaces 409 if any of those FKs block the delete so
   // the operator chooses the correct path (disable, then archive
   // separately) rather than silently nuking history.
+  //
+  // PR-Q10b refinements:
+  //   - The 409 path is narrowed to actual Postgres FK-violation
+  //     errors (SQLSTATE 23503) so DB connectivity / permission /
+  //     syntax failures don't get masked as fk_restricted; everything
+  //     else surfaces 500 instead.
+  //   - The pre-check at line ~622 narrowed-but-didn't-close a TOCTOU:
+  //     a concurrent DELETE between the SELECT and the tx body could
+  //     produce 200 + an audit row for a row that no longer existed.
+  //     The transactional DELETE now uses RETURNING id + a rowcount
+  //     check; 0 rows deleted ⇒ throw a sentinel that rolls back the
+  //     tx and surfaces 404 (no audit row written).
   args.app.delete(
     "/api/admin/source-bindings/:id",
     { preHandler: requireCsrf },
@@ -668,7 +680,9 @@ export function registerSourceBindingsRoutes(
       }
 
       // Existence check before the transaction so we can return 404
-      // without holding a write lock.
+      // without holding a write lock. The TOCTOU between this check
+      // and the tx is closed by the rowcount check on the parent
+      // DELETE below — see PR-Q10b note above.
       const existing = (await args.db.execute(sql`
         SELECT id FROM sources_bindings WHERE id = ${id}::uuid LIMIT 1
       `)) as unknown as { rows: Array<{ id: string }> };
@@ -684,22 +698,52 @@ export function registerSourceBindingsRoutes(
           await tx.execute(sql`
             DELETE FROM ingestion_intake WHERE binding_id = ${id}::uuid
           `);
-          await tx.execute(sql`
-            DELETE FROM sources_bindings WHERE id = ${id}::uuid
-          `);
+          // RETURNING id lets us count what we actually deleted. If
+          // 0 rows came back, a concurrent DELETE raced us between
+          // the pre-check and this statement; throw the sentinel so
+          // the tx rolls back and we surface 404 without writing an
+          // audit row for a non-existent binding.
+          const deleted = (await tx.execute(sql`
+            DELETE FROM sources_bindings WHERE id = ${id}::uuid RETURNING id
+          `)) as unknown as { rows: Array<{ id: string }> };
+          if (deleted.rows.length === 0) {
+            throw new ConcurrentDeleteError();
+          }
         });
       } catch (err) {
-        // Most likely cause: another append-only audit table holds a
-        // RESTRICT FK against this binding. Surface 409 — the operator
-        // should disable instead of delete, or archive that history
-        // first. The error class name is logged but never the message
-        // body (which Postgres may include row identifiers in).
+        // PR-Q10b: narrow the catch to its three known failure
+        // modes — the previous "any error → 409" masked DB
+        // connectivity / permission / syntax failures as
+        // fk_restricted, leaving the operator to debug a misleading
+        // signal. Order matters: ConcurrentDeleteError surfaces 404
+        // (rolled back by design); pg SQLSTATE 23503 surfaces 409
+        // (audit FK genuinely blocks the cascade); everything else
+        // surfaces 500 + a logged warning.
+        if (err instanceof ConcurrentDeleteError) {
+          req.log?.warn({
+            msg: "binding_delete.toctou_concurrent_delete",
+            binding_id: id,
+          });
+          return reply.code(404).send({ error: "not_found", id });
+        }
+        if (isPgForeignKeyViolation(err)) {
+          req.log?.warn({
+            msg: "binding_delete.fk_restricted",
+            binding_id: id,
+            err: err instanceof Error ? err.name : "unknown",
+          });
+          return reply.code(409).send({ error: "fk_restricted" });
+        }
+        // Genuine internal failure — connectivity, permission,
+        // syntax. Log the error class (not the message body, which
+        // Postgres may include row identifiers in) and surface a
+        // generic 500.
         req.log?.warn({
-          msg: "binding_delete.failed",
+          msg: "binding_delete.internal_error",
           binding_id: id,
           err: err instanceof Error ? err.name : "unknown",
         });
-        return reply.code(409).send({ error: "fk_restricted" });
+        return reply.code(500).send({ error: "internal_error" });
       }
 
       await writeAuditLog(args.db, {
@@ -716,6 +760,35 @@ export function registerSourceBindingsRoutes(
       return reply.code(200).send({ deleted: true });
     },
   );
+}
+
+/** Sentinel thrown inside the DELETE transaction to roll it back when
+ *  RETURNING id finds zero rows — i.e. another DELETE raced between
+ *  the pre-check SELECT and the tx body. Caller maps to 404 without
+ *  writing an audit row. */
+class ConcurrentDeleteError extends Error {
+  constructor() {
+    super("concurrent_delete_detected");
+    this.name = "ConcurrentDeleteError";
+  }
+}
+
+/** Detect a Postgres `foreign_key_violation` (SQLSTATE 23503).
+ *  node-postgres surfaces the code on the thrown Error directly;
+ *  Drizzle wraps the underlying error sometimes via `.cause`, so we
+ *  check both spellings. */
+function isPgForeignKeyViolation(err: unknown): boolean {
+  if (err === null || typeof err !== "object") return false;
+  const codeFromTop = (err as { code?: unknown }).code;
+  if (typeof codeFromTop === "string" && codeFromTop === "23503") return true;
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause !== null && typeof cause === "object") {
+    const codeFromCause = (cause as { code?: unknown }).code;
+    if (typeof codeFromCause === "string" && codeFromCause === "23503") {
+      return true;
+    }
+  }
+  return false;
 }
 
 // ─── Status computation (phase-a appendix #4 PR-A) ──────────────────────────

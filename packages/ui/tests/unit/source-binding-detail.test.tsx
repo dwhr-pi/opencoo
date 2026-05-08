@@ -303,4 +303,192 @@ describe("SourceBindingDetail", () => {
     // No fetch was issued.
     expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
   });
+
+  // PR-Q10b — error i18n mapping. Both PATCH and DELETE catch blocks
+  // previously surfaced raw `err.message` ("Admin API validation
+  // error (HTTP 422)") instead of an i18n string. Map structured
+  // errors to operator-facing keys.
+  it("PATCH 422 surfaces an i18n string, not the raw err.message", async () => {
+    const user = userEvent.setup();
+    const fetchImpl = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === `/api/admin/source-bindings/${BINDING_ID}` && init?.method === "PATCH") {
+        return new Response(
+          JSON.stringify({ error: "validation_failed" }),
+          { status: 422, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    render(
+      <SourceBindingDetail
+        binding={makeBinding()}
+        onClose={() => undefined}
+        onChanged={() => undefined}
+        fetchImpl={fetchImpl as unknown as typeof fetch}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^disable$/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /confirm disable/i }),
+    );
+    const alert = await screen.findByRole("alert");
+    // The raw error message would say "Admin API validation error
+    // (HTTP 422)" — assert the surfaced text does NOT contain that
+    // diagnostic shape and DOES contain the operator-facing string.
+    expect(alert.textContent).not.toMatch(/Admin API validation error/);
+    expect(alert.textContent).not.toMatch(/HTTP 422/);
+    // The default mapping for unknown errors is patchFailed.
+    expect(alert.textContent).toMatch(/Could not disable binding/);
+  });
+
+  it("PATCH 401/403 surfaces an i18n auth string, not the raw err.message", async () => {
+    const user = userEvent.setup();
+    const fetchImpl = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === `/api/admin/source-bindings/${BINDING_ID}` && init?.method === "PATCH") {
+        return new Response(
+          JSON.stringify({ reason: "expired_pat" }),
+          { status: 401, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    render(
+      <SourceBindingDetail
+        binding={makeBinding()}
+        onClose={() => undefined}
+        onChanged={() => undefined}
+        fetchImpl={fetchImpl as unknown as typeof fetch}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^disable$/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /confirm disable/i }),
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toMatch(/Admin API auth failed/);
+    expect(alert.textContent).not.toMatch(/HTTP 401/);
+  });
+
+  it("PATCH 5xx / network surfaces an i18n string, not the raw err.message", async () => {
+    const user = userEvent.setup();
+    const fetchImpl = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === `/api/admin/source-bindings/${BINDING_ID}` && init?.method === "PATCH") {
+        return new Response(
+          JSON.stringify({ error: "internal_error" }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    render(
+      <SourceBindingDetail
+        binding={makeBinding()}
+        onClose={() => undefined}
+        onChanged={() => undefined}
+        fetchImpl={fetchImpl as unknown as typeof fetch}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^disable$/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /confirm disable/i }),
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toMatch(/HTTP 500/);
+  });
+
+  it("DELETE 500 internal error surfaces an i18n transient string, not the raw err.message", async () => {
+    const user = userEvent.setup();
+    const fetchImpl = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === `/api/admin/source-bindings/${BINDING_ID}` && init?.method === "DELETE") {
+        return new Response(
+          JSON.stringify({ error: "internal_error" }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    render(
+      <SourceBindingDetail
+        binding={makeBinding()}
+        onClose={() => undefined}
+        onChanged={() => undefined}
+        fetchImpl={fetchImpl as unknown as typeof fetch}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /confirm delete/i }),
+    );
+    const alert = await screen.findByRole("alert");
+    // 500 maps to ApiTransientError → transient i18n string. The
+    // surfaced message must NOT leak `HTTP 500` or `internal_error`,
+    // and must match the operator-facing transient copy.
+    expect(alert.textContent).not.toMatch(/HTTP 500/);
+    expect(alert.textContent).not.toMatch(/internal_error/);
+    expect(alert.textContent).toMatch(/unreachable|returned an error/i);
+  });
+
+  it("DELETE 422 unknown validation surfaces the deleteFailed i18n default", async () => {
+    const user = userEvent.setup();
+    const fetchImpl = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === `/api/admin/source-bindings/${BINDING_ID}` && init?.method === "DELETE") {
+        return new Response(
+          JSON.stringify({ error: "validation_failed" }),
+          { status: 422, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    render(
+      <SourceBindingDetail
+        binding={makeBinding()}
+        onClose={() => undefined}
+        onChanged={() => undefined}
+        fetchImpl={fetchImpl as unknown as typeof fetch}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /confirm delete/i }),
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toMatch(/HTTP 422/);
+    expect(alert.textContent).toMatch(/Could not delete binding/);
+  });
+
+  it("DELETE 409 fk_restricted still surfaces its specific i18n string", async () => {
+    // Already covered by the 409 path before PR-Q10b — keep the
+    // explicit assertion so the deleteFkRestricted mapping doesn't
+    // regress alongside the new default-mapping refactor.
+    const user = userEvent.setup();
+    const fetchImpl = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === `/api/admin/source-bindings/${BINDING_ID}` && init?.method === "DELETE") {
+        return new Response(
+          JSON.stringify({ error: "fk_restricted" }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    render(
+      <SourceBindingDetail
+        binding={makeBinding()}
+        onClose={() => undefined}
+        onChanged={() => undefined}
+        fetchImpl={fetchImpl as unknown as typeof fetch}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /confirm delete/i }),
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/audit history/i);
+  });
 });
