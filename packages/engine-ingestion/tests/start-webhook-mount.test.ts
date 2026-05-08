@@ -481,3 +481,152 @@ describe("start({ mode: 'workers' }) — composition-root bug surfaces at boot",
     },
   );
 });
+
+// PR-Q6 (phase-a appendix #9) — shared Fastify mount.
+//
+// In production the orchestrator (`packages/cli/src/commands/serve.ts`)
+// pre-composes the WorkerContext, mounts the webhook route on the
+// self-op engine's Fastify via a pre-listen hook, then boots
+// `engine-self-operating` (whose `start()` calls `app.listen()`).
+// The orchestrator then boots `engine-ingestion.start({ sharedFastify })`
+// so the ingestion engine knows NOT to bind a second `:8080` socket
+// (EADDRINUSE) — the route registration was already done by the hook.
+//
+// PR-Q6 fix-up split: the engine's `start({sharedFastify})` is now a
+// "skip the listener" flag. Route mounting is the orchestrator's
+// responsibility (via `mountWebhookRoute` exported from this package).
+// These tests pin the contract:
+//
+//   1. With `sharedFastify`, the engine does NOT mount the route on
+//      the shared instance (the orchestrator drives that step). The
+//      orchestrator's mount call (simulated via `mountWebhookRoute`)
+//      lands the route + parser; POST round-trips via Fastify.inject.
+//   2. The engine's `close()` does NOT close the shared listener —
+//      the self-op engine OWNS it. Workers + pg + Redis are still
+//      drained.
+//   3. Passing `sharedFastify` together with a `serverFactory` is
+//      rejected at boot (mutually exclusive paths).
+//   4. Passing `sharedFastify` with `mode='probes-only'` is rejected
+//      at boot (the field exists for the receiver mount path).
+describe("start({ mode: 'workers', sharedFastify }) — shared listener mount (PR-Q6)", () => {
+  const enginesToClose: Array<{ close(): Promise<void> }> = [];
+  afterEach(async () => {
+    for (const e of enginesToClose.splice(0)) {
+      await e.close().catch(() => undefined);
+    }
+  });
+
+  it("does NOT mount /webhooks on the shared Fastify itself — the orchestrator's pre-listen hook does that step (round-trip via inject after the orchestrator's mount runs)", async () => {
+    const { ctx, fixture, webhookScannerQueue } = await buildTestWorkerContext();
+
+    // Build a real Fastify the way the self-op engine does — but
+    // stub `listen` so the test doesn't bind a port. The shared-
+    // mount path doesn't call listen on this instance anyway; the
+    // stub just keeps the test isolated from the OS socket layer.
+    const sharedApp: FastifyInstance = (await import("fastify")).default({
+      bodyLimit: WEBHOOK_BODY_LIMIT_BYTES,
+    });
+    (sharedApp as unknown as { listen: () => Promise<void> }).listen =
+      async (): Promise<void> => undefined;
+
+    // Simulate the orchestrator's pre-listen hook — the route + parser
+    // register BEFORE the engine's start() runs.  In production this is
+    // `mountWebhookRoute(app, ctx)` threaded into self-op's
+    // `start({preListenHooks: [mountHook]})`.
+    const { mountWebhookRoute } = await import("../src/start.js");
+    mountWebhookRoute(sharedApp, ctx);
+
+    const engine = await start({
+      env: validEnv,
+      mode: "workers",
+      workerContext: ctx,
+      workerConnection: { host: "localhost", port: 6379 },
+      dbFactory: () => makeStubPool(),
+      redisFactory: () => makeStubRedis(),
+      sharedFastify: sharedApp,
+    });
+    enginesToClose.push(engine);
+
+    // The route was registered on the SHARED app by the
+    // orchestrator-equivalent call above — NOT by start({sharedFastify}).
+    // Identity-test by injecting against sharedApp directly.
+    const body = '{"event":"push"}';
+    const res = await sharedApp.inject({
+      method: "POST",
+      url: `/webhooks/${fixture.bindingId}`,
+      headers: {
+        "content-type": "application/json",
+        "x-signature": `sha256=${signHex(SECRET_PLAINTEXT, body)}`,
+        "x-event-id": "evt-shared-1",
+        "x-provider": "gitea",
+      },
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(webhookScannerQueue.add).toHaveBeenCalledTimes(1);
+
+    // The engine's exposed `app` is the no-op StartServer wrapper —
+    // calling `close()` on it must not affect the shared instance.
+    const startedAppClose = (engine as unknown as { app: { close: () => Promise<void> } })
+      .app.close;
+    await expect(startedAppClose()).resolves.toBeUndefined();
+
+    // The shared app still works after the engine's no-op close —
+    // a follow-up POST still hits the route.
+    const res2 = await sharedApp.inject({
+      method: "POST",
+      url: `/webhooks/${fixture.bindingId}`,
+      headers: {
+        "content-type": "application/json",
+        "x-signature": `sha256=${signHex(SECRET_PLAINTEXT, body)}`,
+        "x-event-id": "evt-shared-2",
+        "x-provider": "gitea",
+      },
+      payload: body,
+    });
+    expect(res2.statusCode).toBe(200);
+
+    await sharedApp.close();
+  });
+
+  it("rejects sharedFastify together with a caller-supplied serverFactory (mutually exclusive)", async () => {
+    const { ctx } = await buildTestWorkerContext();
+    const sharedApp: FastifyInstance = (await import("fastify")).default();
+    (sharedApp as unknown as { listen: () => Promise<void> }).listen =
+      async (): Promise<void> => undefined;
+
+    await expect(
+      start({
+        env: validEnv,
+        mode: "workers",
+        workerContext: ctx,
+        workerConnection: { host: "localhost", port: 6379 },
+        dbFactory: () => makeStubPool(),
+        redisFactory: () => makeStubRedis(),
+        sharedFastify: sharedApp,
+        serverFactory: buildTestServerFactory({}),
+      }),
+    ).rejects.toThrow(/mutually exclusive/);
+
+    await sharedApp.close();
+  });
+
+  it("rejects sharedFastify with mode='probes-only' (receiver mount only makes sense in workers mode)", async () => {
+    const sharedApp: FastifyInstance = (await import("fastify")).default();
+    (sharedApp as unknown as { listen: () => Promise<void> }).listen =
+      async (): Promise<void> => undefined;
+
+    await expect(
+      start({
+        env: validEnv,
+        mode: "probes-only",
+        dbFactory: () => makeStubPool(),
+        redisFactory: () => makeStubRedis(),
+        sharedFastify: sharedApp,
+      }),
+    ).rejects.toThrow(/mode='workers'/);
+
+    await sharedApp.close();
+  });
+});

@@ -167,56 +167,78 @@ function hasWebhookHelpers(
  * Used by:
  *   - `buildWebhookReceiver` (creates a dedicated Fastify app for
  *     unit tests and standalone usage), AND
- *   - `engine-ingestion/src/start.ts` (when `mode: 'workers'`
- *     mounts the receiver onto the engine's primary Fastify
- *     instance so a real `pnpm opencoo` process actually accepts
- *     webhook deliveries — round-2 fix, Copilot #56: without this
- *     mount, `recordWebhook` was dead in production and the
- *     `webhook_receiver.signature_invalid` log line never fired
- *     against a real deployment).
+ *   - the orchestrator's pre-listen hook in `packages/cli/src/commands/serve.ts`
+ *     (PR-Q6, phase-a appendix #9), which mounts the receiver onto the
+ *     self-op engine's Fastify app BEFORE `app.listen()` is called so
+ *     `addContentTypeParser` doesn't fail with `FST_ERR_INSTANCE_ALREADY_STARTED`.
  *
  * MUST be called BEFORE `app.listen()` — Fastify rejects
  * `addContentTypeParser` calls after the server is ready. The
  * caller is responsible for ensuring boot ordering.
  *
+ * # Plugin-scope encapsulation (PR-Q6 fix-up)
+ *
+ * The route + content-type parser are wrapped inside
+ * `app.register(async (scope) => { ... })`. Fastify's plugin model
+ * gives each `register` call its own encapsulation context — the
+ * `application/json` parseAs:buffer parser registered against
+ * `scope` does NOT leak to sibling routes mounted on the parent
+ * `app`. Without this scoping, the buffer parser at the root
+ * replaces Fastify's default JSON parser for every route, including
+ * `/api/admin/*` POSTs. The admin routes then receive `req.body` as
+ * a `Buffer` and every Zod schema parse fails with a non-actionable
+ * "expected object, got buffer" error.
+ *
+ * Encapsulation containment: the webhook plugin scope inherits
+ * `app`'s decorators, hooks, and routes (parent → child) but child
+ * registrations (parser, route) stay scoped to the plugin.
+ *
  * The supplied app's `bodyLimit` is NOT touched here — the caller
  * is expected to construct the app with `WEBHOOK_BODY_LIMIT_BYTES`
  * if it serves any webhook traffic. (For an app that only serves
  * webhook traffic, `buildWebhookReceiver` enforces this; for the
- * shared engine app, `start.ts` configures the engine's Fastify
- * with the webhook body limit when `mode === 'workers'`.)
+ * shared engine app, the orchestrator passes `bodyLimit` into
+ * self-op's `start()` which threads it into `buildServer`.)
  */
 export function registerWebhookRoute(
   app: FastifyInstance,
   options: WebhookReceiverOptions,
 ): void {
-  // Capture the RAW request body. Fastify's default JSON parser
-  // discards bytes after parsing; we need the exact bytes the
-  // sender hashed for HMAC verification.
+  // PR-Q6 fix-up: wrap the parser + route registration inside a
+  // Fastify plugin scope so the `application/json` parseAs:buffer
+  // parser does NOT leak to sibling routes (e.g. /api/admin/*
+  // POSTs that need the default object parser).
   //
-  // Note: this REPLACES Fastify's default JSON parser at the root
-  // context. Health/ready probes are GET routes with no request
-  // body, so they're unaffected. Any future ingestion-engine route
-  // that POSTs JSON would need to opt into the buffer parser via
-  // an explicit `Content-Type` (e.g. `application/x-opencoo-json`).
-  app.addContentTypeParser(
-    "application/json",
-    { parseAs: "buffer" },
-    (_req, body: Buffer, done) => {
-      // Stash the raw buffer; downstream handler reads + parses.
-      done(null, body);
-    },
-  );
+  // `app.register` is async but does not need to be awaited here —
+  // Fastify queues the plugin and runs it during `ready()` /
+  // `listen()`. The throw-on-post-listen invariant
+  // (FST_ERR_INSTANCE_ALREADY_STARTED) is preserved: if the caller
+  // registers AFTER listen(), `addContentTypeParser` inside the
+  // scope still throws synchronously during the queued plugin's
+  // execution, which Fastify surfaces as a thrown error (and the
+  // `registerWebhookRoute` test below pins this behaviour).
+  void app.register(async (scope: FastifyInstance): Promise<void> => {
+    // Capture the RAW request body. Fastify's default JSON parser
+    // discards bytes after parsing; we need the exact bytes the
+    // sender hashed for HMAC verification.
+    scope.addContentTypeParser(
+      "application/json",
+      { parseAs: "buffer" },
+      (_req, body: Buffer, done) => {
+        // Stash the raw buffer; downstream handler reads + parses.
+        done(null, body);
+      },
+    );
 
-  app.post<{
-    Params: { bindingId: string };
-    Headers: {
-      "x-signature"?: string;
-      "x-event-id"?: string;
-      "x-provider"?: string;
-      "x-hook-secret"?: string;
-    };
-  }>("/webhooks/:bindingId", async (req, reply) => {
+    scope.post<{
+      Params: { bindingId: string };
+      Headers: {
+        "x-signature"?: string;
+        "x-event-id"?: string;
+        "x-provider"?: string;
+        "x-hook-secret"?: string;
+      };
+    }>("/webhooks/:bindingId", async (req, reply) => {
     const { bindingId } = req.params;
 
     // Step 1: resolve the binding.
@@ -645,6 +667,7 @@ export function registerWebhookRoute(
       webhookId: writeResult.webhookId,
       deliveryCount: writeResult.deliveryCount,
     };
+  });
   });
 }
 

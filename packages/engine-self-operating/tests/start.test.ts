@@ -132,3 +132,96 @@ describe("start() — sharable resource seams (PR-M1)", () => {
     await engine.close();
   });
 });
+
+// PR-Q6 fix-up (phase-a appendix #9) — pre-listen hook seam for the
+// orchestrator's webhook-mount.
+//
+// The orchestrator (`packages/cli/src/commands/serve.ts`) pre-composes
+// the engine-ingestion `WorkerContext` BEFORE either engine boots, then
+// threads a `(app) => mountWebhookRoute(app, ctx)` closure here so the
+// webhook route + raw-body parser register BEFORE `app.listen()`.
+// Fastify rejects post-listen `addContentTypeParser` calls; routing
+// the mount through this hook is what fixes the
+// `FST_ERR_INSTANCE_ALREADY_STARTED` failure mode the reviewer flagged
+// on PR #72.
+describe("start() — pre-listen hooks (PR-Q6 fix-up)", () => {
+  it("runs each preListenHook against the resolved Fastify BEFORE app.listen()", async () => {
+    const callOrder: string[] = [];
+    const okServer = makeOkServer();
+    okServer.listen = vi.fn(async () => {
+      callOrder.push("listen");
+      return undefined;
+    }) as unknown as typeof okServer.listen;
+
+    const hookA = vi.fn(async () => {
+      callOrder.push("hookA");
+    });
+    const hookB = vi.fn(async () => {
+      callOrder.push("hookB");
+    });
+
+    const engine = await start({
+      env: validEnv,
+      logger: new ConsoleLogger({ stream: { write: () => true } }),
+      dbFactory: () =>
+        makeStubPool() as unknown as ReturnType<
+          NonNullable<StartOptions["dbFactory"]>
+        >,
+      redisFactory: () =>
+        makeStubRedis() as unknown as ReturnType<
+          NonNullable<StartOptions["redisFactory"]>
+        >,
+      serverFactory: (probes: ProbeMap) => {
+        void probes;
+        return okServer;
+      },
+      preListenHooks: [hookA, hookB],
+    });
+
+    // Hooks ran in order, BOTH before the listen() call. If hookA
+    // ran AFTER listen, addContentTypeParser inside the real
+    // mountWebhookRoute would throw FST_ERR_INSTANCE_ALREADY_STARTED.
+    expect(callOrder).toEqual(["hookA", "hookB", "listen"]);
+    expect(hookA).toHaveBeenCalledTimes(1);
+    expect(hookB).toHaveBeenCalledTimes(1);
+    // Each hook received the SAME FastifyInstance the scaffold will
+    // listen on — identity-checked so a structural-clone (which
+    // would mount the route on a different app and 404 in production)
+    // regresses loudly.
+    expect(hookA.mock.calls[0]?.[0]).toBe(okServer);
+    expect(hookB.mock.calls[0]?.[0]).toBe(okServer);
+    await engine.close();
+  });
+
+  it("a preListenHook that throws propagates through start() (caller's resource-safety teardown drains pg/Redis)", async () => {
+    const okServer = makeOkServer();
+    const hookErr = new Error("mount failed");
+    const hook = vi.fn(async () => {
+      throw hookErr;
+    });
+
+    await expect(
+      start({
+        env: validEnv,
+        logger: new ConsoleLogger({ stream: { write: () => true } }),
+        dbFactory: () =>
+          makeStubPool() as unknown as ReturnType<
+            NonNullable<StartOptions["dbFactory"]>
+          >,
+        redisFactory: () =>
+          makeStubRedis() as unknown as ReturnType<
+            NonNullable<StartOptions["redisFactory"]>
+          >,
+        serverFactory: (probes: ProbeMap) => {
+          void probes;
+          return okServer;
+        },
+        preListenHooks: [hook],
+      }),
+    ).rejects.toBe(hookErr);
+
+    expect(hook).toHaveBeenCalledTimes(1);
+    // The scaffold's listen MUST NOT have run — the hook threw first.
+    expect(okServer.listen).not.toHaveBeenCalled();
+  });
+});

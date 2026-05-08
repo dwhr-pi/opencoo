@@ -76,6 +76,12 @@ export interface ProductionServerFactoryArgs {
    *  may have failed to compose, but the operator should still be
    *  able to inspect what's wired). */
   readonly schedulerSource?: SchedulerSource;
+  /** PR-Q6 (phase-a appendix #9) fix-up — Fastify request body
+   *  limit. The orchestrator sets this to `WEBHOOK_BODY_LIMIT_BYTES`
+   *  (5 MB) when co-booting engine-ingestion in workers mode so a
+   *  4-MB webhook delivery doesn't hit Fastify's default 1-MB cap
+   *  before the receiver's own size guard runs. */
+  readonly bodyLimit?: number;
 }
 
 /** Extended return type that exposes the SSE bus so `start.ts` can
@@ -91,7 +97,10 @@ export type ProductionServer = (FastifyInstance & StartServer) & {
 export async function productionServerFactory(
   args: ProductionServerFactoryArgs,
 ): Promise<ProductionServer> {
-  const app: FastifyInstance = buildServer({ probes: args.probes });
+  const app: FastifyInstance = buildServer({
+    probes: args.probes,
+    ...(args.bodyLimit !== undefined ? { bodyLimit: args.bodyLimit } : {}),
+  });
 
   // Wrap the existing pg pool in a Drizzle handle so the
   // admin-API + audit-log writers consume the same connection

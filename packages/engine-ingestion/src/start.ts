@@ -122,6 +122,31 @@ export interface StartOptions
    *  `{ url: config.redisUrl, maxRetriesPerRequest: null,
    *  enableReadyCheck: false }`. */
   readonly workerConnection?: ConnectionOptions;
+  /** Phase-a appendix #9 PR-Q6 — shared Fastify mount (PORT
+   *  collision fix). When the orchestrator co-boots both engines
+   *  in the same process, the self-op engine's listening Fastify
+   *  is threaded in here as a SIGNAL that the ingestion engine
+   *  must NOT bind its own listener (`EADDRINUSE` on port 8080
+   *  otherwise). The webhook receiver's `/webhooks/:bindingId`
+   *  route and its raw-body parser are mounted on the self-op
+   *  Fastify by the orchestrator's pre-listen hook (`registerWebhookRoute`
+   *  via `selfOpStart({preListenHooks})`) BEFORE `app.listen()`,
+   *  because Fastify rejects `addContentTypeParser` after the
+   *  server is ready. This `start()` therefore only spins up
+   *  workers + pg/Redis when `sharedFastify` is set; route
+   *  registration is the orchestrator's responsibility.
+   *
+   *  When set, the engine's internal `app.listen()` becomes a
+   *  no-op (the shared listener is already accepting traffic) and
+   *  the engine's internal `app.close()` becomes a no-op as well —
+   *  the self-op engine OWNS the shared listener and closes it on
+   *  SIGTERM. Workers, pg.Pool, and Redis are still drained by the
+   *  ingestion engine's own `close()`.
+   *
+   *  Mutually exclusive with a caller-supplied `serverFactory` —
+   *  the orchestrator threads `sharedFastify` directly; tests that
+   *  want full control still pass their own `serverFactory`. */
+  readonly sharedFastify?: FastifyInstance;
 }
 
 function defaultDbFactory(config: EngineConfig): StartDb {
@@ -133,6 +158,51 @@ function defaultRedisFactory(config: EngineConfig): StartRedis {
     // BullMQ requirement.
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
+  });
+}
+
+/** Register the webhook receiver route on a Fastify instance.
+ *  Used by both the engine-owned-listener path (where the engine
+ *  builds its own Fastify) and the orchestrator's pre-listen hook
+ *  (PR-Q6, phase-a appendix #9 fix-up: the orchestrator passes this
+ *  to `engine-self-operating.start({preListenHooks})` so the route +
+ *  parser register on the SHARED Fastify before `app.listen()`).
+ *
+ *  Exported so the CLI orchestrator can compose a closure
+ *  `(app) => mountWebhookRoute(app, ctx)` and thread it into self-op's
+ *  `start({preListenHooks})` without re-implementing the
+ *  `WorkerContext → registerWebhookRoute` adapter inline.
+ *
+ *  Caller is responsible for ensuring the ctx fields the receiver
+ *  consumes (`credentialStore`, `webhookVerifier`,
+ *  `webhookScannerQueue`, `webhookDlqQueue`, `enqueue`) are populated.
+ *  This invariant matches the boot-validation block in `start()` —
+ *  in production those checks fire before `start()` returns the
+ *  WorkerContext to the orchestrator. */
+export function mountWebhookRoute(
+  app: FastifyInstance,
+  ctx: WorkerContext,
+): void {
+  registerWebhookRoute(app, {
+    db: ctx.db as unknown as Parameters<typeof registerWebhookRoute>[1]["db"],
+    credentialStore: ctx.credentialStore!,
+    adapterRegistry: ctx.adapterRegistry,
+    verifier: ctx.webhookVerifier!,
+    scannerQueue: ctx.webhookScannerQueue!,
+    dlqQueue: ctx.webhookDlqQueue!,
+    // (PR-N2) The producer-side `ingestion.scanner.classify` queue
+    // handle the composition root already opened for the Scanner
+    // pipeline. Reusing the same handle for the receiver's
+    // direct-intake branch means a single Queue + a single Redis
+    // connection serve both producers — webhook deliveries and
+    // periodic scans land on the same backlog the Compile worker
+    // dequeues from.
+    //
+    // Round-3 (Copilot #1): no conditional spread here — `ctx.enqueue`
+    // is required in mode='workers' and the boot-validation block in
+    // start() throws before we ever reach this helper if it's absent.
+    scannerClassifyQueue: ctx.enqueue!,
+    appLogger: ctx.logger,
   });
 }
 
@@ -157,6 +227,25 @@ export async function start(
     if (options.workerConnection === undefined) {
       throw new Error(
         "engine-ingestion start: mode='workers' requires options.workerConnection (shared BullMQ connection)",
+      );
+    }
+  }
+
+  // PR-Q6: `sharedFastify` only makes sense in workers mode (it
+  // exists to mount the webhook receiver) and conflicts with a
+  // caller-supplied `serverFactory` (the two paths are mutually
+  // exclusive — orchestrator threads `sharedFastify`, tests use
+  // `serverFactory`). Surfacing both early prevents subtle
+  // "routes mounted twice" bugs.
+  if (options.sharedFastify !== undefined) {
+    if (mode !== "workers") {
+      throw new Error(
+        "engine-ingestion start: options.sharedFastify requires mode='workers' (the field exists to mount the webhook receiver onto a shared listener)",
+      );
+    }
+    if (options.serverFactory !== undefined) {
+      throw new Error(
+        "engine-ingestion start: options.sharedFastify and options.serverFactory are mutually exclusive (the orchestrator co-boot path uses sharedFastify; tests use serverFactory)",
       );
     }
   }
@@ -216,12 +305,33 @@ export async function start(
   // FastifyInstance the factory returns. The wrapper only fires
   // in `mode: 'workers'`; probes-only boots with the original
   // (or user-supplied) factory unchanged.
+  //
+  // PR-Q6 (phase-a appendix #9) fix-up: when `options.sharedFastify`
+  // is set, the orchestrator already has a listening Fastify AND
+  // has already mounted the webhook receiver onto it via a
+  // pre-listen hook on the self-op engine's `start()`. Mounting
+  // here would be a double-register (Fastify rejects) AND would
+  // run AFTER `app.listen()` (`addContentTypeParser` rejects
+  // post-listen). So this branch returns a no-op `StartServer`
+  // immediately — workers + pg/Redis still spin up, but the
+  // listener and route registration belong to the orchestrator.
+  const noopSharedListenerServer: StartServer = {
+    listen: async (): Promise<void> => undefined,
+    close: async (): Promise<void> => undefined,
+  };
   const wrappedServerFactory: BaseStartOptions<
     EngineConfig,
     IngestionRegistry
   >["serverFactory"] =
     mode === "workers"
       ? async (probes: ProbeMap): Promise<StartServer> => {
+          // Shared-mount path: orchestrator already mounted the
+          // route via the self-op pre-listen hook. Return a no-op
+          // StartServer so the scaffold's listen/close cycle is a
+          // no-op (the shared listener is owned by self-op).
+          if (options.sharedFastify !== undefined) {
+            return noopSharedListenerServer;
+          }
           const innerFactory =
             options.serverFactory ??
             ((p: ProbeMap): StartServer =>
@@ -244,34 +354,10 @@ export async function start(
           // way); in tests the caller-supplied serverFactory is
           // expected to return a Fastify-compatible value when
           // mode='workers'.
-          const ctx = options.workerContext as WorkerContext;
-          registerWebhookRoute(server as unknown as FastifyInstance, {
-            db: ctx.db as unknown as Parameters<typeof registerWebhookRoute>[1]["db"],
-            credentialStore: ctx.credentialStore!,
-            adapterRegistry: ctx.adapterRegistry,
-            verifier: ctx.webhookVerifier!,
-            scannerQueue: ctx.webhookScannerQueue!,
-            dlqQueue: ctx.webhookDlqQueue!,
-            // (PR-N2) The producer-side
-            // `ingestion.scanner.classify` queue handle the
-            // composition root already opened for the Scanner
-            // pipeline (`pipelines/scanner.ts`). Reusing the same
-            // handle for the receiver's direct-intake branch
-            // means a single Queue + a single Redis connection
-            // serve both producers — webhook deliveries and
-            // periodic scans land on the same backlog the
-            // Compile worker dequeues from.
-            //
-            // Round-3 (Copilot #1): no conditional spread here —
-            // `ctx.enqueue` is required in mode='workers' and the
-            // boot-validation block above (the missing-fields check
-            // that includes `enqueue`) throws before we ever reach
-            // this line if it's absent. The non-null assertion
-            // mirrors the other four fields validated in the same
-            // block.
-            scannerClassifyQueue: ctx.enqueue!,
-            appLogger: ctx.logger,
-          });
+          mountWebhookRoute(
+            server as unknown as FastifyInstance,
+            options.workerContext as WorkerContext,
+          );
           return server;
         }
       : options.serverFactory;

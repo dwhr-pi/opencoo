@@ -31,6 +31,7 @@ export {
 export type { ProbeResult } from "./probes/types.js";
 export {
   start,
+  mountWebhookRoute,
   type IngestionStartMode,
   type StartedEngine,
   type StartOptions,
@@ -107,6 +108,7 @@ export {
 } from "./intake/record-webhook.js";
 export {
   buildWebhookReceiver,
+  registerWebhookRoute,
   WEBHOOK_BODY_LIMIT_BYTES,
   type WebhookReceiverOptions,
   type WebhookQueueLike,

@@ -184,6 +184,33 @@ export interface StartOptions
    *  so per-domain `llm_policy` enforcement matches the ingestion
    *  side. */
   readonly agentRouter?: LlmRouter;
+  /** PR-Q6 (phase-a appendix #9) fix-up — pre-listen hooks.
+   *
+   *  Each hook runs against the resolved Fastify instance AFTER
+   *  `serverFactory` returns (admin-API + static-UI registered) but
+   *  BEFORE `app.listen()` is called. Used by the orchestrator
+   *  (`packages/cli/src/commands/serve.ts`) to mount the
+   *  engine-ingestion webhook receiver on the SHARED Fastify before
+   *  the listener is up — `addContentTypeParser` rejects post-listen
+   *  registrations with `FST_ERR_INSTANCE_ALREADY_STARTED`, so the
+   *  mount has to land here, not inside engine-ingestion's `start()`
+   *  which runs after self-op's listen already returned.
+   *
+   *  Hooks run sequentially in array order. Any throw here propagates
+   *  through `start()` — the engine-scaffold's resource-safety teardown
+   *  closes the Fastify + drains pg.Pool/Redis before re-throwing. */
+  readonly preListenHooks?: ReadonlyArray<
+    (app: FastifyInstance) => void | Promise<void>
+  >;
+  /** PR-Q6 (phase-a appendix #9) fix-up — Fastify request body limit.
+   *
+   *  Threaded into `buildServer` for the static-UI-only fallback
+   *  factory and the production server factory. The orchestrator sets
+   *  this to `WEBHOOK_BODY_LIMIT_BYTES` (5 MB) when co-booting
+   *  engine-ingestion in workers mode, so a 4-MB webhook delivery
+   *  doesn't hit Fastify's default 1-MB cap and 413 before the
+   *  receiver's own size guard runs. */
+  readonly bodyLimit?: number;
 }
 
 function defaultDbFactory(config: EngineConfig): StartDb {
@@ -207,8 +234,12 @@ async function staticUiOnlyServerFactory(
   probes: ProbeMap,
   config: EngineConfig,
   logger: Logger,
+  bodyLimit?: number,
 ): Promise<StartServer> {
-  const app: FastifyInstance = buildServer({ probes });
+  const app: FastifyInstance = buildServer({
+    probes,
+    ...(bodyLimit !== undefined ? { bodyLimit } : {}),
+  });
   await registerStaticUi(app, {
     ...(config.uiDistPath !== undefined ? { uiDistPath: config.uiDistPath } : {}),
     logger,
@@ -386,15 +417,27 @@ export async function start(
   //   - production wiring (env complete + pool present) →
   //     productionServerFactory,
   //   - otherwise → staticUiOnlyServerFactory (boot-tolerant).
+  //
+  // PR-Q6 (phase-a appendix #9) fix-up: the resolved factory is
+  // wrapped to run `options.preListenHooks` after the factory
+  // returns its FastifyInstance and BEFORE engine-scaffold calls
+  // `app.listen()`. The orchestrator threads its webhook-mount
+  // closure through here so the parser + route registration lands
+  // before Fastify's ready() locks the routing tree. `bodyLimit`
+  // is threaded into `buildServer` for both the static-UI fallback
+  // and production paths so 5-MB webhook deliveries don't 413 on
+  // Fastify's default 1-MB cap.
   const userServerFactory = options.serverFactory;
-  const serverFactory = (
+  const bodyLimit = options.bodyLimit;
+  const preListenHooks = options.preListenHooks ?? [];
+  const baseServerFactory = (
     probes: ProbeMap,
   ): Promise<StartServer> | StartServer => {
     if (userServerFactory !== undefined) {
       return userServerFactory(probes, config, logger);
     }
     if (compositionEnv === null || pgPool === null) {
-      return staticUiOnlyServerFactory(probes, config, logger);
+      return staticUiOnlyServerFactory(probes, config, logger, bodyLimit);
     }
     const credentialStore = tryBuildCredentialStore(pgPool, env, logger);
     const ingestionQueue = resolveIngestionQueue(
@@ -413,6 +456,23 @@ export async function start(
       ...(credentialStore !== null ? { credentialStore } : {}),
       ...(ingestionQueue !== undefined ? { ingestionQueue } : {}),
       ...(dispatcher !== undefined ? { schedulerSource: dispatcher } : {}),
+      ...(bodyLimit !== undefined ? { bodyLimit } : {}),
+    });
+  };
+  const serverFactory = (
+    probes: ProbeMap,
+  ): Promise<StartServer> => {
+    // Resolve the underlying factory, then run pre-listen hooks
+    // against the resolved Fastify before returning to the scaffold
+    // (which immediately calls listen()).
+    return Promise.resolve(baseServerFactory(probes)).then(async (server) => {
+      if (preListenHooks.length > 0) {
+        const app = server as unknown as FastifyInstance;
+        for (const hook of preListenHooks) {
+          await hook(app);
+        }
+      }
+      return server;
     });
   };
 

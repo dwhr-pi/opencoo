@@ -80,7 +80,8 @@ export interface ServeSseBus {
 /** Minimal `StartedEngine` shape consumed by `runServe`.
  *  Both engines satisfy it structurally; engine-self-operating
  *  additionally exposes `sseBus` (the bus it constructed at
- *  boot — round-2 fix #1). */
+ *  boot — round-2 fix #1) and `app` (the listening Fastify the
+ *  ingestion engine mounts its webhook route onto — PR-Q6). */
 export interface ServeStartedEngine {
   close(): Promise<void>;
   /** Round-2 fix #1 — only the self-op engine populates this.
@@ -88,6 +89,17 @@ export interface ServeStartedEngine {
    *  orchestrator captures the self-op handle and forwards the
    *  bus into the ingestion factory below. */
   readonly sseBus?: ServeSseBus;
+  /** PR-Q6 (phase-a appendix #9) — only the self-op engine
+   *  populates this. Holds the listening FastifyInstance the
+   *  scaffold built at boot. The orchestrator threads it into the
+   *  ingestion factory as `sharedFastify` so the ingestion engine
+   *  mounts `/webhooks/:bindingId` onto the SAME listener instead
+   *  of binding a second `:8080` socket (architecture.md §12:
+   *  "one process, one port, one container"). The field is typed
+   *  `unknown` here so the engine's full FastifyInstance surface
+   *  doesn't bleed across the orchestrator's no-cross-engine-import
+   *  boundary — engine-ingestion narrows it back at consumption. */
+  readonly app?: unknown;
 }
 
 /** Matches `start({env})` from `@opencoo/engine-self-operating`.
@@ -98,9 +110,23 @@ export interface ServeStartedEngine {
  *  `tryComposeAgentRunnersBundleFromEnv` and threads them into
  *  `engine-self-operating.start({...})` so the AgentDispatcher
  *  boots with a populated registry. Tests pass their own
- *  factory and never hit the new wiring. */
+ *  factory and never hit the new wiring.
+ *
+ *  PR-Q6 fix-up (phase-a appendix #9): adds optional
+ *  `preListenHooks` + `bodyLimit`. The orchestrator pre-composes
+ *  the ingestion WorkerContext, builds a closure that mounts the
+ *  webhook receiver onto the supplied Fastify, and threads it here
+ *  so the parser + route registration lands BEFORE
+ *  `app.listen()` (Fastify rejects `addContentTypeParser` once
+ *  ready). `bodyLimit` is `WEBHOOK_BODY_LIMIT_BYTES` (5 MB) so 5-MB
+ *  webhook deliveries don't 413 on Fastify's default 1-MB cap.
+ *  Test mocks ignore both fields. */
 export type ServeStartFactory = (opts: {
   readonly env: Record<string, string | undefined>;
+  readonly preListenHooks?: ReadonlyArray<
+    (app: unknown) => void | Promise<void>
+  >;
+  readonly bodyLimit?: number;
 }) => Promise<ServeStartedEngine>;
 
 /** Matches `start({env})` from `@opencoo/engine-ingestion`. The
@@ -109,12 +135,71 @@ export type ServeStartFactory = (opts: {
  *  lines without dragging the orchestrator's logging into this
  *  layer. Round-2 fix #1 adds `sseBus`: when self-op booted
  *  successfully, the orchestrator forwards its bus so ingestion
- *  worker run events publish onto the Activity feed. */
+ *  worker run events publish onto the Activity feed. PR-Q6 adds
+ *  `sharedFastify`: when self-op booted successfully, the
+ *  orchestrator forwards its listening Fastify so the ingestion
+ *  engine mounts its webhook route onto the SAME listener
+ *  (architecture.md §12 — one process, one port).
+ *
+ *  PR-Q6 fix-up (phase-a appendix #9): adds optional `preflight` so
+ *  the orchestrator can pass the pre-composed `WorkerContext` (built
+ *  before self-op booted, used to construct the pre-listen mount
+ *  hook) to the ingestion factory — avoiding double composition.
+ *  Test factories ignore the field. */
+export interface ServeIngestionPreflight {
+  /** Pre-composed WorkerContext + underlying handles. The default
+   *  ingestion factory `mod.start({mode:'workers', workerContext})`
+   *  consumes this verbatim instead of re-composing.
+   *
+   *  Typed `unknown` here so the engine-ingestion's WorkerContext
+   *  surface doesn't bleed across the orchestrator's
+   *  no-cross-engine-import boundary. The default ingestion factory
+   *  narrows back at the call site. */
+  readonly composed: unknown;
+}
+
 export type ServeIngestionStartFactory = (opts: {
   readonly env: Record<string, string | undefined>;
   readonly stderr: { write: (s: string) => boolean };
   readonly sseBus?: ServeSseBus;
+  readonly sharedFastify?: unknown;
+  readonly preflight?: ServeIngestionPreflight;
 }) => Promise<ServeStartedEngine>;
+
+/** PR-Q6 fix-up (phase-a appendix #9) — pre-flight composition for
+ *  the ingestion engine.
+ *
+ *  Runs BEFORE either engine boots so the orchestrator can:
+ *    1. Compose the `WorkerContext` (pg.Pool + Redis + adapters +
+ *       LlmRouter + CredentialStore).
+ *    2. Build a closure `(app) => mountWebhookRoute(app, ctx)` that
+ *       the orchestrator threads into self-op's
+ *       `start({preListenHooks})` so the route + parser register
+ *       BEFORE `app.listen()` (Fastify rejects post-listen
+ *       `addContentTypeParser` with `FST_ERR_INSTANCE_ALREADY_STARTED`).
+ *    3. Hand the same `composed` value to the ingestion factory so
+ *       `mode:'workers'` reuses it instead of re-composing.
+ *
+ *  Returns `null` on composition failure (missing GITEA_PAT /
+ *  ENCRYPTION_KEY / etc.). The orchestrator boots self-op WITHOUT
+ *  the mount hook (no body-limit override either) and skips ingestion
+ *  workers — the management UI stays up so the operator can fix env
+ *  without restart.
+ *
+ *  Test mocks return `null` to bypass real composition. */
+export interface ServeIngestionPreflightResult {
+  readonly preflight: ServeIngestionPreflight;
+  /** Pre-listen hook the orchestrator threads into self-op. Mounts
+   *  `/webhooks/:bindingId` + the raw-buffer parser on the supplied
+   *  Fastify. Caller MUST run this before `app.listen()`. */
+  readonly mountHook: (app: unknown) => void | Promise<void>;
+}
+
+export type ServeIngestionPreflightFactory = (opts: {
+  readonly env: Record<string, string | undefined>;
+  readonly stderr: { write: (s: string) => boolean };
+  readonly sseBus?: ServeSseBus;
+}) => Promise<ServeIngestionPreflightResult | null>;
 
 /** Subset of `EventEmitter` `runServe` consumes — `process`
  *  satisfies it; tests pass an `EventEmitter` to drive signals. */
@@ -136,6 +221,14 @@ export interface ServeArgs {
    *  webhook events actually get dequeued, classified, compiled,
    *  and persisted to Gitea automatically. */
   readonly startIngestionFactory?: ServeIngestionStartFactory;
+  /** @internal Test seam — PR-Q6 fix-up (phase-a appendix #9).
+   *  Defaults to the production composer. Test mocks for
+   *  `startFactory` / `startIngestionFactory` skip preflight by
+   *  default — they don't need it (their fakes don't bind ports
+   *  or compose contexts). To exercise the preflight wiring
+   *  explicitly, tests pass a stub that returns a synthetic
+   *  preflight + mountHook. */
+  readonly ingestionPreflightFactory?: ServeIngestionPreflightFactory;
   /** @internal Test seam — defaults to the Node `process` emitter. */
   readonly signalSource?: ServeSignalSource | EventEmitter;
   /** @internal Test seam — defaults to `exitOk`. Tests pass a
@@ -176,12 +269,20 @@ type EngineStartFn = (opts: {
   readonly agentRunners?: unknown;
   readonly agentDefinitions?: unknown;
   readonly agentRouter?: unknown;
+  readonly preListenHooks?: ReadonlyArray<
+    (app: unknown) => void | Promise<void>
+  >;
+  readonly bodyLimit?: number;
 }) => Promise<ServeStartedEngine>;
 
 interface ComposeStartedEngineArgs {
   readonly env: Record<string, string | undefined>;
   readonly bundle: AgentRunnersBundleLike | null;
   readonly start: EngineStartFn;
+  readonly preListenHooks?: ReadonlyArray<
+    (app: unknown) => void | Promise<void>
+  >;
+  readonly bodyLimit?: number;
   /** Logger for the round-2 fix #3 boot-failure-close-failed
    *  warn line. */
   readonly logger: {
@@ -229,6 +330,16 @@ export async function composeStartedEngineWithBundle(
             agentRouter: bundle.router,
           }
         : {}),
+      // PR-Q6 fix-up (phase-a appendix #9): when the orchestrator
+      // pre-composed an ingestion preflight, thread its mount hook
+      // here so the webhook receiver registers BEFORE app.listen().
+      // bodyLimit raises Fastify's default 1-MB cap to 5 MB so a
+      // 4-MB webhook delivery doesn't 413 before the receiver's own
+      // size guard runs.
+      ...(args.preListenHooks !== undefined
+        ? { preListenHooks: args.preListenHooks }
+        : {}),
+      ...(args.bodyLimit !== undefined ? { bodyLimit: args.bodyLimit } : {}),
     });
   } catch (err) {
     if (bundle !== null) {
@@ -264,6 +375,10 @@ export async function composeStartedEngineWithBundle(
 
 async function defaultStartFactory(opts: {
   readonly env: Record<string, string | undefined>;
+  readonly preListenHooks?: ReadonlyArray<
+    (app: unknown) => void | Promise<void>
+  >;
+  readonly bodyLimit?: number;
 }): Promise<ServeStartedEngine> {
   const mod = await import("@opencoo/engine-self-operating");
   const composition = await import(
@@ -288,44 +403,45 @@ async function defaultStartFactory(opts: {
     bundle,
     start: mod.start as unknown as EngineStartFn,
     logger: new sharedLogger.ConsoleLogger(),
+    ...(opts.preListenHooks !== undefined
+      ? { preListenHooks: opts.preListenHooks }
+      : {}),
+    ...(opts.bodyLimit !== undefined ? { bodyLimit: opts.bodyLimit } : {}),
   });
 }
 
-/** @internal Default ingestion `startFactory`. PR-M2 (phase-a
- *  appendix #5): attempts to compose a production WorkerContext
- *  (WikiAdapter + LlmRouter + GuardAdapter +
- *  SourceAdapterRegistry from env) and boots
- *  engine-ingestion in `mode: 'workers'`. On composition failure
- *  (missing GITEA_URL / GITEA_PAT / ENCRYPTION_KEY, etc.) falls
- *  back to `mode: 'probes-only'` with a clear stderr line — the
- *  management UI stays up and the operator can fix the env
- *  without restarting the management server.
+/** @internal Shape of the result `composition.composeProductionFromEnv`
+ *  returns. Captured in module scope so the preflight + ingestion
+ *  factories can refer to it without re-deriving the type. */
+type IngestionComposedResult = Awaited<
+  ReturnType<
+    typeof import("../provision/production-composition.js")["composeProductionFromEnv"]
+  >
+>;
+
+/** @internal Default ingestion preflight factory.
  *
- *  The composition's pg.Pool + Redis are owned by the
- *  WorkerContext bundle; the engine's own pg/Redis factories are
- *  let alone (the engine's own pg.Pool services its Fastify
- *  health probes). The closer attached to the returned engine
- *  drains the composition resources after the workers stop. */
-async function defaultIngestionStartFactory(opts: {
+ *  PR-Q6 (phase-a appendix #9) fix-up: pre-composes the WorkerContext
+ *  BEFORE either engine boots, then returns a closure that mounts the
+ *  webhook receiver onto a FastifyInstance.  The orchestrator threads
+ *  the closure into self-op's `start({preListenHooks})` so the parser +
+ *  route registration land BEFORE `app.listen()` (Fastify rejects
+ *  post-listen `addContentTypeParser`). The composed `WorkerContext` is
+ *  reused by the ingestion factory so we don't re-compose pg.Pool /
+ *  Redis / adapters / LlmRouter twice.
+ *
+ *  Returns `null` on composition failure (missing GITEA_PAT /
+ *  ENCRYPTION_KEY / etc.). Caller writes the diagnostic line to stderr
+ *  and continues with probes-only ingestion. */
+async function defaultIngestionPreflightFactory(opts: {
   readonly env: Record<string, string | undefined>;
   readonly stderr: { write: (s: string) => boolean };
   readonly sseBus?: ServeSseBus;
-}): Promise<ServeStartedEngine> {
+}): Promise<ServeIngestionPreflightResult | null> {
   const mod = await import("@opencoo/engine-ingestion");
   const composition = await import("../provision/production-composition.js");
 
-  // Try to compose the production WorkerContext. On any failure
-  // we fall back to probes-only — the operator gets the webhook
-  // receiver + management UI, and the failure log line names
-  // the missing ingredient.
-  //
-  // Round-2 fix #1: forward the self-op SseBus into the
-  // composition so the WorkerContext.sseBus is the SAME instance
-  // the management UI streams from. Without this thread, the
-  // PR-M1 sse-bridge has no bus to emit on and ingestion
-  // run-lifecycle events never reach the Activity feed.
-  type Composed = Awaited<ReturnType<typeof composition.composeProductionFromEnv>>;
-  let composed: Composed;
+  let composed: IngestionComposedResult;
   try {
     composed = await composition.composeProductionFromEnv({
       env: opts.env,
@@ -337,15 +453,78 @@ async function defaultIngestionStartFactory(opts: {
         `opencoo: ingestion workers disabled (${describeError(err)}) — booting probes-only; webhook deliveries will queue in Redis until composition is fixed\n`,
       ),
     );
-    // Fall back to probes-only — webhook receiver up, no Workers.
+    return null;
+  }
+
+  // The mount hook closes over the composed WorkerContext. The
+  // orchestrator runs this against the self-op Fastify before it
+  // listens — `mountWebhookRoute` registers the route + raw-buffer
+  // parser inside a Fastify plugin scope (so the parser does NOT
+  // leak to the admin-API JSON parser at the root context).
+  type FastifyInstanceLike = Parameters<typeof mod.mountWebhookRoute>[0];
+  const mountHook = (app: unknown): void => {
+    mod.mountWebhookRoute(app as FastifyInstanceLike, composed.workerContext);
+  };
+
+  return {
+    preflight: { composed: composed as unknown },
+    mountHook,
+  };
+}
+
+/** @internal Default ingestion `startFactory`. PR-M2 (phase-a
+ *  appendix #5): boots `engine-ingestion` in `mode: 'workers'`
+ *  using a pre-composed `WorkerContext` from the preflight (PR-Q6
+ *  fix-up, phase-a appendix #9). When no preflight was supplied
+ *  (composition failed at preflight time, OR test-injected
+ *  factories skipped preflight), falls back to `mode: 'probes-only'`
+ *  with a clear stderr line — the management UI stays up.
+ *
+ *  The composition's pg.Pool + Redis are owned by the
+ *  WorkerContext bundle; the engine's own pg/Redis factories are
+ *  let alone (the engine's own pg.Pool services its Fastify
+ *  health probes). The closer attached to the returned engine
+ *  drains the composition resources after the workers stop. */
+async function defaultIngestionStartFactory(opts: {
+  readonly env: Record<string, string | undefined>;
+  readonly stderr: { write: (s: string) => boolean };
+  readonly sseBus?: ServeSseBus;
+  readonly sharedFastify?: unknown;
+  readonly preflight?: ServeIngestionPreflight;
+}): Promise<ServeStartedEngine> {
+  const mod = await import("@opencoo/engine-ingestion");
+
+  // No preflight → probes-only fallback. The preflight factory
+  // already wrote the failure reason to stderr; we just boot the
+  // engine without workers so the management UI still has a peer.
+  if (opts.preflight === undefined) {
     return mod.start({ env: opts.env });
   }
 
+  const composed = opts.preflight.composed as IngestionComposedResult;
+
+  // PR-Q6 (phase-a appendix #9): when the orchestrator passed the
+  // self-op engine's listening Fastify, mount the webhook route +
+  // workers onto it instead of binding a second :8080 listener.
+  // Type cast: the orchestrator types the field as `unknown` so the
+  // FastifyInstance surface doesn't bleed across the orchestrator's
+  // no-cross-engine-import boundary; engine-ingestion's
+  // `StartOptions.sharedFastify` is typed `FastifyInstance`, so we
+  // narrow at the call site.
+  type IngestionStartArgs = Parameters<typeof mod.start>[0];
+  type SharedFastifyArg = NonNullable<
+    NonNullable<IngestionStartArgs>["sharedFastify"]
+  >;
+  const sharedFastify =
+    opts.sharedFastify === undefined
+      ? undefined
+      : (opts.sharedFastify as SharedFastifyArg);
   const engine = await mod.start({
     env: opts.env,
     mode: "workers",
     workerContext: composed.workerContext,
     workerConnection: composed.redisConnection,
+    ...(sharedFastify !== undefined ? { sharedFastify } : {}),
   });
 
   // Wrap close() so SIGTERM drains the production composition
@@ -398,6 +577,19 @@ export async function runServe(args: ServeArgs): Promise<void> {
   const startFactory = args.startFactory ?? defaultStartFactory;
   const startIngestionFactory =
     args.startIngestionFactory ?? defaultIngestionStartFactory;
+  // PR-Q6 fix-up (phase-a appendix #9): preflight defaults to the
+  // production composer ONLY when the caller did not supply test
+  // factories. Tests that inject `startFactory` /
+  // `startIngestionFactory` skip preflight by default — their fakes
+  // don't bind ports or compose contexts, so the pre-listen-hook
+  // dance has nothing to wire. To exercise the preflight wiring
+  // explicitly, tests pass their own `ingestionPreflightFactory`.
+  const isTestInjection =
+    args.startFactory !== undefined ||
+    args.startIngestionFactory !== undefined;
+  const ingestionPreflightFactory =
+    args.ingestionPreflightFactory ??
+    (isTestInjection ? null : defaultIngestionPreflightFactory);
   const signalSource = args.signalSource ?? process;
   // Default exit routes 0 through `exitOk` and non-zero through
   // `exitRuntimeError`, matching the bin.ts catch behaviour.
@@ -409,14 +601,80 @@ export async function runServe(args: ServeArgs): Promise<void> {
     });
 
   args.stdout.write(pc.dim("opencoo: starting...\n"));
+
+  // PR-Q6 fix-up (phase-a appendix #9): pre-compose the ingestion
+  // WorkerContext + build the webhook-mount hook BEFORE either
+  // engine boots. The hook lives inside self-op's
+  // `start({preListenHooks})` so the route + parser register
+  // BEFORE `app.listen()` (Fastify rejects post-listen
+  // `addContentTypeParser` with `FST_ERR_INSTANCE_ALREADY_STARTED`).
+  // Returns null on composition failure — caller falls back to
+  // probes-only ingestion.
+  let preflight: ServeIngestionPreflightResult | null = null;
+  if (ingestionPreflightFactory !== null) {
+    try {
+      preflight = await ingestionPreflightFactory({
+        env: args.env,
+        stderr: args.stderr,
+      });
+    } catch (err) {
+      if (isExitSentinel(err)) throw err;
+      // The preflight factory contract is to never throw — return
+      // null on composition failure. A real throw here is a bug in
+      // the factory; surface it to stderr and proceed without
+      // workers. The management UI will still be reachable.
+      args.stderr.write(
+        pc.yellow(
+          `opencoo: ingestion preflight threw (${describeError(err)}) — booting probes-only\n`,
+        ),
+      );
+      preflight = null;
+    }
+  }
+
+  // Webhook body limit + pre-listen hooks only thread through when
+  // preflight produced a mount hook — otherwise self-op needs the
+  // default 1-MB limit (and no hooks).
+  //
+  // 5 MB is mirrored from `WEBHOOK_BODY_LIMIT_BYTES` in
+  // engine-ingestion's `webhook-receiver.ts`. Inlining (not importing)
+  // avoids dragging the engine-ingestion module load into the
+  // cold-path `opencoo --help` boot — the orchestrator stays the
+  // single source of "what bodyLimit does Fastify get for the shared
+  // listener", and the constant is an architectural decision (Q13)
+  // that doesn't move. If WEBHOOK_BODY_LIMIT_BYTES ever changes,
+  // both call sites update — surfaced by the integration test in
+  // `engine-ingestion/tests/start-shared-mount-real.test.ts`.
+  const SHARED_WEBHOOK_BODY_LIMIT = 5 * 1024 * 1024;
   let selfOpEngine: ServeStartedEngine;
   try {
-    selfOpEngine = await startFactory({ env: args.env });
+    selfOpEngine = await startFactory({
+      env: args.env,
+      ...(preflight !== null
+        ? {
+            preListenHooks: [preflight.mountHook],
+            bodyLimit: SHARED_WEBHOOK_BODY_LIMIT,
+          }
+        : {}),
+    });
   } catch (err) {
     if (isExitSentinel(err)) throw err;
     args.stderr.write(
       pc.red(`opencoo: failed to start (${describeError(err)})\n`),
     );
+    // Drain the preflight's pg.Pool / Redis / queue handles — the
+    // engine never booted so nothing else owns them.
+    if (preflight !== null) {
+      const composed = preflight.preflight.composed as IngestionComposedResult;
+      await composed.workerContext.closeProducers().catch(() => undefined);
+      await Promise.all([
+        composed.pgPool.end().catch(() => undefined),
+        composed.redis
+          .quit()
+          .then(() => undefined)
+          .catch(() => undefined),
+      ]);
+    }
     return exit(2);
   }
 
@@ -434,6 +692,10 @@ export async function runServe(args: ServeArgs): Promise<void> {
   // index-rebuild, cleanup) never reach the Activity feed even
   // though the PR-M1 sse-bridge has all the wiring on the
   // ingestion side.
+  //
+  // PR-Q6 fix-up: pass the preflight result through so the default
+  // ingestion factory reuses the WorkerContext composed at preflight
+  // time instead of re-composing pg.Pool / Redis / adapters.
   let ingestionEngine: ServeStartedEngine | undefined;
   try {
     ingestionEngine = await startIngestionFactory({
@@ -442,6 +704,14 @@ export async function runServe(args: ServeArgs): Promise<void> {
       ...(selfOpEngine.sseBus !== undefined
         ? { sseBus: selfOpEngine.sseBus }
         : {}),
+      // PR-Q6 (phase-a appendix #9): forward the self-op engine's
+      // listening Fastify so the ingestion engine knows NOT to bind
+      // a second `:8080` socket (EADDRINUSE). The route itself was
+      // already mounted by the pre-listen hook above.
+      ...(selfOpEngine.app !== undefined
+        ? { sharedFastify: selfOpEngine.app }
+        : {}),
+      ...(preflight !== null ? { preflight: preflight.preflight } : {}),
     });
   } catch (err) {
     if (isExitSentinel(err)) throw err;
@@ -450,6 +720,20 @@ export async function runServe(args: ServeArgs): Promise<void> {
         `opencoo: ingestion engine did not boot (${describeError(err)}) — management UI is still up; webhook receiver is unavailable until next restart\n`,
       ),
     );
+    // If the ingestion factory threw AFTER preflight composed
+    // resources, the resources are now orphaned. Drain them best-
+    // effort so the process can exit cleanly on later SIGTERM.
+    if (preflight !== null) {
+      const composed = preflight.preflight.composed as IngestionComposedResult;
+      await composed.workerContext.closeProducers().catch(() => undefined);
+      await Promise.all([
+        composed.pgPool.end().catch(() => undefined),
+        composed.redis
+          .quit()
+          .then(() => undefined)
+          .catch(() => undefined),
+      ]);
+    }
     ingestionEngine = undefined;
   }
 
@@ -480,15 +764,26 @@ export async function runServe(args: ServeArgs): Promise<void> {
       );
       signalSource.removeListener("SIGTERM", onSigterm);
       signalSource.removeListener("SIGINT", onSigint);
-      // Close both engines in parallel — each engine's close()
-      // is internally idempotent; closeAll on the workers handle
-      // (when present) drains BullMQ within a 30s window.
-      const closes: Promise<void>[] = [closeWithLog("self-op", selfOpEngine)];
-      if (ingestionEngine !== undefined) {
-        closes.push(closeWithLog("ingestion", ingestionEngine));
-      }
-      closing = Promise.all(closes)
-        .then(() => undefined)
+      // PR-Q6 (phase-a appendix #9): close in series, ingestion
+      // FIRST. Two reasons:
+      //   1. The ingestion engine drains its BullMQ workers + the
+      //      composition's pg.Pool / Redis. If the self-op engine
+      //      closes first, the SHARED Fastify listener disappears
+      //      mid-request from any in-flight `/webhooks/:bindingId`
+      //      POST and an in-flight worker job's UPDATE against the
+      //      shared pg.Pool throws.
+      //   2. Engine-ingestion's `close()` is a no-op on the shared
+      //      listener (the self-op engine OWNS the listener).
+      //      Self-op's `close()` then drops the listener cleanly.
+      // Each engine's close() is internally idempotent; closeAll on
+      // the workers handle (when present) drains BullMQ within a
+      // 30s window.
+      closing = (async (): Promise<void> => {
+        if (ingestionEngine !== undefined) {
+          await closeWithLog("ingestion", ingestionEngine);
+        }
+        await closeWithLog("self-op", selfOpEngine);
+      })()
         .finally(() => {
           exit(0);
           resolve();
