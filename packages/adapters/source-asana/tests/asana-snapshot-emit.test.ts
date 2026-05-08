@@ -595,6 +595,236 @@ describe("enrichEvents — snapshot fetch error containment (I1)", () => {
 // Fix #3 (Copilot triage) — buildSnapshotEvent enforces 1 MiB ceiling
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// PR-Q8 — makeAsanaClient lazy injection (production-composition path)
+// ---------------------------------------------------------------------------
+
+describe("makeAsanaClient — lazy injection (PR-Q8)", () => {
+  it("does not throw at factory time when snapshotMode='on-event' AND makeAsanaClient is provided (no asanaClient)", async () => {
+    const { store, credentialId } = await seedCredential();
+    const make = vi.fn(() => makeStubAsanaClient("proj-lazy"));
+
+    // RED: today the factory throws "snapshotMode='on-event' requires
+    // asanaClient injection" because makeAsanaClient is not yet recognised.
+    expect(() => {
+      createAsanaSourceAdapter({
+        credentialStore: store,
+        credentialId,
+        config: {
+          projectGid: "proj-lazy",
+          snapshotMode: "on-event",
+          webhookSecretCredentialId: credentialId,
+        },
+        makeAsanaClient: make,
+      });
+    }).not.toThrow();
+
+    // makeAsanaClient must NOT be invoked at boot — the client is constructed
+    // lazily on first enrichEvents dispatch (so missing creds don't crash boot).
+    expect(make).not.toHaveBeenCalled();
+  });
+
+  it("calls makeAsanaClient exactly once across multiple enrichEvents dispatches (cached for adapter lifetime)", async () => {
+    const { store, credentialId } = await seedCredential();
+    const projectGid = "proj-cached";
+    const make = vi.fn(() => makeStubAsanaClient(projectGid));
+
+    const adapter = createAsanaSourceAdapter({
+      credentialStore: store,
+      credentialId,
+      config: {
+        projectGid,
+        snapshotMode: "on-event",
+        webhookSecretCredentialId: credentialId,
+      },
+      makeAsanaClient: make,
+    });
+
+    const buildEvent = (id: string): SourceWebhookEvent => ({
+      eventId: id,
+      eventType: "created",
+      doc: {
+        sourceDocId: `${id}:added`,
+        sourceRevision: id,
+        sourceRef: `asana:task/${id}`,
+        fetchedAt: new Date(),
+        contentBytes: Buffer.from("{}", "utf8"),
+        metadata: { projectGid },
+      },
+    });
+
+    // First dispatch — makeAsanaClient invoked once.
+    await adapter.webhook!.enrichEvents!([buildEvent("e1")]);
+    expect(make).toHaveBeenCalledTimes(1);
+
+    // Second dispatch — must reuse the cached client; no second call.
+    await adapter.webhook!.enrichEvents!([buildEvent("e2")]);
+    expect(make).toHaveBeenCalledTimes(1);
+
+    // Third dispatch with a batch of two — still cached.
+    await adapter.webhook!.enrichEvents!([buildEvent("e3"), buildEvent("e4")]);
+    expect(make).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits the snapshot event using the lazily-constructed client", async () => {
+    const { store, credentialId } = await seedCredential();
+    const projectGid = "proj-from-make";
+    const fetchSpy = vi.fn(async (gid: string) => ({
+      project_gid: gid,
+      snapshot: [],
+      incomplete_count: 7,
+      overdue_count: 2,
+      fetched_at: "2026-05-08T10:00:00.000Z",
+    }));
+    const lazyClient: AsanaClient = { fetchProjectSnapshot: fetchSpy };
+
+    const adapter = createAsanaSourceAdapter({
+      credentialStore: store,
+      credentialId,
+      config: {
+        projectGid,
+        snapshotMode: "on-event",
+        webhookSecretCredentialId: credentialId,
+      },
+      makeAsanaClient: () => lazyClient,
+    });
+
+    const baseEvent: SourceWebhookEvent = {
+      eventId: "evt-make",
+      eventType: "completed",
+      doc: {
+        sourceDocId: "task-make:changed",
+        sourceRevision: "evt-make",
+        sourceRef: "asana:task/task-make",
+        fetchedAt: new Date(),
+        contentBytes: Buffer.from("{}", "utf8"),
+        metadata: { projectGid },
+      },
+    };
+
+    const result = await adapter.webhook!.enrichEvents!([baseEvent]);
+
+    expect(result).toHaveLength(2);
+    expect(fetchSpy).toHaveBeenCalledWith(projectGid);
+    const snapshotEvent = result[1]!;
+    const payload = JSON.parse(snapshotEvent.doc.contentBytes.toString("utf8")) as {
+      project_gid: string;
+      incomplete_count: number;
+      overdue_count: number;
+    };
+    expect(payload.project_gid).toBe(projectGid);
+    expect(payload.incomplete_count).toBe(7);
+    expect(payload.overdue_count).toBe(2);
+  });
+
+  it("prefers explicit asanaClient over makeAsanaClient when both are provided", async () => {
+    const { store, credentialId } = await seedCredential();
+    const projectGid = "proj-precedence";
+    const explicitClient = makeStubAsanaClient(projectGid, {
+      incomplete_count: 99,
+    });
+    const make = vi.fn(() => makeStubAsanaClient(projectGid));
+
+    const adapter = createAsanaSourceAdapter({
+      credentialStore: store,
+      credentialId,
+      config: {
+        projectGid,
+        snapshotMode: "on-event",
+        webhookSecretCredentialId: credentialId,
+      },
+      asanaClient: explicitClient,
+      makeAsanaClient: make,
+    });
+
+    const baseEvent: SourceWebhookEvent = {
+      eventId: "evt-prec",
+      eventType: "created",
+      doc: {
+        sourceDocId: "t-prec:added",
+        sourceRevision: "evt-prec",
+        sourceRef: "asana:task/t-prec",
+        fetchedAt: new Date(),
+        contentBytes: Buffer.from("{}", "utf8"),
+        metadata: { projectGid },
+      },
+    };
+
+    const result = await adapter.webhook!.enrichEvents!([baseEvent]);
+
+    // Snapshot was produced by the explicit client (incomplete_count=99),
+    // not the make() factory output (default 3).
+    const payload = JSON.parse(result[1]!.doc.contentBytes.toString("utf8")) as {
+      incomplete_count: number;
+    };
+    expect(payload.incomplete_count).toBe(99);
+    expect(make).not.toHaveBeenCalled();
+  });
+
+  it("fails open when makeAsanaClient throws (Copilot triage)", async () => {
+    // The receiver's webhook hot-path treats enrich failures as
+    // "skip enrichment, continue with the bare event," not "kill
+    // the entire delivery." If `makeAsanaClient` throws (miswired
+    // composition, malformed PAT JSON, transient SDK boot error),
+    // `enrichEvents` MUST still produce the raw event and absorb
+    // the throw with a soft warn — otherwise a single bad binding
+    // takes down the whole ingestion path.
+    const { store, credentialId } = await seedCredential();
+    const projectGid = "proj-fail-open";
+    const make = vi.fn(() => {
+      throw new Error("simulated SDK boot failure");
+    });
+    // Silence the soft warn during the test.
+    const consoleWarnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    const adapter = createAsanaSourceAdapter({
+      credentialStore: store,
+      credentialId,
+      config: {
+        projectGid,
+        snapshotMode: "on-event",
+        webhookSecretCredentialId: credentialId,
+      },
+      makeAsanaClient: make,
+    });
+
+    const baseEvent: SourceWebhookEvent = {
+      eventId: "evt-fail-open",
+      eventType: "created",
+      doc: {
+        sourceDocId: "t-fail-open:added",
+        sourceRevision: "evt-fail-open",
+        sourceRef: "asana:task/t-fail-open",
+        fetchedAt: new Date(),
+        contentBytes: Buffer.from("{}", "utf8"),
+        metadata: { projectGid },
+      },
+    };
+
+    const result = await adapter.webhook!.enrichEvents!([baseEvent]);
+
+    // The bare event survives; no snapshot event was added.
+    expect(result.length).toBe(1);
+    expect(result[0]!.eventId).toBe("evt-fail-open");
+    // Soft warn was emitted with the factory error message.
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("makeAsanaClient threw"),
+      expect.objectContaining({
+        error: expect.stringContaining("simulated SDK boot failure"),
+      }),
+    );
+    // Factory was NOT retried on a hypothetical second dispatch
+    // (would just reproduce the throw and double-log).
+    const result2 = await adapter.webhook!.enrichEvents!([baseEvent]);
+    expect(result2.length).toBe(1);
+    expect(make).toHaveBeenCalledTimes(1);
+
+    consoleWarnSpy.mockRestore();
+  });
+});
+
 describe("enrichEvents — snapshot 1 MiB ceiling (Fix #3)", () => {
   it("does NOT emit snapshot event when snapshot exceeds 1 MiB, but still emits raw event", async () => {
     const { store, credentialId } = await seedCredential();

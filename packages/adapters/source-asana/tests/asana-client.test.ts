@@ -568,3 +568,49 @@ describe("AsanaClient — DEFAULT_OPT_FIELDS", () => {
     expect(DEFAULT_OPT_FIELDS).toHaveLength(6);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 10. patFromRecord — JSON-blob credential extraction (PR-Q8)
+// ---------------------------------------------------------------------------
+
+describe("AsanaClient — patFromRecord (PR-Q8)", () => {
+  it("uses patFromRecord to extract the PAT from a JSON-blob plaintext (production composition shape)", async () => {
+    const realPat = "1/abcdef-real-pat";
+    const credentialBlob = JSON.stringify({
+      personal_access_token: realPat,
+      workspace_gid: "ws-123",
+    });
+    const store = new InMemoryCredentialStore({ logger: silentLogger() });
+    const credentialId = await store.write({
+      name: "asana-prod",
+      schemaRef: "asana:auth",
+      plaintext: Buffer.from(credentialBlob, "utf8"),
+    });
+
+    const capturedHeaders: Array<Record<string, string>> = [];
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string> | undefined;
+      if (headers !== undefined) capturedHeaders.push({ ...headers });
+      return makeAsanaResponse([]);
+    });
+
+    const client = createAsanaClient({
+      credentialStore: store,
+      credentialId,
+      fetchImpl,
+      patFromRecord: (plaintext: Buffer): string => {
+        const parsed = JSON.parse(plaintext.toString("utf8")) as {
+          personal_access_token?: unknown;
+        };
+        if (typeof parsed.personal_access_token !== "string") {
+          throw new Error("asana credential missing personal_access_token");
+        }
+        return parsed.personal_access_token;
+      },
+    });
+
+    await client.fetchProjectSnapshot(PROJECT_GID);
+    // Header carries the EXTRACTED PAT, not the JSON blob.
+    expect(capturedHeaders[0]?.["Authorization"]).toBe(`Bearer ${realPat}`);
+  });
+});

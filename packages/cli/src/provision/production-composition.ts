@@ -318,6 +318,37 @@ function createMultiProviderDispatcher(
   };
 }
 
+/** PR-Q8 — extract the asana PAT from the `auth`-half credential
+ *  plaintext. The credential is written via the binding API as
+ *  `JSON.stringify({"personal_access_token":"…","workspace_gid":"…"})`
+ *  (see admin-API source-bindings persistence path). When the JSON
+ *  is malformed or the field is missing/empty, throw a clean error
+ *  scoped to this adapter — the AsanaClient's `scrubPat` wrapper
+ *  ensures the message never leaks the raw bytes. */
+export function extractAsanaPatFromAuthBlob(plaintext: Buffer): string {
+  const text = plaintext.toString("utf8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error(
+      `source-asana: credential plaintext is not valid JSON (${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error(
+      "source-asana: credential plaintext must be a JSON object with `personal_access_token`",
+    );
+  }
+  const pat = (parsed as { personal_access_token?: unknown }).personal_access_token;
+  if (typeof pat !== "string" || pat.length === 0) {
+    throw new Error(
+      "source-asana: credential plaintext is missing `personal_access_token` (string)",
+    );
+  }
+  return pat;
+}
+
 /** Try-import + register one adapter factory. A missing optional
  *  adapter package logs + skips rather than crashing composition.
  *  The static-string `import(...)` calls upstream keep TS module
@@ -358,7 +389,26 @@ async function loadSourceAdapterFactories(
   const out: Partial<Record<string, ProductionSourceAdapterFactory>> = {};
   await tryLoadAdapter(out, logger, "asana", async () => {
     const mod = await import("@opencoo/source-asana");
-    return (a) => mod.createAsanaSourceAdapter(a);
+    // PR-Q8: inject `makeAsanaClient` per-binding so the default
+    // `snapshotMode='on-event'` factory guard accepts the binding
+    // and `enrichEvents` resolves a real client lazily on the first
+    // dispatch. The credential plaintext is the JSON blob
+    // `{"personal_access_token":"…","workspace_gid":"…"}` (the `auth`
+    // half of the binding's credentialSchema); `patFromRecord`
+    // extracts the PAT inside the AsanaClient on the first
+    // fetchProjectSnapshot call.
+    return (a) => {
+      const makeAsanaClient = (): ReturnType<typeof mod.createAsanaClient> =>
+        mod.createAsanaClient({
+          credentialStore: a.credentialStore,
+          credentialId: a.credentialId,
+          patFromRecord: extractAsanaPatFromAuthBlob,
+        });
+      return mod.createAsanaSourceAdapter({
+        ...a,
+        makeAsanaClient,
+      });
+    };
   });
   await tryLoadAdapter(out, logger, "fireflies", async () => {
     const mod = await import("@opencoo/source-fireflies");

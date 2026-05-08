@@ -63,6 +63,12 @@ function buildEnumsDdl(): string {
 }
 
 const TABLES_DDL = `
+  CREATE TABLE domains (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    slug text NOT NULL UNIQUE,
+    name text NOT NULL DEFAULT '',
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+  );
   CREATE TABLE agent_instances (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     definition_slug text NOT NULL,
@@ -86,11 +92,28 @@ interface SeedArgsBuilder {
   readonly db: ReturnType<typeof drizzle>;
 }
 
-async function buildSeedArgs(): Promise<SeedArgsBuilder> {
+interface BuildSeedArgsOptions {
+  /** Domains to seed before runAgentsSeed runs. Defaults to one
+   *  `wiki-pilot` domain so the agents-seed auto-pick path is the
+   *  default test path (matches a fresh first-boot deployment). */
+  readonly domains?: ReadonlyArray<string>;
+  /** Optional `--domain <slug>` value passed to runAgentsSeed. */
+  readonly domainSlug?: string;
+}
+
+async function buildSeedArgs(
+  options: BuildSeedArgsOptions = {},
+): Promise<SeedArgsBuilder> {
   const pg = new PGlite();
   await pg.exec(buildEnumsDdl());
   await pg.exec(TABLES_DDL);
   const db = drizzle(pg);
+  const slugs = options.domains ?? ["wiki-pilot"];
+  for (const slug of slugs) {
+    await db.execute(sql`
+      INSERT INTO domains (slug, name) VALUES (${slug}, ${slug})
+    `);
+  }
   const stdout = new CapturingStream();
   const stderr = new CapturingStream();
   const args: AgentsSeedArgs = {
@@ -99,6 +122,7 @@ async function buildSeedArgs(): Promise<SeedArgsBuilder> {
     stderr,
     dbFactory: () => db as unknown as ReturnType<AgentsSeedArgs["dbFactory"] & object>,
     closePool: async () => undefined,
+    ...(options.domainSlug !== undefined ? { domainSlug: options.domainSlug } : {}),
   };
   return { args, stdout, stderr, db };
 }
@@ -110,7 +134,8 @@ describe("opencoo agents seed", () => {
     await expect(runAgentsSeed(args)).rejects.toThrow(ExitSentinel);
 
     const result = (await db.execute(sql`
-      SELECT definition_slug, name, schedule_cron, enabled
+      SELECT definition_slug, name, schedule_cron, enabled,
+             scope_domain_ids, memory
       FROM agent_instances
       ORDER BY definition_slug
     `)) as unknown as {
@@ -119,6 +144,8 @@ describe("opencoo agents seed", () => {
         name: string;
         schedule_cron: string | null;
         enabled: boolean;
+        scope_domain_ids: string[];
+        memory: unknown;
       }>;
     };
     // Heartbeat / Lint / Surfacer.
@@ -130,6 +157,12 @@ describe("opencoo agents seed", () => {
     for (const row of result.rows) {
       expect(row.enabled).toBe(true);
       expect(row.name).toContain("default");
+      // PR-Q8: scope_domain_ids resolved from the (auto-picked) sole domain.
+      expect(row.scope_domain_ids).toHaveLength(1);
+      expect(typeof row.scope_domain_ids[0]).toBe("string");
+      // PR-Q8: memory is the explicit `none` variant so the harness's
+      // exhaustive switch in `loadInstanceMemory` doesn't throw.
+      expect(row.memory).toEqual({ type: "none" });
     }
     expect(stdout.buffer).toContain("3");
   });
@@ -163,5 +196,100 @@ describe("opencoo agents seed", () => {
     const slugs = result.rows.map((r) => r.definition_slug);
     expect(slugs).not.toContain("chat");
     expect(slugs).not.toContain("builder");
+  });
+});
+
+describe("opencoo agents seed — domain resolution (PR-Q8)", () => {
+  it("zero domains exist → exit 2 with `+ New domain` hint, no rows inserted", async () => {
+    const { args, stderr, db } = await buildSeedArgs({ domains: [] });
+    const exit = captureExit();
+    await expect(runAgentsSeed(args)).rejects.toThrow(ExitSentinel);
+
+    expect(exit.code).toBe(2);
+    expect(stderr.buffer).toMatch(/no domains exist/i);
+    expect(stderr.buffer).toContain("+ New domain");
+
+    const result = (await db.execute(sql`
+      SELECT COUNT(*)::int AS total FROM agent_instances
+    `)) as unknown as { rows: Array<{ total: number }> };
+    expect(result.rows[0]?.total).toBe(0);
+  });
+
+  it("exactly one domain → auto-picks that domain when --domain is omitted", async () => {
+    const { args, db } = await buildSeedArgs({ domains: ["solo-domain"] });
+    captureExit();
+    await expect(runAgentsSeed(args)).rejects.toThrow(ExitSentinel);
+
+    const expected = (await db.execute(sql`
+      SELECT id::text AS id FROM domains WHERE slug = 'solo-domain'
+    `)) as unknown as { rows: Array<{ id: string }> };
+    const expectedDomainId = expected.rows[0]!.id;
+
+    const result = (await db.execute(sql`
+      SELECT scope_domain_ids FROM agent_instances
+    `)) as unknown as { rows: Array<{ scope_domain_ids: string[] }> };
+    for (const row of result.rows) {
+      expect(row.scope_domain_ids).toEqual([expectedDomainId]);
+    }
+  });
+
+  it("multiple domains exist + no --domain flag → exit 2 with explicit-flag hint, no rows inserted", async () => {
+    const { args, stderr, db } = await buildSeedArgs({
+      domains: ["wiki-pilot", "wiki-hr"],
+    });
+    const exit = captureExit();
+    await expect(runAgentsSeed(args)).rejects.toThrow(ExitSentinel);
+
+    expect(exit.code).toBe(2);
+    expect(stderr.buffer).toMatch(/multiple domains/i);
+    expect(stderr.buffer).toMatch(/--domain/);
+    // Both available slugs surfaced in the error so the operator can copy one.
+    expect(stderr.buffer).toContain("wiki-pilot");
+    expect(stderr.buffer).toContain("wiki-hr");
+
+    const result = (await db.execute(sql`
+      SELECT COUNT(*)::int AS total FROM agent_instances
+    `)) as unknown as { rows: Array<{ total: number }> };
+    expect(result.rows[0]?.total).toBe(0);
+  });
+
+  it("multiple domains + --domain <slug> → resolves to that domain", async () => {
+    const { args, db } = await buildSeedArgs({
+      domains: ["wiki-pilot", "wiki-hr"],
+      domainSlug: "wiki-hr",
+    });
+    captureExit();
+    await expect(runAgentsSeed(args)).rejects.toThrow(ExitSentinel);
+
+    const expected = (await db.execute(sql`
+      SELECT id::text AS id FROM domains WHERE slug = 'wiki-hr'
+    `)) as unknown as { rows: Array<{ id: string }> };
+    const expectedDomainId = expected.rows[0]!.id;
+
+    const result = (await db.execute(sql`
+      SELECT scope_domain_ids FROM agent_instances
+    `)) as unknown as { rows: Array<{ scope_domain_ids: string[] }> };
+    expect(result.rows).toHaveLength(3);
+    for (const row of result.rows) {
+      expect(row.scope_domain_ids).toEqual([expectedDomainId]);
+    }
+  });
+
+  it("--domain <slug> that doesn't exist → exit 2 with not-found message, no rows inserted", async () => {
+    const { args, stderr, db } = await buildSeedArgs({
+      domains: ["wiki-pilot"],
+      domainSlug: "wiki-typo",
+    });
+    const exit = captureExit();
+    await expect(runAgentsSeed(args)).rejects.toThrow(ExitSentinel);
+
+    expect(exit.code).toBe(2);
+    expect(stderr.buffer).toMatch(/wiki-typo/);
+    expect(stderr.buffer).toMatch(/not found|no such/i);
+
+    const result = (await db.execute(sql`
+      SELECT COUNT(*)::int AS total FROM agent_instances
+    `)) as unknown as { rows: Array<{ total: number }> };
+    expect(result.rows[0]?.total).toBe(0);
   });
 });

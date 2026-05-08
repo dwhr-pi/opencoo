@@ -154,12 +154,19 @@ export async function parseAndDispatch(
     .description(
       "Idempotently insert default agent_instances rows for every scheduled-class agent (heartbeat, lint, surfacer)",
     )
-    .action(async () => {
+    .option(
+      "--domain <slug>",
+      "scope-domain slug for the seeded rows; required when more than one domain exists. When omitted and exactly one domain row exists, that domain is auto-picked.",
+    )
+    .action(async (opts: { domain?: string }) => {
       const fn = runners.agentsSeed ?? runAgentsSeed;
       await fn({
         env: args.env,
         stdout: args.stdout,
         stderr: args.stderr,
+        ...(typeof opts.domain === "string" && opts.domain.length > 0
+          ? { domainSlug: opts.domain }
+          : {}),
       });
     });
 

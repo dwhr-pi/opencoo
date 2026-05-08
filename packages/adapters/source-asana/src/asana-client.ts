@@ -66,6 +66,23 @@ export interface AsanaClientArgs {
   readonly retryDelayMs?: number;
   /** Clock injection for deterministic tests (computes "today" for overdue). */
   readonly now?: () => Date;
+  /**
+   * PR-Q8 — extract the PAT from the credential record's plaintext.
+   *
+   * Default behaviour: treat the entire plaintext bytes as the PAT
+   * (matches the test path where `seedCredential` writes a bare PAT).
+   *
+   * Production composition stores the asana credential as a JSON
+   * blob `{"personal_access_token":"…","workspace_gid":"…"}` (the
+   * `auth` half of the binding's `credentialSchema`); the
+   * composition factory passes a callback that JSON.parses the
+   * plaintext and returns `parsed.personal_access_token`.
+   *
+   * The callback runs once on the first fetchProjectSnapshot call
+   * (the result is then cached in-process for the client's
+   * lifetime, alongside the existing PAT cache).
+   */
+  readonly patFromRecord?: (plaintext: Buffer) => string;
 }
 
 const DEFAULT_BASE_URL = "https://app.asana.com/api/1.0";
@@ -147,6 +164,7 @@ export function createAsanaClient(args: AsanaClientArgs): AsanaClient {
     fetchImpl = fetch,
     retryDelayMs = 500,
     now = () => new Date(),
+    patFromRecord = (plaintext: Buffer): string => plaintext.toString("utf8"),
   } = args;
 
   // In-process PAT cache — resolved once, reused for all pages.
@@ -155,7 +173,7 @@ export function createAsanaClient(args: AsanaClientArgs): AsanaClient {
   async function resolvePat(): Promise<string> {
     if (cachedPat !== undefined) return cachedPat;
     const record = await credentialStore.read(credentialId);
-    cachedPat = record.plaintext.toString("utf8");
+    cachedPat = patFromRecord(record.plaintext);
     return cachedPat;
   }
 

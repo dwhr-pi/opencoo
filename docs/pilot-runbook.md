@@ -56,7 +56,7 @@ pnpm install
 pnpm build
 opencoo migrate                                  # apply Drizzle migrations to the Postgres DSN
 opencoo setup                                    # interactive: writes .env at mode 0600 if missing
-opencoo agents seed                              # idempotent INSERT of default Heartbeat/Lint/Surfacer rows
+opencoo agents seed --domain wiki-pilot          # idempotent INSERT of default Heartbeat/Lint/Surfacer rows scoped to <slug>; omit --domain when only one domain exists (auto-pick)
 opencoo agents fire heartbeat --dry-run          # verifies the heartbeat runner is registered (dry-run reports the requested slug only)
 opencoo agents fire lint --dry-run               # verifies the lint runner is registered (separate command — repeat the verb per slug)
 opencoo doctor                                   # verifies env + Postgres + Gitea + enumerates ingress paths
@@ -67,7 +67,7 @@ Per-command notes:
 
 - `opencoo migrate` is idempotent — Drizzle tracks applied rows in `drizzle.__drizzle_migrations`. green output: `migrate: ok`.
 - `opencoo setup` refuses to overwrite an existing `.env`. delete or rename first if rotating secrets.
-- `opencoo agents seed` inserts one `agent_instances` row per scheduled-class agent (Heartbeat, Lint, Surfacer). Chat + Builder are on-demand and intentionally not seeded. re-running is a no-op.
+- `opencoo agents seed --domain <slug>` inserts one `agent_instances` row per scheduled-class agent (Heartbeat, Lint, Surfacer), each scoped to the named domain. Chat + Builder are on-demand and intentionally not seeded. Re-running is a no-op (`ON CONFLICT (definition_slug, name) DO NOTHING`). When exactly one domain row exists the `--domain` flag may be omitted (auto-pick); when zero or multiple domains exist the verb fails fast with a clean stderr line. The seeded rows carry `memory: {"type":"none"}` and `scope_domain_ids: [<resolved-uuid>]` so the harness's first dispatch picks them up without a manual `psql UPDATE`.
 - `opencoo agents fire <slug> [--dry-run] [--instance-id <uuid>]` manually triggers a scheduled agent's runner without waiting for cron. Resolves the slug to its `agent_instances` row + invokes the harness directly (bypasses BullMQ; no Activity-feed event — operator-side asymmetry by design). Exit codes: `0` dispatch ok / `1` operator error (slug not found, ambiguous slug, mismatched `--instance-id`, malformed UUID, runner missing) / `2` runtime error (`MCP_BEARER_TOKEN` unset, `DATABASE_URL` unset / Postgres unreachable, pg.Pool construction failure, runner threw before recording the row). The dry-run reports the **requested slug only** — re-run the verb per slug to verify each runner. With `MCP_BEARER_TOKEN` set, `agents fire heartbeat --dry-run` and `agents fire lint --dry-run` both report `runner: registered`; `agents fire surfacer --dry-run` reports `runner: NOT in registry` per appendix #6 (Surfacer is omitted by default until the template catalog is wired — see §8).
 - `opencoo doctor` returns exit 0 with all-green checks on a healthy fresh install. one yellow line on the Activity feed surface is expected on first boot — there are no events yet to enumerate. yellow on `gitea_team` means `OPENCOO_ADMIN_PAT` is unset; pass `--admin-pat <pat>` to verify admin-team membership.
 - `pnpm opencoo` boots both engines in a single Node process. expected stdout: `opencoo: starting...` → `opencoo: started`. SIGTERM / SIGINT drains both engines in parallel within ~30s.

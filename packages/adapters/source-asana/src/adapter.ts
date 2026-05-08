@@ -87,9 +87,25 @@ export interface CreateAsanaSourceAdapterArgs {
   /**
    * Injected Asana REST client for snapshot fetches (PR-G).
    * Required when `config.snapshotMode` is 'on-event' or 'periodic'.
-   * Throws at factory time when snapshotMode requires it but none provided.
+   * Throws at factory time when snapshotMode requires it but none provided
+   * AND `makeAsanaClient` is also not provided (PR-Q8).
    */
   readonly asanaClient?: AsanaClient;
+  /**
+   * Lazy-constructed Asana REST client (PR-Q8).
+   *
+   * Production composition wires this instead of `asanaClient` so the
+   * client construction (which decrypts the binding's PAT) happens at
+   * the FIRST `enrichEvents` dispatch, not at engine boot. Boot-time
+   * construction would force every binding's credentials to be readable
+   * even when ingestion is paused / engine probes-only / etc.
+   *
+   * The factory invokes this exactly once per adapter lifetime and
+   * caches the resulting client for subsequent dispatches. When both
+   * `asanaClient` and `makeAsanaClient` are provided, `asanaClient`
+   * wins (test path).
+   */
+  readonly makeAsanaClient?: () => AsanaClient;
   /**
    * LLM router for Light-tier per-event summaries (PR-G closes PR-F gap).
    * Required when `config.lightSummaryEnabled=true`; ignored otherwise.
@@ -115,6 +131,11 @@ export interface BuildAsanaWebhookHelpersOptions {
   readonly projectGid?: string;
   /** Injected Asana client for snapshot fetches (PR-G). */
   readonly asanaClient?: AsanaClient;
+  /** Lazy Asana client constructor (PR-Q8). When provided and
+   *  `asanaClient` is undefined, the helper invokes this on the
+   *  FIRST enrichEvents dispatch and caches the result for the
+   *  helper's lifetime. */
+  readonly makeAsanaClient?: () => AsanaClient;
   /** LLM router for Light-tier summaries (PR-G closes PR-F gap). */
   readonly llmRouter?: LightSummaryRouter;
   /** Domain ID for LLM tier routing. */
@@ -363,6 +384,53 @@ export function buildAsanaWebhookHelpers(
   const snapshotMode = opts.snapshotMode ?? "on-event";
 
   /**
+   * Lazily resolve the Asana client for this helper's lifetime (PR-Q8).
+   *
+   * Resolution order:
+   *   1. `opts.asanaClient` if provided — used as-is, no `make`
+   *      invocation. Test path + caller-injected client.
+   *   2. `opts.makeAsanaClient` if provided — invoked exactly once on
+   *      first call; the result is memoised in `cachedClient`.
+   *   3. Neither set — returns undefined (snapshot fetch is skipped
+   *      silently; matches the pre-PR-Q8 enrichEvents semantics when
+   *      asanaClient was not wired).
+   */
+  let cachedClient: AsanaClient | undefined = opts.asanaClient;
+  let factoryInvoked = opts.asanaClient !== undefined;
+  function resolveAsanaClient(): AsanaClient | undefined {
+    if (cachedClient !== undefined) return cachedClient;
+    if (factoryInvoked) return undefined;
+    if (opts.makeAsanaClient !== undefined) {
+      // Fail-open: if `makeAsanaClient` throws (miswired
+      // composition, malformed PAT JSON, transient SDK boot error)
+      // we MUST NOT propagate the throw out of `enrichEvents` —
+      // the receiver's webhook hot-path treats enrich failures as
+      // "skip enrichment, continue with the bare event," not "kill
+      // the entire delivery." Mark the factory as invoked so the
+      // next dispatch doesn't retry the same broken closure
+      // (caching a `null` result), and log via the supplied logger
+      // so the operator still sees the misconfig. Copilot triage
+      // on PR-Q8.
+      factoryInvoked = true;
+      try {
+        cachedClient = opts.makeAsanaClient();
+      } catch (err) {
+        cachedClient = undefined;
+        // Mirror the existing soft-fail pattern in this file
+        // (line 401 / 470 / 670 — `console.warn` for snapshot-fetch
+        // failures). The receiver's webhook hot-path treats enrich
+        // failures as "skip enrichment, continue with the bare
+        // event," not "kill the entire delivery."
+        console.warn("source-asana: makeAsanaClient threw; enrich will skip", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return cachedClient;
+    }
+    return undefined;
+  }
+
+  /**
    * Build the enrichEvents function when snapshotMode='on-event' (PR-G).
    *
    * For each parsed event:
@@ -438,7 +506,12 @@ export function buildAsanaWebhookHelpers(
       // up to the receiver: that would cause Asana to retry, and on retry
       // recordWebhook deduplication would prevent scanner re-enqueue,
       // silently losing the snapshot. Log a structured warning and continue.
-      if (opts.asanaClient !== undefined) {
+      //
+      // PR-Q8: resolve the client lazily — production composition wires
+      // `makeAsanaClient` rather than `asanaClient` so the credential
+      // decrypt only happens when the first event arrives.
+      const asanaClient = resolveAsanaClient();
+      if (asanaClient !== undefined) {
         // Determine project GID from the *original* event's metadata.projectGid
         // (preserved by the spread above; reading from `event` rather than
         // `enrichedEvent` removes the dependency on key-preservation across
@@ -450,7 +523,7 @@ export function buildAsanaWebhookHelpers(
 
         if (eventProjectGid !== undefined) {
           try {
-            const snapshot = await opts.asanaClient.fetchProjectSnapshot(eventProjectGid);
+            const snapshot = await asanaClient.fetchProjectSnapshot(eventProjectGid);
             // M7: use new Date() for fetchedAt — the snapshot was fetched *now*,
             // not at the original event's arrival time. The snapshot's internal
             // fetched_at field is already correct; this fixes the outer
@@ -599,20 +672,28 @@ export function createAsanaSourceAdapter(
   // Throw at factory time so operators see the config error immediately
   // rather than discovering a silent no-op at runtime.
   //
-  // 'periodic': scan() must fetch snapshots — fails with a clear error.
-  // 'on-event': enrichEvents emits snapshot events — without a client the
-  //   enrichEvents hook is attached but silently skips every snapshot fetch,
-  //   which is an invisible misconfiguration. Fix #1 (Copilot triage): make
-  //   this fail loudly instead.
+  // 'periodic': scan() must fetch snapshots eagerly — needs a ready
+  //   `asanaClient` at factory time. `makeAsanaClient` is NOT enough
+  //   because scan() runs deterministically on cron and the orchestrator
+  //   hasn't pre-resolved the credential.
+  // 'on-event': enrichEvents emits snapshot events. Either an explicit
+  //   `asanaClient` OR a lazy `makeAsanaClient` factory satisfies the
+  //   requirement (PR-Q8) — the helper resolves the client on the first
+  //   dispatch.
   if (config.snapshotMode === "periodic" && args.asanaClient === undefined) {
     throw new Error(
       `source-asana: snapshotMode='periodic' requires an AsanaClient to be provided`,
     );
   }
   // Fix #1 (Copilot triage): guard on-event mode the same way.
-  if (config.snapshotMode === "on-event" && args.asanaClient === undefined) {
+  // PR-Q8: a lazy `makeAsanaClient` factory also satisfies the guard.
+  if (
+    config.snapshotMode === "on-event" &&
+    args.asanaClient === undefined &&
+    args.makeAsanaClient === undefined
+  ) {
     throw new Error(
-      `source-asana: snapshotMode='on-event' requires asanaClient injection`,
+      `source-asana: snapshotMode='on-event' requires asanaClient or makeAsanaClient injection`,
     );
   }
 
@@ -694,6 +775,9 @@ export function createAsanaSourceAdapter(
       snapshotMode: config.snapshotMode,
       projectGid: config.projectGid,
       ...(args.asanaClient !== undefined ? { asanaClient: args.asanaClient } : {}),
+      ...(args.makeAsanaClient !== undefined
+        ? { makeAsanaClient: args.makeAsanaClient }
+        : {}),
       ...(args.llmRouter !== undefined ? { llmRouter: args.llmRouter } : {}),
       ...(args.domainId !== undefined ? { domainId: args.domainId } : {}),
     }),

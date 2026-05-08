@@ -140,7 +140,9 @@ describe("createAsanaSourceAdapter — factory guard: on-event requires asanaCli
         },
         // asanaClient intentionally omitted
       }),
-    ).toThrow("source-asana: snapshotMode='on-event' requires asanaClient injection");
+    ).toThrow(
+      "source-asana: snapshotMode='on-event' requires asanaClient or makeAsanaClient injection",
+    );
   });
 
   it("does NOT throw for snapshotMode='off' without asanaClient", async () => {

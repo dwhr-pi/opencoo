@@ -1,5 +1,5 @@
 /**
- * `opencoo agents seed` (PR-M2, phase-a appendix #5).
+ * `opencoo agents seed` (PR-M2, phase-a appendix #5; PR-Q8 / appendix #9).
  *
  * Idempotent default-instance seeder. For every agent definition
  * that carries a `defaultScheduleCron`, INSERT one
@@ -8,10 +8,23 @@
  *   name             = `<slug>-default`
  *   definition_slug  = <slug>
  *   schedule_cron    = <definition.defaultScheduleCron>
- *   scope_domain_ids = `{}` (empty — operator scopes later via UI)
+ *   scope_domain_ids = `{<resolved-domain-uuid>}` (PR-Q8)
  *   output_channel_ids = `[]`
+ *   memory           = `{"type":"none"}` (PR-Q8 — explicit; the
+ *                       harness's exhaustive switch in
+ *                       `loadInstanceMemory` throws on `{}`)
  *   enabled          = true
  *   locale           = 'en'
+ *
+ * Domain resolution (PR-Q8):
+ *   - `--domain <slug>` provided → resolve to the matching `domains`
+ *     row; fail cleanly when the slug doesn't exist.
+ *   - `--domain` omitted AND exactly one domain row exists → auto-pick
+ *     it (matches the first-boot single-domain pilot deployment).
+ *   - `--domain` omitted AND multiple domain rows exist → fail with a
+ *     clear list of available slugs. Operator must rerun with a flag.
+ *   - `--domain` omitted AND zero domain rows exist → fail with a
+ *     `+ New domain` UI hint.
  *
  * The INSERT uses
  * `ON CONFLICT (definition_slug, name) DO NOTHING` against the
@@ -20,7 +33,7 @@
  *
  * Exit codes:
  *   - 0 — seeding finished (with or without new rows inserted)
- *   - 2 — DB unreachable / SQL failure
+ *   - 2 — DB unreachable / SQL failure / domain resolution failure
  *
  * The verb is wired in `bin.ts` alongside `migrate` / `setup` /
  * `doctor`. The dispatcher reads the seeded rows on engine boot.
@@ -59,6 +72,11 @@ export interface AgentsSeedArgs {
   readonly env: Record<string, string | undefined>;
   readonly stdout: { write: (s: string) => boolean };
   readonly stderr: { write: (s: string) => boolean };
+  /** PR-Q8 — required-when-multi-domain-exists `--domain <slug>` flag.
+   *  Resolves to the matching `domains.id`; the resolved UUID becomes
+   *  the (single-element) `scope_domain_ids[]` for every seeded row.
+   *  Omitted = auto-pick when exactly one domain exists. */
+  readonly domainSlug?: string;
   /** @internal Test seam — defaults to a `pg.Pool` via `openPool`
    *  + a fresh Drizzle handle. Tests inject a pglite-backed Drizzle
    *  to avoid spinning up Postgres. */
@@ -79,6 +97,65 @@ interface ExecResult {
   readonly rowCount?: number;
   readonly affectedRows?: number;
   readonly rows: ReadonlyArray<unknown>;
+}
+
+type DomainResolution =
+  | { readonly ok: true; readonly domainId: string }
+  | { readonly ok: false; readonly error: string };
+
+interface DomainRow {
+  id: string;
+  slug: string;
+}
+
+/** PR-Q8 — resolve the seed scope-domain id from the operator's
+ *  `--domain <slug>` arg, with single-domain auto-pick.
+ *
+ *  Four paths:
+ *    1. `slug` provided — SELECT by slug; not-found is a clean fail.
+ *    2. `slug` undefined + zero domains → fail with `+ New domain` hint.
+ *    3. `slug` undefined + one domain → auto-pick; this is the typical
+ *       first-boot pilot path.
+ *    4. `slug` undefined + multiple domains → fail with the slug list
+ *       so the operator can copy one back into the verb.
+ */
+async function resolveScopeDomainId(
+  db: Db,
+  domainSlug: string | undefined,
+): Promise<DomainResolution> {
+  if (domainSlug !== undefined) {
+    const result = (await db.execute(sql`
+      SELECT id::text AS id, slug FROM domains WHERE slug = ${domainSlug} LIMIT 1
+    `)) as unknown as { rows: DomainRow[] };
+    const row = result.rows[0];
+    if (row === undefined) {
+      return {
+        ok: false,
+        error: `--domain '${domainSlug}': no such domain (no row in domains table). Run \`opencoo agents seed\` after creating the domain via the management UI.`,
+      };
+    }
+    return { ok: true, domainId: row.id };
+  }
+  // No flag — discover available domains.
+  const result = (await db.execute(sql`
+    SELECT id::text AS id, slug FROM domains ORDER BY slug
+  `)) as unknown as { rows: DomainRow[] };
+  const rows = result.rows;
+  if (rows.length === 0) {
+    return {
+      ok: false,
+      error:
+        "no domains exist — open the management UI and use `+ New domain` to create one before seeding agent instances",
+    };
+  }
+  if (rows.length === 1) {
+    return { ok: true, domainId: rows[0]!.id };
+  }
+  const slugList = rows.map((r) => r.slug).join(", ");
+  return {
+    ok: false,
+    error: `multiple domains exist (${slugList}); rerun with \`--domain <slug>\` to pick one`,
+  };
 }
 
 function buildRows(): readonly SeedRow[] {
@@ -119,6 +196,16 @@ export async function runAgentsSeed(args: AgentsSeedArgs): Promise<void> {
   }
 
   try {
+    // PR-Q8 — resolve scope_domain_ids[] from `--domain <slug>` (or
+    // auto-pick the sole domain). On any resolution failure, write a
+    // clean stderr line and exit 2; agent_instances stays untouched.
+    const resolution = await resolveScopeDomainId(db, args.domainSlug);
+    if (!resolution.ok) {
+      args.stderr.write(pc.red(`agents seed: ${resolution.error}\n`));
+      return exitRuntimeError();
+    }
+    const scopeDomainId = resolution.domainId;
+
     const rows = buildRows();
     let inserted = 0;
     for (const row of rows) {
@@ -129,10 +216,10 @@ export async function runAgentsSeed(args: AgentsSeedArgs): Promise<void> {
         VALUES (
           ${row.definitionSlug},
           ${row.name},
-          '{}'::uuid[],
+          ARRAY[${scopeDomainId}::uuid]::uuid[],
           '[]'::jsonb,
           ${row.scheduleCron},
-          '{}'::jsonb,
+          '{"type":"none"}'::jsonb,
           'en',
           true
         )
