@@ -17,12 +17,15 @@ import { startHttpServer } from "./http/server.js";
 
 async function runStdio(): Promise<void> {
   const config = loadConfig();
-  const { server, registry } = createServer(config);
+  const { createMcpServer, registry } = createServer(config);
 
   const gitSync = new GitSync(config, registry);
   await gitSync.ensureAllCloned();
   gitSync.startScheduler();
 
+  // Stdio is single-client by definition — one transport, one server, for
+  // the lifetime of the process.
+  const server = createMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(
@@ -39,13 +42,13 @@ async function runStdio(): Promise<void> {
 
 async function runHttp(): Promise<void> {
   const config = loadConfig();
-  const { server, registry } = createServer(config);
+  const { createMcpServer, registry } = createServer(config);
 
   const gitSync = new GitSync(config, registry);
   await gitSync.ensureAllCloned();
   gitSync.startScheduler();
 
-  const http = await startHttpServer(config, server, registry, gitSync);
+  const http = await startHttpServer(config, createMcpServer, registry, gitSync);
 
   const shutdown = (): void => {
     console.error("[http] shutting down...");
