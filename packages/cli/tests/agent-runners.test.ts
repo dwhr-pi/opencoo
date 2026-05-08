@@ -176,7 +176,16 @@ describe("createProductionAgentRunners — runner closures dispatch through", ()
     expect(spy).toHaveBeenCalledTimes(1);
     const callArgs = spy.mock.calls[0];
     expect(callArgs?.[1]?.mcp).toBe(deps.mcp);
-    expect(callArgs?.[1]?.db).toBe(deps.db);
+    // PR-Q2 (phase-a appendix #9): the registry wraps `deps.db`
+    // (raw `pg.Pool`) into a Drizzle handle ONCE at construction
+    // time and threads the wrapped handle into every runner. The
+    // contract is "runner receives a `db` exposing
+    // `.execute(sql\`...\`)`", not "runner receives the raw
+    // pool" — passing the raw pool was the bug that broke
+    // `opencoo agents fire heartbeat` on first dispatch.
+    expect(typeof (callArgs?.[1]?.db as { execute?: unknown })?.execute).toBe(
+      "function",
+    );
     expect(callArgs?.[1]?.domainSlug).toBe("test-domain");
 
     spy.mockRestore();
@@ -197,7 +206,12 @@ describe("createProductionAgentRunners — runner closures dispatch through", ()
     expect(spy).toHaveBeenCalledTimes(1);
     const callArgs = spy.mock.calls[0];
     expect(callArgs?.[1]?.mcp).toBe(deps.mcp);
-    expect(callArgs?.[1]?.db).toBe(deps.db);
+    // PR-Q2 (phase-a appendix #9): runners receive the wrapped
+    // Drizzle handle, not the raw pool. See the heartbeat
+    // sibling test for the rationale.
+    expect(typeof (callArgs?.[1]?.db as { execute?: unknown })?.execute).toBe(
+      "function",
+    );
     expect(callArgs?.[1]?.definitions).toBe(deps.definitions);
     expect(callArgs?.[1]?.domainSlug).toBe("test-domain");
 
@@ -222,7 +236,12 @@ describe("createProductionAgentRunners — runner closures dispatch through", ()
     expect(spy).toHaveBeenCalledTimes(1);
     const callArgs = spy.mock.calls[0];
     expect(callArgs?.[1]?.mcp).toBe(deps.mcp);
-    expect(callArgs?.[1]?.db).toBe(deps.db);
+    // PR-Q2 (phase-a appendix #9): runners receive the wrapped
+    // Drizzle handle, not the raw pool. See the heartbeat
+    // sibling test for the rationale.
+    expect(typeof (callArgs?.[1]?.db as { execute?: unknown })?.execute).toBe(
+      "function",
+    );
     expect(callArgs?.[1]?.domainSlug).toBe("test-domain");
     expect(callArgs?.[1]?.availableTemplateSlugs).toEqual([
       "asana-comment",
