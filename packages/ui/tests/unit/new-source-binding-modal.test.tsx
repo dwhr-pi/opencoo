@@ -198,6 +198,10 @@ describe("NewSourceBindingModal", () => {
       document.querySelector("input[name='root_folder_id']")!,
       "1XYZ",
     );
+    // PR-Q9: credentials → config (the fixture's adapters have no
+    // `bindingConfigSchema`, so the config step renders no inputs
+    // and the operator clicks Create binding immediately).
+    await user.click(screen.getByRole("button", { name: /next/i }));
     await user.click(screen.getByRole("button", { name: /create binding/i }));
 
     await waitFor(() => expect(postCalls().length).toBe(1));
@@ -249,6 +253,9 @@ describe("NewSourceBindingModal", () => {
       document.querySelector("input[name='webhook_secret.signing_secret']")!,
       "sig-zzz",
     );
+    // PR-Q9: credentials → config (the fixture has no
+    // bindingConfigSchema, so config step is empty).
+    await user.click(screen.getByRole("button", { name: /next/i }));
     await user.click(screen.getByRole("button", { name: /create binding/i }));
 
     await waitFor(() => expect(postCalls().length).toBe(1));

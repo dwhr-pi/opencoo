@@ -135,6 +135,9 @@ describe("Sources route — + New binding button", () => {
       document.querySelector("input[name='root_folder_id']")!,
       "1XYZ",
     );
+    // PR-Q9: credentials → config (the fixture has no
+    // bindingConfigSchema so the config step is empty).
+    await user.click(screen.getByRole("button", { name: /^Next$/i }));
     await user.click(screen.getByRole("button", { name: /create binding/i }));
     await waitFor(() => expect(bindingsListCount()).toBeGreaterThan(initial));
   });

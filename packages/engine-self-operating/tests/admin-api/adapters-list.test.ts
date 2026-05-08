@@ -79,6 +79,73 @@ describe("admin-api adapters route (phase-a appendix #2)", () => {
     }
   });
 
+  it("descriptors carry a `bindingConfigSchema` JSON-Schema for operator config (PR-Q9)", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const res = await f.app.inject({
+      method: "GET",
+      url: "/api/admin/adapters",
+      headers: { authorization: "Bearer admin-pat" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as {
+      adapters: Array<{
+        slug: string;
+        bindingConfigSchema: {
+          type: string;
+          properties: Record<string, { type?: string; secret?: boolean }>;
+          required: readonly string[];
+        };
+      }>;
+    };
+    for (const a of body.adapters) {
+      expect(a.bindingConfigSchema).toBeDefined();
+      expect(a.bindingConfigSchema.type).toBe("object");
+      expect(a.bindingConfigSchema.properties).toBeDefined();
+      expect(Array.isArray(a.bindingConfigSchema.required)).toBe(true);
+      // None of the binding-config fields are credentials —
+      // `secret: true` is an encrypted-credential marker that
+      // belongs only on the `credentialSchema` shape.
+      for (const [, prop] of Object.entries(a.bindingConfigSchema.properties)) {
+        expect(prop.secret).not.toBe(true);
+      }
+    }
+  });
+
+  it("asana bindingConfigSchema requires projectGid (PR-Q9 — closes the empty-config-jsonb regression)", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const res = await f.app.inject({
+      method: "GET",
+      url: "/api/admin/adapters",
+      headers: { authorization: "Bearer admin-pat" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as {
+      adapters: Array<{
+        slug: string;
+        bindingConfigSchema: {
+          properties: Record<
+            string,
+            { type?: string; default?: unknown; description?: string }
+          >;
+          required: readonly string[];
+        };
+      }>;
+    };
+    const asana = body.adapters.find((a) => a.slug === "asana");
+    expect(asana).toBeDefined();
+    expect(asana!.bindingConfigSchema.required).toContain("projectGid");
+    expect(asana!.bindingConfigSchema.properties["projectGid"]).toBeDefined();
+    // `reviewMode` carries a `default` so the UI can prefill it.
+    expect(asana!.bindingConfigSchema.properties["reviewMode"]).toBeDefined();
+    expect(asana!.bindingConfigSchema.properties["reviewMode"]?.default).toBe(
+      "auto",
+    );
+  });
+
   it("preserves the secret-marker for masked fields (asana auth.personal_access_token)", async () => {
     const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
     cleanup = f.close;

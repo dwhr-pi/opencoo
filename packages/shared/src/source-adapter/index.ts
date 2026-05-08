@@ -288,6 +288,13 @@ export {
 } from "./credential-schemas.js";
 
 export {
+  SOURCE_ADAPTER_BINDING_CONFIG_SCHEMAS,
+  getSourceAdapterBindingConfigSchema,
+  type BindingConfigField,
+  type BindingConfigSchema,
+} from "./binding-config-schemas.js";
+
+export {
   TRANSCRIPTION_ADAPTER_SLUGS,
   defaultReviewModeFor,
   type DefaultReviewModeArgs,

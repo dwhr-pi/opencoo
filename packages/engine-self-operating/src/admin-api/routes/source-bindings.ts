@@ -41,7 +41,9 @@ import type { CredentialId } from "@opencoo/shared/db";
 import { safeErrorMessage } from "@opencoo/shared/scrub";
 import {
   defaultReviewModeFor,
+  getSourceAdapterBindingConfigSchema,
   getSourceAdapterDescriptor,
+  type BindingConfigSchema,
   type DomainClass,
   type PollingCredentialSchema,
   type SourceAdapterCredentialDescriptor,
@@ -129,6 +131,20 @@ const createBindingSchema = z
     target_domain_slug: z.string().min(1),
     review_mode: z.enum(REVIEW_MODES).optional(),
     credentials: z.record(z.string(), z.unknown()),
+    /**
+     * PR-Q9: operational settings (NOT credentials). Validated
+     * against the adapter's `bindingConfigSchema` BEFORE the
+     * binding row is INSERTed; persisted to
+     * `sources_bindings.config` jsonb on success.
+     *
+     * Optional at the wire level so polling adapters with no
+     * required config (currently none, but future-proof) and
+     * webhook adapters whose required fields are all defaulted
+     * (e.g. fireflies) accept a body without `config`. The
+     * server-side binding-config validator reasserts the
+     * adapter-specific required-set.
+     */
+    config: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -263,6 +279,7 @@ export function registerSourceBindingsRoutes(
         });
       }
       const { adapter_slug, target_domain_slug, credentials } = parsed.data;
+      const submittedConfig = parsed.data.config ?? {};
 
       const descriptor = getSourceAdapterDescriptor(adapter_slug);
       if (descriptor === undefined) {
@@ -299,6 +316,37 @@ export function registerSourceBindingsRoutes(
           error: "credential_schema_mismatch",
           // Path-only diagnostics; never the value.
           missing: credValidation.missing,
+        });
+      }
+
+      // PR-Q9: validate operational settings against the adapter's
+      // `bindingConfigSchema` BEFORE we encrypt credentials or
+      // INSERT the row. A misconfigured binding fails at creation
+      // time (422) instead of at the first webhook delivery
+      // (500 → factory_threw).
+      //
+      // The schema lookup is structural — every wired adapter has
+      // a registry entry. A missing entry would surface as a
+      // composition bug, but we route it as a generic 422 rather
+      // than 500 because the adapter-slug validator above already
+      // covers unknown slugs and we have no useful diagnostic to
+      // emit beyond `binding_config_schema_unavailable`.
+      const bindingConfigSchema =
+        getSourceAdapterBindingConfigSchema(adapter_slug);
+      if (bindingConfigSchema === undefined) {
+        return reply.code(422).send({
+          error: "binding_config_schema_unavailable",
+          adapter_slug,
+        });
+      }
+      const configValidation = validateBindingConfigAgainstSchema(
+        submittedConfig,
+        bindingConfigSchema,
+      );
+      if (!configValidation.ok) {
+        return reply.code(422).send({
+          error: "binding_config_schema_mismatch",
+          missing: configValidation.missing,
         });
       }
 
@@ -352,15 +400,22 @@ export function registerSourceBindingsRoutes(
           : sql`${webhookSecretCredentialsId}::uuid`;
       let id: string;
       try {
+        // PR-Q9: persist `config` jsonb. Stringify the validated
+        // object so pg's jsonb codec receives well-formed JSON
+        // text (Drizzle's `sql` parameter binding does NOT auto-
+        // serialize objects for jsonb columns). The empty-object
+        // default mirrors the column's DDL DEFAULT '{}'::jsonb.
+        const configJson = JSON.stringify(submittedConfig);
         const inserted = (await args.db.execute(sql`
           INSERT INTO sources_bindings
-            (domain_id, adapter_slug, review_mode, credentials_id, webhook_secret_credentials_id)
+            (domain_id, adapter_slug, review_mode, credentials_id, webhook_secret_credentials_id, config)
           VALUES (
             ${domain.id}::uuid,
             ${adapter_slug},
             ${sql.raw(`'${effectiveReviewMode}'`)}::review_mode,
             ${credentialsId}::uuid,
-            ${webhookSecretSql}
+            ${webhookSecretSql},
+            ${configJson}::jsonb
           )
           RETURNING id::text AS id
         `)) as unknown as { rows: Array<{ id: string }> };
@@ -771,6 +826,119 @@ function walkPollingSchema(
       missing.push(`${pathPrefix}${required}`);
     }
   }
+}
+
+/** PR-Q9: validate operational settings against the adapter's
+ *  `bindingConfigSchema`. Path-only diagnostics — never echoes
+ *  submitted values into the 422 response (parity with the
+ *  credential validator).
+ *
+ *  Type-checks each declared property: enum membership,
+ *  array-of-string shape, and minLength on strings. Unknown
+ *  fields the operator submits are tolerated (forward-compat
+ *  with future schema additions); the adapter's Zod parse runs
+ *  on the persisted config later and applies `.strict()` if it
+ *  needs to reject extras. */
+function validateBindingConfigAgainstSchema(
+  config: Record<string, unknown>,
+  schema: BindingConfigSchema,
+):
+  | { readonly ok: true }
+  | { readonly ok: false; readonly missing: string[] } {
+  const missing: string[] = [];
+
+  for (const required of schema.required) {
+    const value = config[required];
+    const field = schema.properties[required];
+    if (field === undefined) continue;
+    // Defensive: skip required-gating on `hidden` fields (PR-Q9
+    // review). Today no adapter lists a hidden field as required —
+    // hidden fields are auto-backfilled by handshake / scan flows
+    // (asana / fireflies `webhookSecretCredentialId`). If a future
+    // adapter mis-marks one as required, the wizard would have no
+    // input for it AND the server would reject the create — this
+    // skip keeps the symmetry with the client-side `field.hidden`
+    // skip in `BindingConfigFields`.
+    if (field.hidden === true) continue;
+    if (!isFieldValuePresent(field, value)) {
+      missing.push(required);
+    }
+  }
+
+  // Type-check every PROVIDED property against the schema. A bad
+  // shape on an optional property (e.g. `reviewMode: "bogus"`) is
+  // surfaced under the same path-only diagnostic so the operator
+  // sees which field was rejected.
+  for (const [key, value] of Object.entries(config)) {
+    if (value === undefined) continue;
+    const field = schema.properties[key];
+    if (field === undefined) continue; // tolerate forward-compat fields
+    if (!isFieldValueShapeOk(field, value)) {
+      missing.push(key);
+    }
+  }
+
+  if (missing.length > 0) {
+    // PR-Q9 round-2: dedupe so a required field with a wrong-shape
+    // value (e.g. `projectGid: 12345` as a number) doesn't appear
+    // twice in the diagnostic — once from the required-loop and
+    // once from the shape-loop. Operator-facing payload reads
+    // cleaner and tests don't have to special-case duplicates.
+    const deduped = Array.from(new Set(missing));
+    return { ok: false, missing: deduped };
+  }
+  return { ok: true };
+}
+
+/** Required-field gate: present + non-empty. Empty string,
+ *  empty array, undefined, and null all count as missing. */
+function isFieldValuePresent(
+  field: BindingConfigSchema["properties"][string],
+  value: unknown,
+): boolean {
+  if (value === undefined || value === null) return false;
+  if (field.type === "string") {
+    return typeof value === "string" && value.length > 0;
+  }
+  if (field.type === "array") {
+    return Array.isArray(value) && value.length > 0;
+  }
+  if (field.type === "boolean") {
+    return typeof value === "boolean";
+  }
+  if (field.type === "number") {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+  return false;
+}
+
+/** Shape gate: when value is provided, does it match the
+ *  declared field type + enum + minLength constraints? Used for
+ *  optional fields the operator chose to set. */
+function isFieldValueShapeOk(
+  field: BindingConfigSchema["properties"][string],
+  value: unknown,
+): boolean {
+  if (field.type === "string") {
+    if (typeof value !== "string") return false;
+    if (field.minLength !== undefined && value.length < field.minLength) {
+      return false;
+    }
+    if (field.enum !== undefined && !field.enum.includes(value)) {
+      return false;
+    }
+    return true;
+  }
+  if (field.type === "boolean") return typeof value === "boolean";
+  if (field.type === "number") {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+  if (field.type === "array") {
+    if (!Array.isArray(value)) return false;
+    // v0.1 only supports array-of-string items.
+    return value.every((v) => typeof v === "string");
+  }
+  return false;
 }
 
 interface EncryptBindingCredentialsArgs {
