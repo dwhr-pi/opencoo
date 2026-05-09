@@ -12,6 +12,8 @@ import {
 } from "../src/cost-tracker/index.js";
 import type { DomainId } from "../src/db/brands.js";
 import { ConsoleLogger, type LoggerWriteStream } from "../src/logger.js";
+import { MODEL_CATALOG } from "../src/llm-router/model-catalog.js";
+import { PROVIDERS } from "../src/llm-router/llm-policy.js";
 
 type Db = PgliteDatabase<typeof schema>;
 
@@ -219,5 +221,69 @@ describe("FALLBACK_PRICING", () => {
       ...Object.values(PRICING).map((e) => e.inputPerToken),
     );
     expect(FALLBACK_PRICING.inputPerToken).toBeGreaterThanOrEqual(minInput);
+  });
+});
+
+/**
+ * MODEL_CATALOG ↔ PRICING coverage (PR-W2 — phase-a appendix #11).
+ *
+ * The 2026-05-09 Chrome QA wave-end walkthrough surfaced that the
+ * R5 (#88) Cost dashboard was structurally working but recording
+ * every OpenRouter (kimi) call as $0.00 — `cost-tracker.unknown_model`
+ * fired on every call because `MODEL_CATALOG` listed the model but
+ * `PRICING` did not. Any deployment using OpenRouter (the design
+ * partner pins `moonshotai/kimi-k2.6` for all three tiers) would
+ * under-report cost by 100%.
+ *
+ * Mechanical guarantee: every catalog member must have a matching
+ * pricing entry. New catalog additions break this test until the
+ * pricing table is updated in lockstep.
+ *
+ * `ollama` is exempt — local models are not pre-enumerated (see
+ * model-catalog.ts header) and operators paste arbitrary slugs;
+ * the FALLBACK_PRICING path is the intentional safety net.
+ */
+describe("MODEL_CATALOG ↔ PRICING coverage (PR-W2)", () => {
+  const catalogModels: ReadonlyArray<{
+    readonly provider: (typeof PROVIDERS)[number];
+    readonly model: string;
+  }> = PROVIDERS.flatMap((provider) =>
+    provider === "ollama"
+      ? []
+      : MODEL_CATALOG[provider].map((model) => ({ provider, model })),
+  );
+
+  it.each(catalogModels)(
+    "$provider catalog member $model has a PRICING entry",
+    ({ model }) => {
+      const entry = PRICING[model];
+      expect(
+        entry,
+        `"${model}" missing from cost-tracker PRICING — every MODEL_CATALOG member must be priced (otherwise costFor() falls back to FALLBACK_PRICING and emits cost-tracker.unknown_model on every call)`,
+      ).toBeDefined();
+      if (entry === undefined) return;
+      expect(entry.inputPerToken).toBeGreaterThan(0);
+      expect(entry.outputPerToken).toBeGreaterThan(0);
+    },
+  );
+
+  it("costFor() does not warn for any MODEL_CATALOG member", () => {
+    const stream = captureStream();
+    const logger = new ConsoleLogger({ level: "debug", stream });
+    for (const { model } of catalogModels) {
+      costFor(model, 100, 50, { logger });
+    }
+    const parsed = stream.writes.map(
+      (l) => JSON.parse(l) as { msg: string; model?: string },
+    );
+    const warnings = parsed.filter((e) =>
+      e.msg.includes("cost-tracker.unknown_model"),
+    );
+    expect(
+      warnings,
+      `costFor() emitted cost-tracker.unknown_model for catalog members: ${warnings
+        .map((w) => w.model ?? "<unknown>")
+        .join(", ")}`,
+    ).toEqual([]);
   });
 });
