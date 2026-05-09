@@ -2,9 +2,9 @@
 
 ## What this document is
 
-This runbook walks an operator from a fresh checkout to a working pilot deployment with real-data webhook ingestion confirmed end-to-end. it is the only checklist the operator needs to follow before declaring the deployment "pilot-ready". scheduled-agent autonomy (Heartbeat / Lint / Surfacer firing on cron) is partially deferred — see §8 — so the v0.1 ready signal is "webhook → wiki write end-to-end on the binding the operator just configured", not "every agent fires unattended".
+This runbook walks an operator from a fresh checkout to a working pilot deployment with real-data webhook ingestion confirmed end-to-end. it is the only checklist the operator needs to follow before declaring the deployment "pilot-ready". scheduled-agent autonomy (Heartbeat / Lint / Surfacer firing on cron) is partially deferred — see §9 — so the v0.1 ready signal is "webhook → wiki write end-to-end on the binding the operator just configured", not "every agent fires unattended".
 
-The doc is operator-facing and follows the same voice rules as the management UI: lowercase `opencoo`, no marketing language, technical and precise. when something does not work, §6 names the recovery path; when something does not exist yet, §8 names the gap.
+The doc is operator-facing and follows the same voice rules as the management UI: lowercase `opencoo`, no marketing language, technical and precise. when something does not work, §6 names the recovery path; when something does not exist yet, §9 names the gap. §7 covers steady-state day-2 operations (domain edits, credential rotation, on-demand runs, audit + cost dashboards, scheduling, source-forget). §11 covers post-`git pull` upgrade steps; §12 lists known wave-10 / wave-11 follow-ups operators should be aware of.
 
 Companion docs: `docs/ARCHITECTURE.md` (architectural shape), `THREAT-MODEL.md` (security invariants the operator gates the deployment against), `IMPLEMENTATION-PLAN.md` (phase-a ledger).
 
@@ -68,7 +68,7 @@ Per-command notes:
 - `opencoo migrate` is idempotent — Drizzle tracks applied rows in `drizzle.__drizzle_migrations`. green output: `migrate: ok`.
 - `opencoo setup` refuses to overwrite an existing `.env`. delete or rename first if rotating secrets.
 - `opencoo agents seed --domain <slug>` inserts one `agent_instances` row per scheduled-class agent (Heartbeat, Lint, Surfacer), each scoped to the named domain. Chat + Builder are on-demand and intentionally not seeded. Re-running is a no-op (`ON CONFLICT (definition_slug, name) DO NOTHING`). When exactly one domain row exists the `--domain` flag may be omitted (auto-pick); when zero or multiple domains exist the verb fails fast with a clean stderr line. The seeded rows carry `memory: {"type":"none"}` and `scope_domain_ids: [<resolved-uuid>]` so the harness's first dispatch picks them up without a manual `psql UPDATE`.
-- `opencoo agents fire <slug> [--dry-run] [--instance-id <uuid>]` manually triggers a scheduled agent's runner without waiting for cron. Resolves the slug to its `agent_instances` row + invokes the harness directly (bypasses BullMQ; no Activity-feed event — operator-side asymmetry by design). Exit codes: `0` dispatch ok / `1` operator error (slug not found, ambiguous slug, mismatched `--instance-id`, malformed UUID, runner missing) / `2` runtime error (`MCP_BEARER_TOKEN` unset, `DATABASE_URL` unset / Postgres unreachable, pg.Pool construction failure, runner threw before recording the row). The dry-run reports the **requested slug only** — re-run the verb per slug to verify each runner. With `MCP_BEARER_TOKEN` set, `agents fire heartbeat --dry-run` and `agents fire lint --dry-run` both report `runner: registered`; `agents fire surfacer --dry-run` reports `runner: NOT in registry` per appendix #6 (Surfacer is omitted by default until the template catalog is wired — see §8).
+- `opencoo agents fire <slug> [--dry-run] [--instance-id <uuid>]` manually triggers a scheduled agent's runner without waiting for cron. Resolves the slug to its `agent_instances` row + invokes the harness directly (bypasses BullMQ; no Activity-feed event — operator-side asymmetry by design). Exit codes: `0` dispatch ok / `1` operator error (slug not found, ambiguous slug, mismatched `--instance-id`, malformed UUID, runner missing) / `2` runtime error (`MCP_BEARER_TOKEN` unset, `DATABASE_URL` unset / Postgres unreachable, pg.Pool construction failure, runner threw before recording the row). The dry-run reports the **requested slug only** — re-run the verb per slug to verify each runner. With `MCP_BEARER_TOKEN` set, `agents fire heartbeat --dry-run` and `agents fire lint --dry-run` both report `runner: registered`; `agents fire surfacer --dry-run` reports `runner: NOT in registry` per appendix #6 (Surfacer is omitted by default until the template catalog is wired — see §9).
 - `opencoo doctor` returns exit 0 with all-green checks on a healthy fresh install. one yellow line on the Activity feed surface is expected on first boot — there are no events yet to enumerate. yellow on `gitea_team` means `OPENCOO_ADMIN_PAT` is unset; pass `--admin-pat <pat>` to verify admin-team membership.
 - `pnpm opencoo` boots both engines in a single Node process. expected stdout: `opencoo: starting...` → `opencoo: started`. SIGTERM / SIGINT drains both engines in parallel within ~30s.
 
@@ -130,7 +130,7 @@ The Activity feed (`GET /api/admin/events` SSE bus) emits exactly five SSE chann
                             ORDER BY created_at DESC LIMIT 5;"
    ```
 
-When the webhook row, the `agent_run` success event, the `ingestion_intake` `compiled` row, and the wiki page are all in place, the smoke is green. proceed to the §9 sign-off checklist.
+When the webhook row, the `agent_run` success event, the `ingestion_intake` `compiled` row, and the wiki page are all in place, the smoke is green. proceed to the §10 sign-off checklist.
 
 ### Scheduled-agent smoke (manual fire of Heartbeat)
 
@@ -145,7 +145,7 @@ Expected: one row with `definition_slug = 'heartbeat'`, `status = 'success'` (or
 
 The CLI does NOT emit onto the SSE bus — Activity-feed events fire only for cron-dispatched runs. This asymmetry is by design: the CLI is operator-side, no UI listens. Operators who want feed visibility wait for the next cron tick (`agents fire` is the cutover-readiness verification, not the production trigger).
 
-If the row's `status = 'failed'`, the harness still records the row + the `output.error` field carries the message (scrubbed via `scrubPat`). Common causes: no domain bound to the instance's `scope_domain_ids` yet (run §3 first), Gitea `wiki-<slug>` repo missing (run `opencoo setup`), MCP wiki resources not registered on the gitea-wiki-mcp-server (PR-O1 in this same appendix; needed for Heartbeat's wiki-read path). For a slug that has no runner registered (Surfacer in v0.1, per appendix #6), the verb exits 1 with the runner-omitted hint pointing back at §8 — no run row is recorded.
+If the row's `status = 'failed'`, the harness still records the row + the `output.error` field carries the message (scrubbed via `scrubPat`). Common causes: no domain bound to the instance's `scope_domain_ids` yet (run §3 first), Gitea `wiki-<slug>` repo missing (run `opencoo setup`), MCP wiki resources not registered on the gitea-wiki-mcp-server (PR-O1 in this same appendix; needed for Heartbeat's wiki-read path). For a slug that has no runner registered (Surfacer in v0.1, per appendix #6), the verb exits 1 with the runner-omitted hint pointing back at §9 — no run row is recorded.
 
 ### Scripted probe (webhook → intake → classify-enqueue chain)
 
@@ -189,7 +189,88 @@ When opencoo runs in parallel with an n8n pipeline that previously handled the s
 
 Cutover policy: opencoo's binding stays enabled until the n8n equivalent is paused and reviewers sign off on opencoo's output quality. cutover is one pipeline at a time; never big-bang.
 
-## 7. Verifying THREAT-MODEL invariants
+## 7. Day-2 operations (wave-10 features)
+
+Steady-state operations that landed in phase-a appendix #10 (R1–R7 in `CHANGES-v0.1.md` Appendix #10). Every operation here is admin-API-backed, CSRF-gated, audit-row-emitting, and rendered under design-system rules. Operators should never need to drop into psql or the CLI for any of these in normal use.
+
+### 7.1 Editing a domain (R1)
+
+Domains tab → click any row → `DomainDetail` modal opens. Editable fields: `display_name`, `locale` (`en` / `pl` / `auto`), `is_aggregator` toggle. `slug` and `class` are immutable by design (rename = create-fresh + migrate). Save with the default chrome button — PATCH `/api/admin/domains/:id` short-circuits to a 304-equivalent on no-op so an accidental save is free.
+
+**Disabling a domain** — `--alert`-accented Disable button in the modal soft-deletes by setting `domains.disabled_at = now()`. The aggregator flag is auto-cleared on disable so a successor domain can take over. Re-enable is not exposed in the v0.1 UI; if a disabled domain needs to come back, create a fresh one. (Migration `0011_domains_disabled_at` adds the `disabled_at TIMESTAMPTZ NULL` column + index `(disabled_at, slug)` — see §11 for the post-`git pull` migration step.)
+
+**Hard-deleting a domain** — `--alert`-accented "Delete permanently" button opens a checkbox-gated confirm. The button stays disabled if any of the FK-bearing tables (`sources_bindings`, `redaction_events`, `catalog_candidate`, `miner_suppressions`) reference the domain; a 409 `fk_restricted` response from `DELETE /api/admin/domains/:id` lists the offending tables + counts. Migrate or disable bindings first, then retry. Disable is the safer default; permanent delete is for fresh misconfigurations only.
+
+(See `CHANGES-v0.1.md` Appendix #10 R1.)
+
+### 7.2 Editing a source binding — config + credential rotation (R2)
+
+Sources tab → click any row → `SourceBindingDetail` modal (the same drill-down §3 step 5 introduced) → **Edit** toggle. Two edit panels:
+
+**Config panel** — fields render dynamically from the adapter's `bindingConfigSchema` (the same Q9 validator used at create time). For Asana: `projectGid`, `monitoredProjectGids[]`, `snapshotMode`, `optFields[]`, `lightSummaryEnabled`. Save → PATCH `/api/admin/source-bindings/:id` with body `{config: {...changedKeysOnly}}`. In-flight events finish on the OLD config; only events that arrive after the PATCH commit see the new shape.
+
+**Credentials panel** — banner reads "Rotating does not pause the binding — in-flight events finish on the old key, new events use the new key." For webhook adapters, partial rotation is supported: rotate auth-only OR `webhook_secret`-only without touching the other. PATCH body `{credentials: { auth?, webhook_secret? }}`. The cred is rotated IN PLACE through `CredentialStore.rotate` (no new credential row); the existing `credentials.id` is preserved and `rotated_at` updates. Webhook handshake state on the upstream survives an auth-only rotation.
+
+Both panels write COUNTS-only audit rows — never plaintext. (See `CHANGES-v0.1.md` Appendix #10 R2.)
+
+### 7.3 On-demand agent execution — "Run now" (R3)
+
+Agents that are scheduled on cron (Heartbeat, Lint, Surfacer when registered) can be fired manually from the UI without waiting for the next tick. Three surfaces expose the button, all sharing one shared SSE subscription factory:
+
+- **Activity > Pipelines > Scheduled agents** card — per-agent "Run now" button.
+- **Reports > Heartbeat** — "Refresh now" button.
+- **Review > Lint findings** — "Re-run lint" button.
+
+POST `/api/admin/agents/:slug/dispatch` is CSRF-gated, admin-auth-gated, and rate-limited at **5 dispatches per hour per (agent × user × domain)** by an in-memory token bucket. Empty-bucket returns 429 with a `Retry-After` header; the UI surfaces this as "Rate limited — try again in Ns".
+
+Button states: idle → "Queued · Ns" with the heartbeat-pulse glyph (the only allowed motion loop — no spinners) → SSE-driven "Running" → done. The 120s safety timeout clears on unmount so navigation away from the page never strands a button.
+
+Dispatch goes onto the SAME BullMQ queue + handler the cron scheduler uses (no parallel path); `triggeredBy: 'manual'` in the audit metadata is the only way to distinguish manual fires from scheduled ones. (See `CHANGES-v0.1.md` Appendix #10 R3.)
+
+### 7.4 Audit log viewer at `/Audit` (R4)
+
+Sidebar tab #8 reads the existing `GET /api/admin/audit-log` route (no backend changes; row hygiene was already enforced by audit writers). Four filters compose:
+
+- **Action** — multi-select chip cloud (e.g. `domain.update`, `source_binding.delete`, `agent.dispatch`).
+- **Actor** — substring on `caller_username` OR exact UUID match on the actor id.
+- **Resource** — substring across `slug` / `binding_id` / `domain_id` / `id` keys in the row's metadata JSON.
+- **Date range** — ISO-8601 UTC, inclusive both ends.
+
+Row click expands to the full sanitised JSON in JetBrains Mono with a Copy JSON button; payloads >50KB truncate with a "Show full" toggle. Action color tones follow the design system: `--healthy` for create/update/apply/approve/rotate; `--alert` for delete/disable/reject/skip; `--ink-3` for muted timestamps + the empty state. Pagination is 50 rows/page sticky; the server caps at 100/page so a hand-edited URL can't exfiltrate the whole table.
+
+`AbortController` + cancelled-flag race close on filter changes — rapid filter toggling never lands a stale page. (See `CHANGES-v0.1.md` Appendix #10 R4.)
+
+### 7.5 Cost analytics dashboard at `/Cost` (R5)
+
+Sidebar tab #9 reads `GET /api/admin/cost-summary?period={day|week|month}&groupBy={domain|model|tier|agent}` (single CTE over `llm_usage`; `LIMIT 100 DESC` server-side; no new table). Sections, top-down:
+
+- **Header card** — live spending (heartbeat-pulse glyph), this-month total, projected month-end (linear extrapolation from elapsed-month spend), vs cap.
+- **Per-domain burn-down** — color thresholds: `--healthy` <50%, transitioning through to `--advisory` 80–100%, `--alert` once paused at 100%; `--ink-3` for "no cap set" rows.
+- **Stacked tier bar** — Thinker / Worker / Light split using paper-shift segments (no gradients per design-system hard-no).
+- **Top-100 buckets table** — groupable by `domain` / `model` / `tier` / `agent` via the picker; cost + run-count columns.
+- **Period selector** — day / week / month.
+
+Empty + loading skeleton states match the rest of the management UI; the heartbeat-pulse glyph is the only motion. **Note**: until wave-11 W2 (cost-tracker pricing for OpenRouter models) lands, calls routed via OpenRouter (`kimi-k2.6` etc) record as `$0.00`, so Cost dashboard under-reports for partner deployments using OpenRouter-pinned models. Direct-vendor pricing (Anthropic, OpenAI, Google) is already accurate. See §12 residual advisory #2. (See `CHANGES-v0.1.md` Appendix #10 R5.)
+
+### 7.6 Scheduler / cadence editor (R6)
+
+Activity > Pipelines → per-agent "Edit schedule" inline form. Cadence picker offers human-readable presets — every weekday at HH:MM / every Sunday at HH:MM / first of month / bi-weekly first Sunday — with HH:MM inputs for each preset, plus a custom-cron textbox with as-you-type validation (cron-parser). A "next 5 fires" preview renders locally in JetBrains Mono so the operator can sanity-check before save.
+
+Save → PUT `/api/admin/scheduler/:agent` body `{cron: "..."}`. The route is atomic from the operator's perspective: a `db.transaction` wraps the audit-row INSERT + the `agent_instances.schedule_cron` UPDATE + the BullMQ `removeRepeatableJob` / `addRepeatableJob` swap. Partial-add failure rolls FORWARD to the old cron on every previously-succeeded swap so audit truth stays aligned with BullMQ state. Restart-free.
+
+"Schedule updated" feedback flashes in `--healthy` for 1.5s. **Multi-instance shapes**: if multiple instances of the same agent have drifted (different prior crons), audit metadata records `old_crons: string[]` so the diff isn't lossy. (See `CHANGES-v0.1.md` Appendix #10 R6.)
+
+### 7.7 Forgetting a source — impact preview (R7)
+
+Sources tab → click row → modal → **Forget source** button (between Disable and Delete; `--alert`-accented). Opens `ImpactPreviewDialog` with a loading state that resolves to the impact summary: "N pages re-compile, M pages delete entirely, P citations removed."
+
+Deleted-paths list renders in `--wiki` (Wiki Teal — one of the few approved `--wiki` accent uses, since these are compiled-knowledge paths). Daily delete cap is surfaced inline: "X/Y used today" — if `(X + M) > Y`, the Confirm button stays disabled with an inline `--alert` warning naming the cap and how much headroom remains. A checkbox-gate ("I understand this is irreversible") must be ticked before the destructive Confirm enables.
+
+Wire path: POST `/api/admin/source-bindings/:id/forget?dryRun=1` is read-only (no enqueue, no audit row) and powers the preview; on Confirm the UI re-POSTs with `?dryRun=0` for the actual forget. The execute path runs cap-preflight → cap-reserve → COUNTS-only audit (`pages_recompiled`, `pages_deleted`, `citations_removed`, `cap_used_before`, `cap_used_after` — never paths) → enqueue. 409 `daily_cap_exceeded` carries the current `dailyDeleteCapState` so the UI can re-render without a refetch.
+
+**Closes PRD §5 criterion 9 (forget impact preview, amber → green) and architecture.md §6.4 page-citation impact-preview commitment.** Note that the consumer worker that actually drains the `wiki.recompile` + `wiki.delete` queues is still pending (wave-11 follow-up) — see §12 residual advisory #1; pages will delete once that lands. (See `CHANGES-v0.1.md` Appendix #10 R7.)
+
+## 8. Verifying THREAT-MODEL invariants
 
 Before declaring pilot-ready, the operator runs the following spot-check (mirrors THREAT-MODEL §5 PR checklist for the deployment surface):
 
@@ -200,11 +281,11 @@ Before declaring pilot-ready, the operator runs the following spot-check (mirror
 - [ ] No prompt content in `info`-level logs: `LOG_LEVEL=info pnpm opencoo`, trigger a webhook, grep stdout for `prompt_text` — should return empty.
 - [ ] `LLM_DEBUG_LOG` banner shown in the UI when set: with `LLM_DEBUG_LOG=1`, the management UI displays a yellow banner on every page.
 
-## 8. Deferrals (v0.1 limitations)
+## 9. Deferrals (v0.1 limitations)
 
 These are deliberate phase-a / phase-b deferrals. tracking each in the appendix #5 follow-up issue:
 
-- **Heartbeat / Lint scheduled agents fire on cron when `MCP_BEARER_TOKEN` is set.** PR-N3 (phase-a appendix #6) wires the production `HttpMcpToolClient` + `AgentRunnerRegistry`. `agents seed` writes the `agent_instances` rows with `schedule_cron` populated, the orchestrator composes the registry at boot, and the `AgentDispatcher` (PR-M2) registers the BullMQ recurring jobs. Per-dispatch domain slug resolution comes from `agent_instances.scope_domain_ids[0]` (no new env var). For pre-cutover verification without waiting for the next cron tick, `opencoo agents fire <slug>` (PR-O2, phase-a appendix #7) invokes the runner directly via the harness — see §3 for first-boot dry-run usage and §4 for the scheduled-agent smoke.
+- **Heartbeat / Lint scheduled agents fire on cron when `MCP_BEARER_TOKEN` is set.** PR-N3 (phase-a appendix #6) wires the production `HttpMcpToolClient` + `AgentRunnerRegistry`. `agents seed` writes the `agent_instances` rows with `schedule_cron` populated, the orchestrator composes the registry at boot, and the `AgentDispatcher` (PR-M2) registers the BullMQ recurring jobs. Per-dispatch domain slug resolution comes from `agent_instances.scope_domain_ids[0]` (no new env var). For pre-cutover verification without waiting for the next cron tick, `opencoo agents fire <slug>` (PR-O2, phase-a appendix #7) invokes the runner directly via the harness — see §3 for first-boot dry-run usage and §4 for the scheduled-agent smoke. Steady-state operators use the UI "Run now" buttons instead — see §7.3.
 
   **Boot-tolerance — when `MCP_BEARER_TOKEN` is UNSET (or its `_FILE` variant), or `HttpMcpToolClient` construction throws.** The orchestrator's `tryComposeAgentRunnersBundleFromEnv` returns `null` and emits `mcp_http.unavailable` at warn level. `engine-self-operating.start({...})` is then called WITHOUT `agentRunners` / `agentDefinitions` / `agentRouter`, so per `engine-self-operating/src/start.ts:340` the `AgentDispatcher` is NOT constructed at all — there are no recurring BullMQ jobs registered, no scheduled agents fire, no `agent_runs` rows are written by the scheduler path, and the `/api/admin/scheduler` route returns an empty list. The management UI stays alive and the webhook → wiki path still works. Set `MCP_BEARER_TOKEN` to the same static bearer the gitea-wiki-mcp-server is configured with to activate scheduling.
 
@@ -223,10 +304,10 @@ These are deliberate phase-a / phase-b deferrals. tracking each in the appendix 
 - **DLQ retry workers for `output_deliveries` are not automated.** failed deliveries surface as `output_delivery_dlq` SSE events (underscore form per `packages/engine-self-operating/src/admin-api/routes/events.ts:122`) with the row in Postgres at `status = 'failed'`. manual operator recovery is the v0.1 path: re-enable the binding or re-deliver via psql.
 - **Per-domain LLM-policy aware scheduling defers to v0.2.** if a domain's LLM policy points at an unavailable provider, the scheduler dispatches anyway; the LLM router error-bubbles via `LlmPolicyViolationError`. operators can pause the domain manually via the management UI's Domains tab.
 - **Cron timezone awareness defers to v0.2.** every `defaultScheduleCron` is UTC. operators in non-UTC offsets adjust the cron expression manually until v0.2 lands.
-- **Scheduler UI in the management console defers to phase-b.** `/api/admin/scheduler` (read-only) is the v0.1 surface; operators inspect via curl or psql.
+- ~~**Scheduler UI in the management console defers to phase-b.**~~ Closed by R6 in appendix #10 — see §7.6. The UI now exposes a per-agent cadence editor with cron-parser validation, next-5-fires preview, and atomic transaction-wrapped BullMQ swaps. `/api/admin/scheduler` (read-only) remains available for scripted inspection.
 - **Self-boot mode for `pnpm smoke:real-data`** (`--boot` flag spawning `pnpm opencoo` as a child) is not implemented in v0.1 — the script assumes the operator runs `pnpm opencoo` in another terminal first. the script returns exit 1 with a clear message if `--boot` is passed.
 
-## 9. Pilot sign-off checklist
+## 10. Pilot sign-off checklist
 
 Operator ticks each box before declaring the deployment pilot-ready:
 
@@ -245,5 +326,32 @@ Operator ticks each box before declaring the deployment pilot-ready:
 - [ ] Operator has read THREAT-MODEL §5 PR checklist + §7 residual risks list and signed off on the residuals as acceptable for the pilot's first weeks.
 - [ ] Maintainer has signed `docs/threat-model-signoff-0.1.0-a.md` (the canonical pre-tag artifact). Pre-fill the §5 automatable items by running `pnpm threat-model:preflight` against the candidate closing commit; spot-check the 8 maintainer-judgment items (items 2, 3, 4, 5, 6, 7, 8, 11) at the cited `path:line` refs; record the GO / STOP / MORE-WORK recommendation in the closure block.
 - [ ] Rollback path (§6) exercised at least once: a binding disabled, the n8n equivalent re-enabled, output verified, the binding re-enabled.
+- [ ] §7 day-2 operations exercised once each in a non-destructive form: domain edit (rename via R1 → audit row visible in /Audit), credential rotation (R2 dry-rotate with same value to confirm `rotated_at` advances), Run-now button on Heartbeat (R3 → Activity feed shows the manual fire), /Audit filter chain (R4 — confirm action chip + date range narrow correctly), /Cost dashboard renders for the current month (R5 — header card + per-domain burn-down both populated), schedule editor saves a no-op cron (R6 — confirm "Schedule updated" flash + audit row + identical next-5-fires preview), forget impact preview run with `dryRun=1` only (R7 — confirm preview renders, do NOT confirm). Operators have read §12 residual advisories.
 
 When every box is ticked, the deployment is pilot-ready. the partner's two-week soak begins; phase-b entry gate (`IMPLEMENTATION-PLAN.md` §2.1) opens after a sev-1-incident-free fortnight.
+
+## 11. Upgrade procedures (post-`git pull`)
+
+Two steps are REQUIRED after every pull of upstream changes — neither is automated in v0.1.
+
+### 11.1 Schema migration
+
+> **REQUIRED after every `git pull`**: run `opencoo migrate` to apply pending Drizzle migrations.
+
+The engine does NOT auto-migrate at boot (deferred to v0.2 per `engine-self-operating/src/start.ts:138-139`). Skipping this step results in HTTP 500s on routes that reference new columns. Concrete example: R1 (appendix #10) added `domains.disabled_at` in migration `0011_domains_disabled_at`; if the migration hasn't been applied, the Domains tab returns 500 because the SELECT references a column that doesn't exist yet. Migrations are idempotent (Drizzle tracks applied rows in `drizzle.__drizzle_migrations`), so re-running on an up-to-date schema is a no-op (`migrate: ok`).
+
+### 11.2 UI bundle rebuild
+
+> **REQUIRED after every `git pull` of UI changes**: run `pnpm build` then restart `pnpm opencoo` so the static UI dist is in sync.
+
+Symptom of skipping this: the SPA shell loads (paper-colored screen, the engine serves the OLD `index.html` from memory whose `<head>` still references the previous asset hash) but `#root` stays empty because the bundled JS file at the old hash is now 404. Browser devtools network tab will show the JS request returning 404 from Fastify's static handler.
+
+The engine reads `UI_DIST_PATH` from `.env` (defaults to the local repo path). After a fresh `pnpm build`, the `index.html` in that directory points at the new asset hash, but a long-running engine process holds the OLD HTML in memory. Restart picks up the fresh dist. Surfaced by Chrome QA on 2026-05-09 during wave-10 closeout.
+
+## 12. Residual advisories (wave-10 / wave-11 follow-ups)
+
+Three known follow-ups operators should be aware of as of the 0.1.0-a phase-a appendix #11 cut. None block pilot sign-off; all are tracked as in-flight work.
+
+1. **Forget consumer worker pending** — wave-11 W1 wires the route + queue plumbing (`POST /api/admin/source-bindings/:id/forget` + `wiki.recompile` / `wiki.delete` BullMQ jobs), but no worker drains those queues yet. Forget operations enqueue successfully (audit row written, cap reserved) but the actual page deletion in Gitea waits for the consumer worker to land in a follow-up. **Workaround**: monitor queue depth in Activity > Pipelines; pages will delete once the consumer ships. Do not Confirm a forget if the immediate Gitea-page disappearance is required.
+2. **Cost-tracker pricing for OpenRouter models** — wave-11 W2 closes this. Until W2 lands, OpenRouter calls (e.g. `kimi-k2.6` and other OpenRouter-routed models) record as `$0.00` in `llm_usage`, so the /Cost dashboard (§7.5) UNDER-REPORTS spend for partner deployments using OpenRouter-pinned LLM policies. Direct-vendor pricing (Anthropic, OpenAI, Google) is already accurate. After W2: dashboard data is correct; v0.2 ships a dynamic OpenRouter `/models` fetch with daily caching so new model launches don't require a code change.
+3. **Nightly live-pilot CI** — `.github/workflows/nightly-live-pilot.yml` requires `OPENROUTER_API_KEY` to be added to GitHub repo secrets (out-of-band user action — no maintainer can do this for you). Without it, the nightly workflow runs but `runHeartbeat` returns `'failed'` on the missing API key. The local `RUN_REAL_PILOT=1 pnpm test:live-pilot` invocation still works if the key is present in `.env`.
