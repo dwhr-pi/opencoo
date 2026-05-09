@@ -12,6 +12,18 @@ export interface Domain {
   readonly class: string;
   readonly locale: string;
   readonly isAggregator: boolean;
+  /** ISO 8601 timestamp the domain was soft-disabled, or null
+   *  for active domains. Phase-a appendix #10 PR-R1 — present
+   *  only on rows from `GET /api/admin/domains` (the LLM-policy
+   *  picker uses `?include_disabled=0` by default, so its rows
+   *  always have `null`). Optional for backward-compat with
+   *  test fixtures that pre-date the column. */
+  readonly disabledAt?: string | null;
+  /** Count of `sources_bindings.domain_id` rows referencing this
+   *  domain. Surfaced by GET so the row-drill-down can disable
+   *  the Hard-delete button when bindings would block it.
+   *  Optional for backward-compat. */
+  readonly bindingCount?: number;
 }
 
 export interface SourceBinding {

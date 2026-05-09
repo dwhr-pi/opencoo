@@ -41,7 +41,10 @@
       "locale": "locale",
       "aggregator": "aggregator"
     },
+    "showDisabled": "Show disabled",
+    "disabledBadge": "disabled",
     "newDomain": "+ New domain",
+    "openDetail": "open detail for {{slug}}",
     "create": {
       "title": "New domain",
       "subtitle": "Provisions a Gitea repo and seeds index/log/schema.",
@@ -61,6 +64,50 @@
         "slugTaken": "That slug is already taken.",
         "displayNameRequired": "Display name is required.",
         "generic": "Could not create domain. Try again or check the audit log."
+      }
+    },
+    "detail": {
+      "title": "Domain",
+      "subtitle": "Edit metadata, retire, or hard-delete this domain.",
+      "labels": {
+        "slug": "slug",
+        "domainId": "domain id",
+        "class": "class",
+        "displayName": "display name",
+        "locale": "locale",
+        "aggregator": "aggregator",
+        "bindings": "source bindings",
+        "disabledAt": "disabled at"
+      },
+      "fields": {
+        "displayName": "display name",
+        "locale": "locale",
+        "aggregator": "aggregator"
+      },
+      "actions": {
+        "save": "Save changes",
+        "saving": "saving…",
+        "close": "Close",
+        "cancel": "Cancel",
+        "disable": "Disable",
+        "delete": "Delete permanently",
+        "confirmDisableTitle": "Disable this domain?",
+        "confirmDisableBody": "Soft-disables the domain. The Gitea repo is kept, but the domain is hidden from listings and ingestion stops dispatching to it. Re-enable is not in v0.1 — to recover you create a fresh domain.",
+        "confirmDisable": "Confirm disable",
+        "confirmDeleteTitle": "Permanently delete this domain?",
+        "confirmDeleteBody": "Removes the domain row from opencoo's database. The Gitea repo is NOT deleted — remove it separately if no longer needed. Append-only audit (page citations, redaction events) referencing this domain stays in place.",
+        "confirmDelete": "Confirm hard delete",
+        "confirmDeleteCheckbox": "I understand this is permanent and the Gitea repo is not removed.",
+        "deleteBlocked": "Disable bindings first — see Sources tab. ({{n}} binding(s) reference this domain.)"
+      },
+      "errors": {
+        "saveFailed": "Could not save changes. Try again or check the audit log.",
+        "aggregatorAlreadySet": "Another active domain is already the aggregator. Disable that one first.",
+        "disableFailed": "Could not disable domain (server rejected the request).",
+        "deleteFailed": "Could not delete domain (server rejected the request).",
+        "deleteFkRestricted": "This domain has source bindings. Migrate or delete those first.",
+        "auth": "Sign-in expired or insufficient permissions — re-paste your PAT.",
+        "transient": "Server is unreachable or returned an error. Try again."
       }
     }
   },

@@ -2,11 +2,13 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  index,
   integer,
   jsonb,
   numeric,
   pgTable,
   text,
+  timestamp,
 } from "drizzle-orm/pg-core";
 
 import { createdAt, primaryKeyId, updatedAt } from "./columns.js";
@@ -44,6 +46,15 @@ export const domains = pgTable(
      * where this is `false`. Test-pinned via a readPage spy.
      */
     isAggregator: boolean("is_aggregator").notNull().default(false),
+    /**
+     * Soft-delete marker (phase-a appendix #10 PR-R1). When non-null
+     * the domain is retired: hidden from the default Domains listing
+     * and from aggregator-uniqueness checks. Re-enabling is NOT in
+     * v0.1 scope — soft-delete is a one-way valve, the operator
+     * creates a new domain to recover. The Gitea repo is NOT deleted
+     * by the soft-delete; ops removes that separately if desired.
+     */
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -53,5 +64,9 @@ export const domains = pgTable(
       sql`${t.slug} ~ '^[a-z][a-z0-9-]{1,62}$'`,
     ),
     check("domains_locale_allowed", sql`${t.locale} IN ('en', 'pl', 'auto')`),
+    // Listing query filters `disabled_at IS NULL` and orders by slug.
+    // Composite index keeps the default Domains tab fast even as the
+    // disabled set grows.
+    index("domains_disabled_at_slug_idx").on(t.disabledAt, t.slug),
   ],
 );

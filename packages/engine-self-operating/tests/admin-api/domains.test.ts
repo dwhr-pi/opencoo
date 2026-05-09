@@ -53,6 +53,74 @@ describe("admin-api domains route (PR 29)", () => {
     });
     expect(body.rows[0]?.isAggregator).toBe(false);
   });
+
+  it("GET /api/admin/domains hides disabled rows by default; ?include_disabled=1 returns them too (PR-R1)", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    await f.raw.exec(`
+      INSERT INTO domains (slug, name, locale)
+      VALUES ('active', 'Active', 'en');
+      INSERT INTO domains (slug, name, locale, disabled_at)
+      VALUES ('retired', 'Retired', 'en', now());
+    `);
+    // Default — disabled rows hidden.
+    const def = await f.app.inject({
+      method: "GET",
+      url: "/api/admin/domains",
+      headers: { authorization: "Bearer admin-pat" },
+    });
+    expect(def.statusCode).toBe(200);
+    const defBody = JSON.parse(def.body) as {
+      rows: Array<{ slug: string; disabledAt: string | null }>;
+    };
+    expect(defBody.rows.map((r) => r.slug)).toEqual(["active"]);
+    expect(defBody.rows[0]?.disabledAt).toBeNull();
+
+    // With include_disabled=1 — both rows present.
+    const all = await f.app.inject({
+      method: "GET",
+      url: "/api/admin/domains?include_disabled=1",
+      headers: { authorization: "Bearer admin-pat" },
+    });
+    expect(all.statusCode).toBe(200);
+    const allBody = JSON.parse(all.body) as {
+      rows: Array<{ slug: string; disabledAt: string | null }>;
+    };
+    expect(allBody.rows.map((r) => r.slug).sort()).toEqual(["active", "retired"]);
+    const retired = allBody.rows.find((r) => r.slug === "retired");
+    expect(retired?.disabledAt).not.toBeNull();
+  });
+
+  it("GET /api/admin/domains exposes binding_count for the row drill-down (PR-R1)", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    await f.raw.exec(`
+      INSERT INTO domains (slug, name, locale) VALUES ('with-bindings', 'WB', 'en');
+      INSERT INTO domains (slug, name, locale) VALUES ('lonely', 'L', 'en');
+    `);
+    await f.raw.exec(`
+      INSERT INTO sources_bindings (domain_id, adapter_slug, review_mode, enabled)
+      VALUES (
+        (SELECT id FROM domains WHERE slug = 'with-bindings'),
+        'drive', 'auto'::review_mode, true
+      );
+    `);
+    const res = await f.app.inject({
+      method: "GET",
+      url: "/api/admin/domains",
+      headers: { authorization: "Bearer admin-pat" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as {
+      rows: Array<{ slug: string; bindingCount: number }>;
+    };
+    const wb = body.rows.find((r) => r.slug === "with-bindings");
+    const lonely = body.rows.find((r) => r.slug === "lonely");
+    expect(wb?.bindingCount).toBe(1);
+    expect(lonely?.bindingCount).toBe(0);
+  });
 });
 
 describe("admin-api prompts route (PR 29)", () => {

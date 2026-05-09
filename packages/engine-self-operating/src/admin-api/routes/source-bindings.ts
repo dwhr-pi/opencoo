@@ -52,6 +52,7 @@ import {
 import { writeAuditLog } from "../audit-log.js";
 import { requireAdminContext } from "../auth.js";
 import { requireCsrf } from "../csrf.js";
+import { isPgForeignKeyViolation } from "../pg-error.js";
 
 const reviewModeUpdateSchema = z
   .object({
@@ -773,23 +774,8 @@ class ConcurrentDeleteError extends Error {
   }
 }
 
-/** Detect a Postgres `foreign_key_violation` (SQLSTATE 23503).
- *  node-postgres surfaces the code on the thrown Error directly;
- *  Drizzle wraps the underlying error sometimes via `.cause`, so we
- *  check both spellings. */
-function isPgForeignKeyViolation(err: unknown): boolean {
-  if (err === null || typeof err !== "object") return false;
-  const codeFromTop = (err as { code?: unknown }).code;
-  if (typeof codeFromTop === "string" && codeFromTop === "23503") return true;
-  const cause = (err as { cause?: unknown }).cause;
-  if (cause !== null && typeof cause === "object") {
-    const codeFromCause = (cause as { code?: unknown }).code;
-    if (typeof codeFromCause === "string" && codeFromCause === "23503") {
-      return true;
-    }
-  }
-  return false;
-}
+// `isPgForeignKeyViolation` lives in `../pg-error.ts` — hoisted from this
+// file in PR-R1 so the Domain DELETE handler can share the same narrowing.
 
 // ─── Status computation (phase-a appendix #4 PR-A) ──────────────────────────
 
