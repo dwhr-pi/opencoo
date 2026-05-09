@@ -84,6 +84,17 @@ export function App(): JSX.Element {
     setUsername(null);
   };
 
+  // PR-W3 — Activity feed signals a terminal SSE 401 (operator's PAT
+  // is durably stale). Re-uses the existing PAT clear + sign-out flow:
+  // dropping `authed` re-renders the gating PatEntryModal so the
+  // operator can paste a fresh token. NO new auth flow here.
+  const onSseAuthFailed = (): void => {
+    clearPat();
+    setAuthed(false);
+    setUsername(null);
+    setAuthError(t("auth.loginFailed"));
+  };
+
   if (!authed) {
     return (
       <PatEntryModal
@@ -98,7 +109,7 @@ export function App(): JSX.Element {
     sources: <Sources />,
     llmPolicy: <LlmPolicy />,
     prompts: <Prompts />,
-    activity: <Activity />,
+    activity: <Activity onAuthFailed={onSseAuthFailed} />,
     review: <Review />,
     reports: <Reports />,
     audit: <Audit />,

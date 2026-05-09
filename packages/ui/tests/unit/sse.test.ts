@@ -1,5 +1,6 @@
 /**
- * SSE client — fetch-streaming auth (phase-a appendix #9 PR-Q1).
+ * SSE client — fetch-streaming auth (phase-a appendix #9 PR-Q1) +
+ * 401 terminal-state handling (phase-a appendix #11 PR-W3).
  *
  * Pin matrix:
  *   1. Multi-line `data:` lines concatenate with a literal "\n" between
@@ -11,6 +12,10 @@
  *      the `Authorization: Bearer <pat>` header sourced from `pat-store`.
  *   4. `close()` aborts the in-flight fetch (its AbortController fires);
  *      the client transitions to readyState "closed" and stops dispatching.
+ *   5. PR-W3 — a 401 response is TERMINAL: the client emits a synthetic
+ *      `auth_failed` event on the `auth_failed` channel, transitions to
+ *      readyState "closed", and does NOT schedule a reconnect. A 5xx
+ *      response (or a network error) still triggers exponential backoff.
  *
  * Strategy:
  *   We replace globalThis.fetch with a controllable stub that returns a
@@ -53,9 +58,17 @@ interface FetchHarness {
   readonly attempts: readonly StreamHandle[];
 }
 
-/** Replace globalThis.fetch with a queue of controllable streams. */
-function installFetchHarness(opts: { status?: number } = {}): FetchHarness {
-  const status = opts.status ?? 200;
+/** Replace globalThis.fetch with a queue of controllable streams.
+ *
+ *  `status` may be a single number (applied to every fetch) or an
+ *  array consumed positionally — first attempt gets `statuses[0]`,
+ *  second `statuses[1]`, etc. Past the array end the harness falls
+ *  back to 200, so longer-than-expected reconnect loops still parse. */
+function installFetchHarness(
+  opts: { status?: number; statuses?: readonly number[] } = {},
+): FetchHarness {
+  const fixedStatus = opts.status ?? 200;
+  const statuses = opts.statuses;
   const attempts: StreamHandle[] = [];
   const waiters: Array<(h: StreamHandle) => void> = [];
   let consumed = 0;
@@ -86,12 +99,17 @@ function installFetchHarness(opts: { status?: number } = {}): FetchHarness {
         signal: (init?.signal ?? new AbortController().signal) as AbortSignal,
         headers: new Headers(init?.headers ?? {}),
       };
+      const idx = attempts.length;
       attempts.push(handle);
       const waiter = waiters.shift();
       if (waiter !== undefined) {
         consumed += 1;
         waiter(handle);
       }
+      const status =
+        statuses !== undefined
+          ? (statuses[idx] ?? 200)
+          : fixedStatus;
       // Cast through unknown — node:stream/web's ReadableStream is assignable
       // to BodyInit in jsdom but TS sees the global Web Streams type.
       return Promise.resolve(
@@ -148,6 +166,11 @@ beforeEach(() => {
 afterEach(() => {
   clearPat();
   vi.restoreAllMocks();
+  // Always return to real timers between tests — the PR-W3 401 cases
+  // install fake timers to assert no reconnect was scheduled, and a
+  // leaked fake-timer state would poison sibling test files that rely
+  // on real `setTimeout` (credential-form, diff-preview).
+  vi.useRealTimers();
   // Restore the original `fetch` — `installFetchHarness` overwrites
   // `globalThis.fetch` directly (a raw assignment, not a vi.spyOn),
   // which `vi.restoreAllMocks()` cannot revert. Without this hook,
@@ -231,6 +254,74 @@ describe("openSseClient — reconnect carries Last-Event-ID + Bearer PAT", () =>
     expect(second.headers.get("Accept")).toMatch(/text\/event-stream/);
 
     client.close();
+  });
+});
+
+describe("openSseClient — 401 is terminal (PR-W3, phase-a appendix #11)", () => {
+  it("emits an `auth_failed` event and does NOT schedule a reconnect on 401", async () => {
+    setPat("stale-pat-token");
+    // Use fake timers so any errant scheduleReconnect() call would be
+    // observable as a queued setTimeout — verified below.
+    vi.useFakeTimers();
+
+    const harness = installFetchHarness({ status: 401 });
+    const client = openSseClient("/api/admin/events");
+
+    const authFailedEvents: Array<unknown> = [];
+    client.on<unknown>("auth_failed", (e) => {
+      authFailedEvents.push(e);
+    });
+
+    // First fetch lands.
+    await harness.next();
+    // Drain microtasks so the 401 handling runs.
+    await vi.runAllTimersAsync();
+
+    // Exactly ONE fetch attempt — no reconnect was scheduled.
+    expect(harness.attempts).toHaveLength(1);
+    // The terminal `auth_failed` event fired.
+    expect(authFailedEvents).toHaveLength(1);
+    // Client transitioned to closed; subsequent close() is a no-op.
+    expect(client.readyState).toBe("closed");
+
+    // Advance the clock well past the maximum backoff window — still no
+    // second fetch (the terminal flag prevents scheduleReconnect from
+    // queuing one).
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(harness.attempts).toHaveLength(1);
+
+    client.close();
+    vi.useRealTimers();
+  });
+
+  it("preserves backoff/reconnect on 5xx (only 401 is terminal)", async () => {
+    vi.useFakeTimers();
+
+    // First attempt 503 → must reconnect; second attempt 200 → recovers.
+    const harness = installFetchHarness({ statuses: [503, 200] });
+    const client = openSseClient("/api/admin/events");
+
+    const authFailedEvents: Array<unknown> = [];
+    client.on<unknown>("auth_failed", (e) => {
+      authFailedEvents.push(e);
+    });
+
+    // First fetch lands and returns 503.
+    await harness.next();
+    await vi.runAllTimersAsync();
+
+    // No auth_failed event; reconnect was scheduled.
+    expect(authFailedEvents).toHaveLength(0);
+
+    // Advance past the initial 500ms backoff so the reconnect timer fires.
+    await vi.advanceTimersByTimeAsync(1_000);
+    // A second fetch attempt happened.
+    expect(harness.attempts.length).toBeGreaterThanOrEqual(2);
+    // Client is not in terminal state — readyState is "open" or "connecting".
+    expect(client.readyState).not.toBe("closed");
+
+    client.close();
+    vi.useRealTimers();
   });
 });
 

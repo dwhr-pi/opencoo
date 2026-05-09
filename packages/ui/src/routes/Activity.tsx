@@ -28,6 +28,7 @@ import {
   type SubscribeToAgentRuns,
 } from "../lib/agent-runs-subscription.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
+import { clearPat } from "../lib/pat-store.js";
 import { openSseClient } from "../lib/sse.js";
 import type { AgentRun, Pipeline } from "../types.js";
 
@@ -66,6 +67,13 @@ export interface ActivityProps {
    *  `createAgentRunsSubscription` per pipelines-tab mount and
    *  hands its `subscribe` down. Tests inject a stub directly. */
   readonly subscribeToAgentRuns?: SubscribeToAgentRuns;
+  /** PR-W3 — invoked when the SSE feed receives a terminal
+   *  `auth_failed` event (the operator's PAT is durably stale).
+   *  App.tsx wires this to clear the PAT + flip `authed: false`,
+   *  re-rendering the gating PatEntryModal. Default fallback
+   *  (when omitted): `clearPat()` + a hard reload, which routes
+   *  the user through App.tsx's first-load auth gate. */
+  readonly onAuthFailed?: () => void;
 }
 
 // ─── Sub-tab type ─────────────────────────────────────────────────────────────
@@ -105,9 +113,22 @@ function NoticeRow(props: {
 
 // ─── Feed sub-view ────────────────────────────────────────────────────────────
 
-function FeedView(): JSX.Element {
+/** PR-W3 — default re-auth handoff used when no `onAuthFailed`
+ *  prop is wired. Clears the stale PAT from sessionStorage and
+ *  reloads, which routes the user through App.tsx's first-load
+ *  auth gate (the PatEntryModal). Lives at module scope so the
+ *  Activity component owns no extra state for the no-prop case. */
+function defaultAuthFailedHandler(): void {
+  clearPat();
+  if (typeof window !== "undefined") {
+    window.location.reload();
+  }
+}
+
+function FeedView(props: { onAuthFailed?: () => void }): JSX.Element {
   const { t } = useTranslation();
   const [connected, setConnected] = useState(false);
+  const [authExpired, setAuthExpired] = useState(false);
   const [entries, setEntries] = useState<FeedEntry[]>([]);
 
   useEffect(() => {
@@ -116,6 +137,14 @@ function FeedView(): JSX.Element {
     // Connected acknowledgement.
     const offConnected = client.on<{ connectedAt: string }>("connected", () => {
       setConnected(true);
+    });
+
+    // PR-W3 — terminal `auth_failed` event from the SSE client. The
+    // client itself stops reconnecting; we flip the in-feed indicator
+    // to "auth expired" + render the inline alert with a re-auth CTA.
+    const offAuth = client.on<{ reason: string }>("auth_failed", () => {
+      setAuthExpired(true);
+      setConnected(false);
     });
 
     // Agent run lifecycle events — all statuses (running, success, failed).
@@ -177,11 +206,31 @@ function FeedView(): JSX.Element {
 
     return () => {
       offConnected();
+      offAuth();
       offRun();
       offDlq();
       client.close();
     };
   }, []);
+
+  const handleReauth = props.onAuthFailed ?? defaultAuthFailedHandler;
+
+  // The status-line color picks up `--alert` when the session is
+  // terminally unauthenticated — auth-expired IS a blocking state,
+  // not a transient "still connecting…". Avoid nested ternaries
+  // (CLAUDE.md: prefer explicit branches for >2 conditions).
+  let indicatorColor: string;
+  let indicatorLabel: string;
+  if (authExpired) {
+    indicatorColor = "var(--alert)";
+    indicatorLabel = t("activity.feed.authExpired");
+  } else if (connected) {
+    indicatorColor = "var(--healthy)";
+    indicatorLabel = t("activity.feed.live");
+  } else {
+    indicatorColor = "var(--ink-3)";
+    indicatorLabel = t("activity.feed.connecting");
+  }
 
   return (
     <div
@@ -196,13 +245,71 @@ function FeedView(): JSX.Element {
         style={{
           fontFamily: "var(--font-mono)",
           fontSize: 11,
-          color: connected ? "var(--healthy)" : "var(--ink-3)",
+          color: indicatorColor,
           letterSpacing: "0.06em",
           textTransform: "uppercase",
         }}
       >
-        {connected ? t("activity.feed.live") : t("activity.feed.connecting")}
+        {indicatorLabel}
       </div>
+      {/* PR-W3 — terminal auth-failure alert. `--alert` border + title
+          (auth expiry IS a destructive/blocking state); informational
+          secondary line in `--ink-3`. NO new motion loop — heartbeat
+          pulse is reserved for the agent layer. */}
+      {authExpired && (
+        <div
+          role="alert"
+          data-testid="sse-auth-failed-alert"
+          style={{
+            border: "1px solid var(--alert)",
+            borderRadius: 6,
+            padding: "12px 16px",
+            background: "var(--paper-2)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontWeight: 500,
+              fontSize: 13,
+              color: "var(--alert)",
+            }}
+          >
+            {t("activity.feed.authFailed.title")}
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 12,
+              color: "var(--ink-3)",
+            }}
+          >
+            {t("activity.feed.authFailed.body")}
+          </div>
+          <button
+            type="button"
+            onClick={handleReauth}
+            data-testid="sse-auth-failed-reauth"
+            style={{
+              alignSelf: "flex-start",
+              font: "inherit",
+              fontSize: 12,
+              fontFamily: "var(--font-sans)",
+              padding: "6px 12px",
+              border: "1px solid var(--alert)",
+              borderRadius: 3,
+              background: "var(--paper)",
+              color: "var(--alert)",
+              cursor: "pointer",
+            }}
+          >
+            {t("activity.feed.authFailed.action")}
+          </button>
+        </div>
+      )}
       {entries.length === 0 && (
         <div
           style={{
@@ -750,7 +857,13 @@ export function Activity(props: ActivityProps = {}): JSX.Element {
           `exactOptionalPropertyTypes` — passing `fetchImpl={undefined}`
           would shadow the prop's optional default. */}
       <div style={{ flex: 1, overflowY: "auto" }}>
-        {activeTab === "feed" && <FeedView />}
+        {activeTab === "feed" && (
+          <FeedView
+            {...(props.onAuthFailed !== undefined
+              ? { onAuthFailed: props.onAuthFailed }
+              : {})}
+          />
+        )}
         {activeTab === "runs" && (
           props.fetchImpl !== undefined
             ? <RunsView fetchImpl={props.fetchImpl} />

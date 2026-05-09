@@ -308,10 +308,16 @@
     "feed": {
       "connecting": "connecting…",
       "live": "live",
+      "authExpired": "auth expired",
       "empty": "No events yet.",
       "dlq": "delivery failed",
       "dlqAlert": "output delivery DLQ —",
-      "dlqDeliveryId": "delivery-id"
+      "dlqDeliveryId": "delivery-id",
+      "authFailed": {
+        "title": "Sign-in expired",
+        "body": "Re-paste your PAT to reconnect to the activity feed.",
+        "action": "Re-paste PAT"
+      }
     },
     "runs": {
       "empty": "No runs yet."

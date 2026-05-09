@@ -200,3 +200,52 @@ describe("Activity route — output_delivery_dlq rendering", () => {
     expect(indicators.length).toBeGreaterThan(0);
   });
 });
+
+// ─── PR-W3 — terminal `auth_failed` event ────────────────────────────────────
+
+describe("Activity route — auth_failed terminal SSE event (PR-W3)", () => {
+  it("renders the inline auth-expired alert when the SSE client fires `auth_failed`", async () => {
+    render(<Activity fetchImpl={makeFetch()} />);
+    const stub = currentStub!;
+    expect(stub).not.toBeNull();
+
+    await act(() => {
+      stub.dispatch("auth_failed", { reason: "unauthorized" });
+    });
+
+    // Inline alert renders with the i18n title + body strings.
+    const alert = screen.getByTestId("sse-auth-failed-alert");
+    expect(alert).toBeInTheDocument();
+    expect(screen.getByText(/sign-in expired/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/re-paste your pat to reconnect/i),
+    ).toBeInTheDocument();
+    // Indicator flips from "live" → "auth expired" with --alert color.
+    expect(screen.getByText(/auth expired/i)).toBeInTheDocument();
+    // Alert styling uses the `--alert` token (per design-system: alert
+    // color is reserved for destructive/blocking states like an expired
+    // sign-in). Verified by checking the inline style references the
+    // design-system var rather than a hardcoded color.
+    expect(alert.getAttribute("style") ?? "").toMatch(/var\(--alert\)/);
+  });
+
+  it("invokes the onAuthFailed callback when the operator clicks the re-auth button", async () => {
+    const onAuthFailed = vi.fn();
+    render(
+      <Activity fetchImpl={makeFetch()} onAuthFailed={onAuthFailed} />,
+    );
+    const stub = currentStub!;
+
+    await act(() => {
+      stub.dispatch("auth_failed", { reason: "unauthorized" });
+    });
+
+    const button = screen.getByTestId("sse-auth-failed-reauth");
+    expect(button).toBeInTheDocument();
+    await act(() => {
+      button.click();
+    });
+
+    expect(onAuthFailed).toHaveBeenCalledTimes(1);
+  });
+});
