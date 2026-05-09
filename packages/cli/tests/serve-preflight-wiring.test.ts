@@ -193,4 +193,127 @@ describe("runServe — ingestion preflight wiring (PR-Q6 fix-up)", () => {
     signalSource.emit("SIGTERM");
     await serve;
   });
+
+  it("PR-W1: forwards preflight.deleteCap + preflight.forgetJobEnqueuer to startFactory", async () => {
+    // Wave-end Chrome QA on 2026-05-09 caught that
+    // `POST /api/admin/source-bindings/:id/forget` returned 503
+    // `composition_incomplete` in production because the
+    // orchestrator never threaded the cap + enqueuer from the
+    // preflight composition into self-op's `start({})`. This test
+    // pins the forwarding so a future regression breaks the
+    // typecheck OR the test before it reaches a deployment.
+    const stdout = new CapturingStream();
+    const stderr = new CapturingStream();
+    const sharedApp = { __sentinel: "shared" };
+    const selfOpEngine = { app: sharedApp, close: vi.fn(async () => undefined) };
+    const ingestionEngine = { close: vi.fn(async () => undefined) };
+
+    const mountHook = vi.fn();
+    const composedSentinel = { __sentinel: "composed" };
+    const deleteCapSentinel = { __sentinel: "deleteCap" };
+    const forgetJobEnqueuerSentinel = vi.fn(async () => undefined);
+    const preflightResult: ServeIngestionPreflightResult = {
+      preflight: { composed: composedSentinel },
+      mountHook,
+      deleteCap: deleteCapSentinel,
+      forgetJobEnqueuer: forgetJobEnqueuerSentinel,
+    };
+
+    const ingestionPreflightFactory = vi.fn(async () => preflightResult);
+    const startFactory = vi.fn(async () => {
+      return selfOpEngine as unknown as Awaited<
+        ReturnType<NonNullable<ServeArgs["startFactory"]>>
+      >;
+    });
+    const startIngestionFactory = vi.fn(async () => {
+      return ingestionEngine as unknown as Awaited<
+        ReturnType<NonNullable<ServeArgs["startIngestionFactory"]>>
+      >;
+    });
+    const exit = vi.fn();
+    const signalSource = new EventEmitter();
+
+    const serve = runServe({
+      env: { DATABASE_URL: "postgres://x" },
+      stdout,
+      stderr,
+      ingestionPreflightFactory,
+      startFactory,
+      startIngestionFactory,
+      signalSource,
+      exit: exit as unknown as ServeArgs["exit"],
+    });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    // Identity comparison — a structural-clone (or a stale
+    // empty-object cap) would silently let a forget exceed the
+    // per-domain daily limit.
+    const startCall = startFactory.mock.calls[0]?.[0] as {
+      readonly deleteCap?: unknown;
+      readonly forgetJobEnqueuer?: unknown;
+    };
+    expect(startCall.deleteCap).toBe(deleteCapSentinel);
+    expect(startCall.forgetJobEnqueuer).toBe(forgetJobEnqueuerSentinel);
+
+    signalSource.emit("SIGTERM");
+    await serve;
+  });
+
+  it("PR-W1: preflight returning null → no deleteCap + no forgetJobEnqueuer on startFactory", async () => {
+    // Boot-tolerance: when preflight returns null (composition
+    // failed — missing GITEA_PAT / ENCRYPTION_KEY / etc.) the
+    // orchestrator MUST NOT pass undefined into the start factory's
+    // `deleteCap`/`forgetJobEnqueuer` fields under
+    // `exactOptionalPropertyTypes`. Conditional spread keeps the
+    // fields absent so the engine boots without the wiring and the
+    // route's 503 composition-incomplete branch surfaces (matching
+    // the rest of the admin API's boot-tolerance pattern).
+    const stdout = new CapturingStream();
+    const stderr = new CapturingStream();
+    const sharedApp = { __sentinel: "shared" };
+    const selfOpEngine = { app: sharedApp, close: vi.fn(async () => undefined) };
+    const ingestionEngine = { close: vi.fn(async () => undefined) };
+
+    const ingestionPreflightFactory = vi.fn(async () => null);
+    const startFactory = vi.fn(
+      async () =>
+        selfOpEngine as unknown as Awaited<
+          ReturnType<NonNullable<ServeArgs["startFactory"]>>
+        >,
+    );
+    const startIngestionFactory = vi.fn(
+      async () =>
+        ingestionEngine as unknown as Awaited<
+          ReturnType<NonNullable<ServeArgs["startIngestionFactory"]>>
+        >,
+    );
+    const exit = vi.fn();
+    const signalSource = new EventEmitter();
+
+    const serve = runServe({
+      env: { DATABASE_URL: "postgres://x" },
+      stdout,
+      stderr,
+      ingestionPreflightFactory,
+      startFactory,
+      startIngestionFactory,
+      signalSource,
+      exit: exit as unknown as ServeArgs["exit"],
+    });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const startCall = startFactory.mock.calls[0]?.[0] as {
+      readonly deleteCap?: unknown;
+      readonly forgetJobEnqueuer?: unknown;
+    };
+    expect(startCall.deleteCap).toBeUndefined();
+    expect(startCall.forgetJobEnqueuer).toBeUndefined();
+
+    signalSource.emit("SIGTERM");
+    await serve;
+  });
 });

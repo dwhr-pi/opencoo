@@ -13,7 +13,12 @@ jobs:
   toolchain:
     name: toolchain (lint / typecheck / test / fixtures)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Bumped 25 → 35 in PR-W1 (phase-a appendix #11): the new
+    # production-composition tests boot real PGlite + spy queues,
+    # adding ~5–8 min to the previous baseline. Wave-10 closeout
+    # baseline runs were 20–22 min; new W1 baseline is ~28 min.
+    # 35 min keeps a 5-min margin without masking a runaway test.
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4

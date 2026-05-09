@@ -32,9 +32,11 @@ import {
   type StartServer,
 } from "@opencoo/shared/engine-scaffold";
 import type { Logger } from "@opencoo/shared/logger";
+import type { DeleteCap } from "@opencoo/shared/wiki-write";
 
 import { registerAdminApi } from "../admin-api/index.js";
 import type { GiteaClient } from "../admin-api/auth.js";
+import type { ForgetJobEnqueueArgs } from "../admin-api/routes/source-bindings.js";
 import { createSseBus, type SseBus } from "../admin-api/sse-bus.js";
 import type {
   SchedulerSource,
@@ -89,6 +91,16 @@ export interface ProductionServerFactoryArgs {
    *  method; when undefined the `PUT /api/admin/scheduler/:agent`
    *  route returns 503 (composition incomplete). */
   readonly updateSchedule?: SchedulerUpdate;
+  /** PR-W1 (phase-a appendix #11) — delete-cap probe + reserve for
+   *  the source-forget impact preview (PR-R7). Production passes the
+   *  ingestion engine's `wikiDeps.deleteCap` instance so the route
+   *  reads the SAME budget the compiler workers reserve against.
+   *  When undefined the forget endpoint returns 503. */
+  readonly deleteCap?: DeleteCap;
+  /** PR-W1 (phase-a appendix #11) — composition-supplied enqueuer
+   *  for the actual forget action (PR-R7). When undefined the
+   *  forget endpoint returns 503. */
+  readonly forgetJobEnqueuer?: (args: ForgetJobEnqueueArgs) => Promise<void>;
   /** PR-Q6 (phase-a appendix #9) fix-up — Fastify request body
    *  limit. The orchestrator sets this to `WEBHOOK_BODY_LIMIT_BYTES`
    *  (5 MB) when co-booting engine-ingestion in workers mode so a
@@ -152,6 +164,10 @@ export async function productionServerFactory(
       : {}),
     ...(args.updateSchedule !== undefined
       ? { updateSchedule: args.updateSchedule }
+      : {}),
+    ...(args.deleteCap !== undefined ? { deleteCap: args.deleteCap } : {}),
+    ...(args.forgetJobEnqueuer !== undefined
+      ? { forgetJobEnqueuer: args.forgetJobEnqueuer }
       : {}),
     provisionOrg: args.compositionEnv.giteaProvisionOrg,
     provisionDomainRepo: async (a) => {

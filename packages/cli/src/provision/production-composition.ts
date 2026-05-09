@@ -33,7 +33,7 @@
  */
 import pg from "pg";
 import { Redis } from "ioredis";
-import type { ConnectionOptions } from "bullmq";
+import { Queue, type ConnectionOptions } from "bullmq";
 import { drizzle } from "drizzle-orm/node-postgres";
 
 import {
@@ -50,6 +50,14 @@ import {
   requireWithFile,
 } from "@opencoo/shared/engine-scaffold";
 import {
+  createForgetJobEnqueuer,
+  WIKI_DELETE_QUEUE_SLUG,
+  WIKI_RECOMPILE_QUEUE_SLUG,
+  type ForgetJobEnqueueArgs,
+  type ForgetJobPayload,
+  type ForgetJobQueue,
+} from "@opencoo/shared/forget";
+import {
   InMemoryQueuePauser,
   LlmRouter,
   createProvider,
@@ -57,6 +65,10 @@ import {
 } from "@opencoo/shared/llm-router";
 import { ConsoleLogger, type Logger } from "@opencoo/shared/logger";
 import { safeErrorMessage } from "@opencoo/shared/scrub";
+import {
+  InMemoryDeleteCap,
+  type DeleteCap,
+} from "@opencoo/shared/wiki-write";
 
 import {
   AgentDefinitionRegistry,
@@ -86,6 +98,25 @@ export interface ProductionCompositionResult {
   readonly redisConnection: ConnectionOptions;
   readonly pgPool: pg.Pool;
   readonly redis: Redis;
+  /** PR-W1 (phase-a appendix #11) — the SAME `InMemoryDeleteCap`
+   *  the workerContext's `wikiDeps` reads. The orchestrator threads
+   *  this into `engine-self-operating.start({ deleteCap })` so the
+   *  admin-API forget route's `peek/reserve` reads the SAME budget
+   *  the compiler workers reserve against. Single-process v0.1
+   *  shape per architecture §16. */
+  readonly deleteCap: DeleteCap;
+  /** PR-W1 (phase-a appendix #11) — composition-built enqueuer for
+   *  the source-forget action (PR-R7). The orchestrator threads
+   *  this into `engine-self-operating.start({ forgetJobEnqueuer })`
+   *  so the admin-API route stops returning 503. The factory wraps
+   *  two BullMQ queues (`wiki.recompile` + `wiki.delete`) opened on
+   *  the SAME `redisConnection` the worker pool uses. */
+  readonly forgetJobEnqueuer: (args: ForgetJobEnqueueArgs) => Promise<void>;
+  /** PR-W1 (phase-a appendix #11) — close hook for the producer-side
+   *  forget queue handles. Best-effort; orchestrator awaits this on
+   *  SIGTERM AFTER worker drain (mirrors `closeProducers` on the
+   *  WorkerContext). */
+  readonly closeForgetQueues: () => Promise<void>;
 }
 
 /** Narrow shape of the run-event emitter the WorkerContext consumes.
@@ -118,6 +149,26 @@ export interface ComposeProductionArgs {
    *  workers still run; their lifecycle events just don't reach
    *  the UI. */
   readonly sseBus?: ComposeSseBus;
+  /** @internal Test seam (PR-W1, phase-a appendix #11) — override
+   *  the BullMQ Queue constructor for the producer-side forget
+   *  queues (`wiki.recompile` + `wiki.delete`). Defaults to the
+   *  real `new Queue(name, { connection })` from bullmq. Tests pass
+   *  a `vi.fn()` returning a stub with `add` so the composition can
+   *  be exercised without ioredis-mock + real BullMQ wiring. */
+  readonly forgetQueueFactory?: (
+    name: string,
+    connection: ConnectionOptions,
+  ) => ForgetJobQueue & { close?(): Promise<void> };
+  /** @internal Test seam (PR-W1, phase-a appendix #11) — override
+   *  the pg.Pool factory. Defaults to `new pg.Pool({connectionString})`.
+   *  Tests pass a PGlite-backed shim so the composition can be
+   *  exercised without a real Postgres. */
+  readonly pgPoolFactory?: (connectionString: string) => pg.Pool;
+  /** @internal Test seam (PR-W1, phase-a appendix #11) — override
+   *  the ioredis Redis factory. Defaults to `new Redis(redisUrl,
+   *  {maxRetriesPerRequest:null,enableReadyCheck:false})`. Tests
+   *  pass an ioredis-mock instance. */
+  readonly redisFactory?: (redisUrl: string) => Redis;
 }
 
 /** Construct the production WorkerContext + the underlying pg.Pool
@@ -156,11 +207,19 @@ export async function composeProductionFromEnv(
     enableReadyCheck: false,
   };
 
-  const pgPool = new pg.Pool({ connectionString: databaseUrl });
-  const redis = new Redis(redisUrl, {
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-  });
+  // PR-W1 test seams: tests pass PGlite + ioredis-mock here so the
+  // composition can be exercised without a real Postgres / Redis.
+  const pgPool =
+    args.pgPoolFactory !== undefined
+      ? args.pgPoolFactory(databaseUrl)
+      : new pg.Pool({ connectionString: databaseUrl });
+  const redis =
+    args.redisFactory !== undefined
+      ? args.redisFactory(redisUrl)
+      : new Redis(redisUrl, {
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
+        });
 
   const db = drizzle(pgPool);
 
@@ -213,6 +272,72 @@ export async function composeProductionFromEnv(
   // credentialId, config)` signature.
   const sourceAdapterFactories = await loadSourceAdapterFactories(logger);
 
+  // PR-W1 (phase-a appendix #11) — single-process v0.1 delete-cap.
+  // Constructed at the composition root so the SAME instance is
+  // shared between:
+  //   1. The ingestion compiler workers (via
+  //      `composeProductionWorkerContext({ deleteCap })` →
+  //      `wikiDeps.deleteCap`).
+  //   2. The self-op admin-API forget route (via
+  //      `engine-self-operating.start({ deleteCap })` →
+  //      `registerAdminApi({ deleteCap })`).
+  // Without identity sharing, the route's `peek/reserve` and the
+  // workers' `wikiWrite` reservations would address two different
+  // caps and a forget could blow past the per-domain daily limit
+  // undetected (THREAT-MODEL §2 invariant 6 — bounded blast radius
+  // for destructive ops).
+  const deleteCap = new InMemoryDeleteCap();
+
+  // PR-W1 (phase-a appendix #11) — producer-side BullMQ queues for
+  // the source-forget action (consumer worker lands in a follow-up
+  // PR; today the route 503s because no producer is wired). Same
+  // multi-dot-prefix convention `production-context.ts` uses for
+  // `ingestion.scanner` / `ingestion.intake.dlq`. The
+  // `forgetQueueFactory` test seam lets unit tests substitute a
+  // stub returning a spy queue instead of opening real BullMQ.
+  const forgetQueueFactory =
+    args.forgetQueueFactory ??
+    ((name, connection): ForgetJobQueue & { close?(): Promise<void> } =>
+      new Queue<ForgetJobPayload>(name, { connection }));
+  const makeForgetQueue = (
+    slug: string,
+  ): ForgetJobQueue & { close?(): Promise<void> } =>
+    forgetQueueFactory(slug, redisConnection);
+  const recompileQueue = makeForgetQueue(WIKI_RECOMPILE_QUEUE_SLUG);
+  const deleteQueue = makeForgetQueue(WIKI_DELETE_QUEUE_SLUG);
+  const forgetJobEnqueuer = createForgetJobEnqueuer({
+    recompileQueue,
+    deleteQueue,
+  });
+  // Idempotent drain — the orchestrator (serve.ts) calls this on
+  // SIGTERM AFTER the worker pool stops so any in-flight forget
+  // enqueue completes first. Best-effort per queue: a single close
+  // failure is logged but doesn't prevent the sibling from draining.
+  let forgetQueuesClosing: Promise<void> | undefined;
+  const closeForgetQueue = async (
+    q: ForgetJobQueue & { close?(): Promise<void> },
+    label: string,
+  ): Promise<void> => {
+    if (typeof q.close !== "function") return;
+    try {
+      await q.close();
+    } catch (err) {
+      logger.warn("forget_queue.close_failed", {
+        queue: label,
+        // Round-2 fix #2 style — scrub + cap. THREAT-MODEL §3.6.
+        error: safeErrorMessage(err),
+      });
+    }
+  };
+  const closeForgetQueues = async (): Promise<void> => {
+    if (forgetQueuesClosing !== undefined) return forgetQueuesClosing;
+    forgetQueuesClosing = Promise.all([
+      closeForgetQueue(recompileQueue, WIKI_RECOMPILE_QUEUE_SLUG),
+      closeForgetQueue(deleteQueue, WIKI_DELETE_QUEUE_SLUG),
+    ]).then(() => undefined);
+    return forgetQueuesClosing;
+  };
+
   const workerContext = await composeProductionWorkerContext({
     db: db as unknown as Parameters<
       typeof composeProductionWorkerContext
@@ -230,6 +355,10 @@ export async function composeProductionFromEnv(
       email: `${instanceId}@opencoo.local`,
     },
     instanceId,
+    // PR-W1 (phase-a appendix #11) — share the cap instance with
+    // the workers so their `wikiWrite` reservations and the route's
+    // `peek/reserve` address the SAME budget.
+    deleteCap,
     // Round-2 fix #1: forward the orchestrator-supplied bus so
     // every PR-M1 sse-bridge listener (compile / scanner /
     // index-rebuild / cleanup workers) emits onto the SAME bus
@@ -237,7 +366,15 @@ export async function composeProductionFromEnv(
     ...(args.sseBus !== undefined ? { sseBus: args.sseBus } : {}),
   });
 
-  return { workerContext, redisConnection, pgPool, redis };
+  return {
+    workerContext,
+    redisConnection,
+    pgPool,
+    redis,
+    deleteCap,
+    forgetJobEnqueuer,
+    closeForgetQueues,
+  };
 }
 
 /** Multi-provider dispatcher — routes every `LlmProviderCall` to

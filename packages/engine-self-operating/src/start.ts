@@ -38,6 +38,7 @@ import {
 import { ConsoleLogger, type Logger } from "@opencoo/shared/logger";
 import type { LlmRouter } from "@opencoo/shared/llm-router";
 import { safeErrorMessage } from "@opencoo/shared/scrub";
+import type { DeleteCap } from "@opencoo/shared/wiki-write";
 import { drizzle } from "drizzle-orm/node-postgres";
 import {
   PipelineRegistry,
@@ -53,6 +54,7 @@ import {
 } from "@opencoo/shared/engine-scaffold";
 
 import type { GiteaClient } from "./admin-api/auth.js";
+import type { ForgetJobEnqueueArgs } from "./admin-api/routes/source-bindings.js";
 import {
   createSseBus,
   type SseBus,
@@ -211,6 +213,30 @@ export interface StartOptions
    *  doesn't hit Fastify's default 1-MB cap and 413 before the
    *  receiver's own size guard runs. */
   readonly bodyLimit?: number;
+  /** PR-W1 (phase-a appendix #11) — delete-cap probe + reserve for
+   *  the source-forget impact preview (PR-R7).
+   *
+   *  Threaded through `productionServerFactory` →
+   *  `registerAdminApi` so the
+   *  `POST /api/admin/source-bindings/:id/forget` route reads the
+   *  SAME `InMemoryDeleteCap` instance the ingestion compiler workers
+   *  reserve against. The orchestrator constructs the cap once at
+   *  composition root (`cli/provision/production-composition.ts`)
+   *  and threads it both here AND into the ingestion preflight's
+   *  `composeProductionWorkerContext` — single-process v0.1 shape
+   *  per architecture §16.
+   *
+   *  When undefined the route returns 503 (composition-incomplete);
+   *  the rest of the admin API is unaffected. */
+  readonly deleteCap?: DeleteCap;
+  /** PR-W1 (phase-a appendix #11) — composition-supplied enqueuer
+   *  for the actual source-forget action (PR-R7). The route plans
+   *  the impact + reserves the cap; this callable turns the plan
+   *  into BullMQ recompile + delete jobs (built via
+   *  `createForgetJobEnqueuer` from `@opencoo/shared/forget`).
+   *
+   *  When undefined the route returns 503. */
+  readonly forgetJobEnqueuer?: (args: ForgetJobEnqueueArgs) => Promise<void>;
 }
 
 function defaultDbFactory(config: EngineConfig): StartDb {
@@ -469,6 +495,18 @@ export async function start(
       // at boot.
       ...(dispatcher !== undefined
         ? { updateSchedule: dispatcher.updateSchedule.bind(dispatcher) }
+        : {}),
+      // PR-W1 (phase-a appendix #11) — wire the forget route's
+      // composition deps. The orchestrator (CLI serve.ts) builds
+      // both at composition root and threads them through
+      // `StartOptions`; productionServerFactory hands them to
+      // `registerAdminApi` so the `POST .../forget` route stops
+      // returning 503.
+      ...(options.deleteCap !== undefined
+        ? { deleteCap: options.deleteCap }
+        : {}),
+      ...(options.forgetJobEnqueuer !== undefined
+        ? { forgetJobEnqueuer: options.forgetJobEnqueuer }
         : {}),
       ...(bodyLimit !== undefined ? { bodyLimit } : {}),
     });

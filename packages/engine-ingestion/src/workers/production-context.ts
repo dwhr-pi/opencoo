@@ -70,6 +70,7 @@ import { HmacSha256Verifier } from "@opencoo/shared/webhook-verifier";
 import {
   InMemoryDeleteCap,
   InMemoryWikiWriteQueue,
+  type DeleteCap,
   type WikiAdapter,
   type WikiAuthor,
   type WikiWriteDeps,
@@ -139,6 +140,23 @@ export interface ComposeProductionContextArgs {
   readonly sseBus?: IngestionRunEventEmitter;
   /** Optional clock for deterministic test commit timestamps. */
   readonly clock?: () => Date;
+  /** PR-W1 (phase-a appendix #11) — caller-supplied delete-cap.
+   *
+   *  When the orchestrator (`cli/src/provision/production-composition.ts`)
+   *  needs the SAME `InMemoryDeleteCap` instance the compiler workers
+   *  reserve against to ALSO be visible to the self-op admin-API's
+   *  `POST /api/admin/source-bindings/:id/forget` route, it constructs
+   *  the cap once at composition root and threads it through here AND
+   *  through `registerAdminApi(...).deleteCap`. Single-process v0.1
+   *  shape: one cap, two readers (compiler workers + admin route).
+   *
+   *  When undefined, this factory constructs an internal cap (the
+   *  pre-W1 behavior). Tests that don't care about the forget route's
+   *  cap probe leave this undefined; production code MUST pass it
+   *  (otherwise the route's `peek/reserve` and the workers'
+   *  `wikiWrite.deleteCap.reserve` would address two different caps
+   *  and a forget could exceed the daily budget undetected). */
+  readonly deleteCap?: DeleteCap;
 }
 
 /** Same shape as the WorkerContext the engine consumes, but
@@ -165,10 +183,17 @@ export async function composeProductionWorkerContext(
 ): Promise<ProductionWorkerContext> {
   // 1. wikiDeps — single-process queue + cap (v0.1 distributable
   //    shape). The clock is overridable for deterministic tests.
+  //
+  //    PR-W1 (phase-a appendix #11): when the orchestrator passed
+  //    `args.deleteCap`, use that instance verbatim so the self-op
+  //    admin-API's forget route reads the SAME cap budget the compiler
+  //    workers reserve against. Without this thread, the route would
+  //    peek a fresh empty-cap and reserve against a separate budget,
+  //    silently letting a forget exceed the per-domain daily limit.
   const wikiDeps: WikiWriteDeps = {
     adapter: args.wikiAdapter,
     queue: new InMemoryWikiWriteQueue(),
-    deleteCap: new InMemoryDeleteCap(),
+    deleteCap: args.deleteCap ?? new InMemoryDeleteCap(),
     logger: args.logger,
     clock: args.clock ?? ((): Date => new Date()),
     instanceId: args.instanceId,
