@@ -95,15 +95,14 @@ export interface StartOptions
   /** @internal Test seam — defaults to `new Redis(...)`. */
   readonly redisFactory?: (config: EngineConfig) => StartRedis;
   /**
-   * v0.1 NO-OP forward-compat flag (PR 30 / plan #135 decision Q4).
-   *
-   * Engines do NOT auto-migrate at boot in v0.1 — the operator
-   * runs `opencoo migrate` explicitly per the runbook. This
-   * flag is reserved for v0.2 if auto-migrate is added: setting
-   * it to `true` will skip the v0.2 auto-migrate step. Today,
-   * passing it has no effect — the field exists so the CLI's
-   * `--skip-migrate` flag wiring (PR 30 `start` command, when
-   * added in a future PR) doesn't fail to type-check.
+   * Engine-ingestion never auto-migrates — engine-self-operating
+   * handles migrations at boot via OPENCOO_AUTO_MIGRATE (PR-X1,
+   * phase-a follow-up). The orchestrator (CLI `serve.ts`) boots
+   * self-op first, so by the time ingestion starts the journal
+   * is already current. This flag is preserved for forward
+   * compatibility / scripted-deploy parity with self-op's
+   * `StartOptions.skipMigrate`; passing it has no effect on
+   * ingestion's boot path.
    */
   readonly skipMigrate?: boolean;
   /** Boot mode (PR-M1, phase-a appendix #5). Defaults to

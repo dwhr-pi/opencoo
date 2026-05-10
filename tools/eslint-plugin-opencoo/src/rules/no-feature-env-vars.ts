@@ -99,6 +99,16 @@ const DEFAULT_ALLOW_LIST = [
   "N8N_MCP_BEARER_TOKEN_FILE",
   "N8N_MCP_BASE_URL",
   "N8N_MCP_BASE_URL_FILE",
+  // PR-X1 (phase-a follow-up) — operational opt-out for the
+  // engine-self-operating boot-time auto-migrate step. Default
+  // (unset / "1") = engine auto-applies pending Drizzle
+  // migrations under a pg_advisory_xact_lock before the Fastify
+  // listener binds; "0" / "false" / "no" reverts to the legacy
+  // manual `opencoo migrate` flow. Operational config — NOT
+  // feature config (the migration semantics are identical
+  // either way). No `_FILE` variant because it's a public
+  // boolean flag, not a credential.
+  "OPENCOO_AUTO_MIGRATE",
 ];
 
 function isIdentifier(

@@ -99,7 +99,11 @@ export async function parseAndDispatch(
   program
     .command("migrate")
     .description("Apply Drizzle migrations against DATABASE_URL")
-    .option("--skip-migrate", "v0.1 no-op (forward-compat for v0.2 auto-migrate)", false)
+    .option(
+      "--skip-migrate",
+      "skip the migrate (no-op-and-exit-ok; engine auto-migrate is controlled by OPENCOO_AUTO_MIGRATE)",
+      false,
+    )
     .action(async (opts: { skipMigrate?: boolean }) => {
       const fn = runners.migrate ?? runMigrate;
       await fn({

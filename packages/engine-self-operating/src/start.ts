@@ -35,6 +35,10 @@ import {
   DrizzleCredentialStore,
   loadEncryptionKey,
 } from "@opencoo/shared/credential-store";
+import {
+  applyMigrationsWithLock,
+  resolveSharedMigrationsDir,
+} from "@opencoo/shared/db";
 import { ConsoleLogger, type Logger } from "@opencoo/shared/logger";
 import type { LlmRouter } from "@opencoo/shared/llm-router";
 import { safeErrorMessage } from "@opencoo/shared/scrub";
@@ -136,9 +140,16 @@ export interface StartOptions
    *  the env-var dance. */
   readonly giteaClientFactory?: (baseUrl: string) => GiteaClient;
   /**
-   * v0.1 NO-OP forward-compat flag (PR 30 / plan #135 decision Q4).
-   * Engines do NOT auto-migrate at boot — the operator runs
-   * `opencoo migrate` explicitly. Reserved for v0.2.
+   * When true, the engine skips the auto-migrate step at boot.
+   * Default: false (auto-migrates). Tests typically set this to
+   * true. Operators can also set `OPENCOO_AUTO_MIGRATE=0` in env.
+   *
+   * (PR-X1, phase-a follow-up — was a v0.1 no-op forward-compat
+   * flag at PR 30 / plan #135 decision Q4; now load-bearing.
+   * The auto-migrate path runs `applyMigrationsWithLock` from
+   * `@opencoo/shared/db` against the same pool the engine uses
+   * for its admin-API connections, BEFORE the Fastify listener
+   * binds.)
    */
   readonly skipMigrate?: boolean;
   /** Optional SSE bus override (PR-M1, phase-a appendix #5). When
@@ -241,6 +252,32 @@ export interface StartOptions
 
 function defaultDbFactory(config: EngineConfig): StartDb {
   return new pg.Pool({ connectionString: config.databaseUrl });
+}
+
+/** PR-X1 (phase-a follow-up) — does the engine skip the
+ *  boot-time auto-migrate? Three independent gates, all OR-ed:
+ *
+ *    1. The caller passed `options.skipMigrate === true` (test
+ *       seam + scripted-deploy override),
+ *    2. The operator set `OPENCOO_AUTO_MIGRATE` to a falsy
+ *       string ("0" / "false" / "no", case-insensitive) — the
+ *       documented opt-out for the legacy manual-migrate flow,
+ *    3. `pgPool === null` — the caller injected a custom
+ *       `dbFactory` so we don't have a real `pg.Pool` to acquire
+ *       a client + advisory lock from. This is the existing test
+ *       seam (`start.test.ts` uses it); skipping auto-migrate
+ *       there matches the prior boot semantics exactly. */
+function shouldSkipAutoMigrate(
+  env: Record<string, string | undefined>,
+  optionSkip: boolean | undefined,
+  pgPool: pg.Pool | null,
+): boolean {
+  if (optionSkip === true) return true;
+  if (pgPool === null) return true;
+  const raw = env["OPENCOO_AUTO_MIGRATE"];
+  if (raw === undefined) return false;
+  const normalised = raw.trim().toLowerCase();
+  return normalised === "0" || normalised === "false" || normalised === "no";
 }
 
 function defaultRedisFactory(config: EngineConfig): StartRedis {
@@ -372,6 +409,46 @@ export async function start(
       : null;
   const dbFactory: (c: EngineConfig) => StartDb =
     dbFactoryFromOptions ?? ((): StartDb => pgPool as unknown as StartDb);
+
+  // PR-X1 (phase-a follow-up) — auto-apply Drizzle migrations
+  // BEFORE any DB-reading code (admin-API env load, dispatcher
+  // composition, server factory). Skipped when:
+  //   - the operator opted out via `OPENCOO_AUTO_MIGRATE` ∈
+  //     {"0", "false", "no"} (case-insensitive), or
+  //   - the caller set `options.skipMigrate === true` (test
+  //     seam + scripted-deploy override), or
+  //   - `pgPool === null` (the test injected its own dbFactory
+  //     and we have no real Pool to lock against).
+  // Failure throws → start() throws → engine does not boot.
+  // Drizzle's migrator is idempotent (journal-tracked), and
+  // `applyMigrationsWithLock` serialises concurrent invocations
+  // via `pg_advisory_xact_lock`, so a second engine starting
+  // immediately after the first becomes a fast no-op.
+  if (!shouldSkipAutoMigrate(env, options.skipMigrate, pgPool)) {
+    try {
+      await applyMigrationsWithLock({
+        pool: pgPool as pg.Pool,
+        migrationsFolder: resolveSharedMigrationsDir(),
+        logger,
+      });
+    } catch (err) {
+      // Critical (PR-X1 review C1): the engine-scaffold's
+      // resource-safety teardown only fires on errors INSIDE its
+      // try block — `startEngine` is never called on this path,
+      // so the pool we allocated above leaks unless we drain it
+      // here. On a supervisor restart loop (which is now the
+      // relied-on behavior — "engine refuses to bind until
+      // migrations succeed"), repeated migration failures would
+      // otherwise leak file descriptors. Same `.catch(() =>
+      // undefined)` swallow pattern the engine-scaffold uses for
+      // teardown drains: lose a teardown error to surface the
+      // migrate error instead.
+      if (pgPool !== null) {
+        await pgPool.end().catch(() => undefined);
+      }
+      throw err;
+    }
+  }
 
   const compositionEnv = tryLoadAdminApiEnv(env, logger);
   const giteaClientFactory =

@@ -1,21 +1,34 @@
 /**
- * `opencoo migrate` (PR 30 / plan #135).
+ * `opencoo migrate` (PR 30 / plan #135; PR-X1 phase-a follow-up).
  *
  * Runs the Drizzle migrations from `packages/shared/drizzle/`
  * against the database at `DATABASE_URL`. Idempotent — Drizzle
  * tracks applied migrations in `drizzle.__drizzle_migrations`.
  *
- * v0.1 design: engines do NOT auto-migrate at boot (decision
- * Q4). The runbook tells the operator to run this command
- * BEFORE starting an engine. `--skip-migrate` is currently a
- * no-op (forward-compat for v0.2 auto-migrate).
+ * Since PR-X1 (phase-a follow-up) the engine ALSO auto-migrates
+ * at boot (default-on; opt-out via `OPENCOO_AUTO_MIGRATE=0`), so
+ * running this verb is now optional in the default flow. Both
+ * paths route through the SAME helper
+ * (`applyMigrationsWithLock`), which acquires a process-wide
+ * `pg_advisory_xact_lock` before invoking drizzle's migrator —
+ * that means an operator running `opencoo migrate` AT THE SAME
+ * TIME as an engine boot still serialises safely (one waits at
+ * the lock; the other becomes a no-op once the journal is up to
+ * date).
+ *
+ * The `--skip-migrate` flag's semantics are about the engine
+ * boot flag (`StartOptions.skipMigrate`), not the CLI verb;
+ * passing it to `opencoo migrate` keeps its pre-PR-X1 no-op-then-
+ * exit-ok behavior so existing scripts that pipe through the
+ * flag don't break.
  */
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate as drizzleMigrate } from "drizzle-orm/node-postgres/migrator";
 import pc from "picocolors";
+
+import {
+  applyMigrationsWithLock,
+  resolveSharedMigrationsDir,
+} from "@opencoo/shared/db";
+import { ConsoleLogger } from "@opencoo/shared/logger";
 
 import { exitOk, exitRuntimeError, isExitSentinel } from "../lib/exit.js";
 import { openPool } from "../lib/db.js";
@@ -27,34 +40,24 @@ export interface MigrateArgs {
   readonly stderr: { write: (s: string) => boolean };
 }
 
-/**
- * Resolve the migrations dir. The `@opencoo/shared` package's
- * `drizzle/` directory ships in the published artifact (per its
- * package.json `files` field). At dev time we resolve relative
- * to this module's URL; at production time the same relative
- * walk works because cli/dist sits next to shared/drizzle in
- * the workspace install.
- */
-function resolveMigrationsDir(): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  // From packages/cli/dist/commands/ → ../../shared/drizzle
-  // From packages/cli/src/commands/ → same relative walk.
-  return path.resolve(here, "..", "..", "..", "shared", "drizzle");
-}
-
 export async function runMigrate(args: MigrateArgs): Promise<void> {
   if (args.skipMigrate) {
     args.stdout.write(
-      pc.dim("migrate: --skip-migrate set; skipping (v0.1 no-op)\n"),
+      pc.dim("migrate: --skip-migrate set; skipping (no-op)\n"),
     );
     return exitOk();
   }
   const pool = openPool({ env: args.env });
   try {
-    const db = drizzle(pool);
-    const migrationsFolder = resolveMigrationsDir();
+    const migrationsFolder = resolveSharedMigrationsDir();
     args.stdout.write(`migrate: applying from ${migrationsFolder}\n`);
-    await drizzleMigrate(db, { migrationsFolder });
+    // ConsoleLogger writes JSON-per-line to stdout by default;
+    // re-route to the CLI's stderr so it doesn't intermix with
+    // the "migrate: ok" success line on stdout.
+    const logger = new ConsoleLogger({
+      stream: { write: (s: string): boolean => args.stderr.write(s) },
+    });
+    await applyMigrationsWithLock({ pool, migrationsFolder, logger });
     args.stdout.write(pc.green("migrate: ok\n"));
     return exitOk();
   } catch (err) {
