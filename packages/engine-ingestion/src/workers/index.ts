@@ -8,6 +8,11 @@
  */
 import type { ConnectionOptions, Worker } from "bullmq";
 
+import {
+  WIKI_DELETE_QUEUE_SLUG,
+  WIKI_RECOMPILE_QUEUE_SLUG,
+} from "@opencoo/shared/forget";
+
 import { startScannerWorker, type ScannerWorkerDeps } from "./scanner-worker.js";
 import { startCompileWorker, type CompileWorkerDeps } from "./compile-worker.js";
 import {
@@ -19,6 +24,13 @@ import {
   type IndexRebuildWorkerDeps,
 } from "./index-rebuild-worker.js";
 import { startCleanupWorker, type CleanupWorkerDeps } from "./cleanup-worker.js";
+import {
+  defaultRecompilePageStub,
+  startForgetConsumerWorkers,
+  type ForgetDeleteDeps,
+  type ForgetRecompileDeps,
+  type RecompilePageHook,
+} from "./forget-consumer.js";
 import { attachRunEvents } from "./sse-bridge.js";
 import type { WorkerContext } from "./context.js";
 
@@ -53,6 +65,17 @@ export {
   startCleanupWorker,
   type CleanupWorkerDeps,
 } from "./cleanup-worker.js";
+export {
+  buildForgetDeleteHandler,
+  buildForgetRecompileHandler,
+  defaultRecompilePageStub,
+  startForgetConsumerWorkers,
+  type ForgetConsumerWorkers,
+  type ForgetDeleteDeps,
+  type ForgetRecompileDeps,
+  type RecompilePageHook,
+  type RemainingCitation,
+} from "./forget-consumer.js";
 
 /** Default graceful-shutdown drain window. SIGTERM allows BullMQ
  *  to finish in-flight jobs before forcibly disconnecting Redis. */
@@ -69,6 +92,13 @@ export interface StartIngestionWorkersArgs {
    *  race against concurrent pulls. Defaults to `true` in
    *  production. */
   readonly autorun?: boolean;
+  /** PR-W6 (phase-a appendix #11 follow-up #65) — the recompile
+   *  hook the forget consumer's `wiki.recompile` worker invokes
+   *  per processed job. v0.1 production wires
+   *  `defaultRecompilePageStub(ctx.logger)` (audit-only); tests
+   *  inject a spy. When undefined `startIngestionWorkers` defaults
+   *  to the v0.1 stub. */
+  readonly recompilePageHook?: RecompilePageHook;
 }
 
 export interface IngestionWorkers {
@@ -77,6 +107,12 @@ export interface IngestionWorkers {
   readonly reviewDispatch: Worker;
   readonly indexRebuild: Worker;
   readonly cleanup: Worker;
+  /** PR-W6 — drains the `wiki.recompile` queue the route's
+   *  `forgetJobEnqueuer` produces into. */
+  readonly forgetRecompile: Worker;
+  /** PR-W6 — drains the `wiki.delete` queue the route's
+   *  `forgetJobEnqueuer` produces into. */
+  readonly forgetDelete: Worker;
   /** Drain every worker in parallel. Idempotent — subsequent
    *  calls share the in-flight close. */
   closeAll(timeoutMs?: number): Promise<void>;
@@ -185,6 +221,36 @@ export function startIngestionWorkers(
     autorun?: boolean;
   });
 
+  // PR-W6 (phase-a appendix #11 follow-up #65) — the two forget
+  // consumer workers. Drain the `wiki.recompile` + `wiki.delete`
+  // queues the admin-API source-binding-forget route enqueues into.
+  // Without these, jobs accumulate in Redis with no consumer side.
+  const recompileDeps: ForgetRecompileDeps = {
+    db: ctx.db,
+    logger: ctx.logger,
+    recompilePage: args.recompilePageHook ?? defaultRecompilePageStub(ctx.logger),
+    // PR-W6 follow-up #2 — the recompile worker may fall through to
+    // an inline delete when a concurrent forget races between plan +
+    // consume and leaves the page with zero remaining citations
+    // (no companion `delete_page` job exists for THIS forget). It
+    // uses the same wikiDeps + author the delete handler uses so
+    // the wikiWrite shape is identical.
+    wikiDeps: ctx.wikiDeps,
+    author: ctx.author,
+  };
+  const deleteDeps: ForgetDeleteDeps = {
+    db: ctx.db,
+    logger: ctx.logger,
+    wikiDeps: ctx.wikiDeps,
+    author: ctx.author,
+  };
+  const forgetWorkers = startForgetConsumerWorkers({
+    recompileDeps,
+    deleteDeps,
+    connection,
+    ...autorunOpt,
+  });
+
   // Wire SSE run-event emission on every worker. Listener-based
   // (not inside the handler) so emission survives uncaught throws
   // — same pattern as bindOutputDlq in sse-bus.ts.
@@ -194,6 +260,8 @@ export function startIngestionWorkers(
     [reviewDispatch, "ingestion.review.dispatch"],
     [indexRebuild, "ingestion.index-rebuild"],
     [cleanup, "ingestion.cleanup"],
+    [forgetWorkers.recompile, WIKI_RECOMPILE_QUEUE_SLUG],
+    [forgetWorkers.delete, WIKI_DELETE_QUEUE_SLUG],
   ];
   for (const [worker, slug] of allWorkers) {
     attachRunEvents(worker, slug, ctx.sseBus);
@@ -206,6 +274,8 @@ export function startIngestionWorkers(
     reviewDispatch,
     indexRebuild,
     cleanup,
+    forgetRecompile: forgetWorkers.recompile,
+    forgetDelete: forgetWorkers.delete,
     closeAll(timeoutMs = DEFAULT_CLOSE_TIMEOUT_MS): Promise<void> {
       if (closing !== undefined) return closing;
       const closes = allWorkers.map(([worker]) =>

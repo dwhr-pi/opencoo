@@ -295,10 +295,31 @@ export async function composeProductionFromEnv(
   // `ingestion.scanner` / `ingestion.intake.dlq`. The
   // `forgetQueueFactory` test seam lets unit tests substitute a
   // stub returning a spy queue instead of opening real BullMQ.
+  //
+  // PR-W6 follow-up — wire `defaultJobOptions` so a transport blip
+  // retries with exponential backoff before landing in the failed
+  // set (acts as DLQ at the attempts cap). The forget operation is
+  // safely re-runnable: delete-page is idempotent (the worker's
+  // existence probe + warn-and-continue branch handles a prior
+  // partial commit), recompile-stub is log-only, and a cap-exceeded
+  // throw is an INTENDED retry trigger (the daily window resets at
+  // midnight UTC and the next retry succeeds). `removeOnComplete`
+  // caps history so the queue doesn't grow unbounded under steady
+  // forget volume; `removeOnFail` keeps the larger tail for operator
+  // inspection of permanent failures (malformed payloads, schema
+  // drift). Mirrors the worker docstring at forget-consumer.ts:64.
   const forgetQueueFactory =
     args.forgetQueueFactory ??
     ((name, connection): ForgetJobQueue & { close?(): Promise<void> } =>
-      new Queue<ForgetJobPayload>(name, { connection }));
+      new Queue<ForgetJobPayload>(name, {
+        connection,
+        defaultJobOptions: {
+          attempts: 5,
+          backoff: { type: "exponential", delay: 30_000 },
+          removeOnComplete: { count: 100 },
+          removeOnFail: { count: 1000 },
+        },
+      }));
   const makeForgetQueue = (
     slug: string,
   ): ForgetJobQueue & { close?(): Promise<void> } =>

@@ -255,7 +255,7 @@ describe("buildCompilationHandler", () => {
 });
 
 describe("startIngestionWorkers", () => {
-  it("returns a typed handle exposing all five workers + closeAll", async () => {
+  it("returns a typed handle exposing every worker (5 ingestion + 2 forget consumers) + closeAll", async () => {
     const fixture = await freshPipelineDb();
     const wikiAdapter = new InMemoryWikiAdapter();
     const redis = new IORedisMock();
@@ -274,6 +274,13 @@ describe("startIngestionWorkers", () => {
     expect(handle.reviewDispatch.name).toBe("ingestion.review.dispatch");
     expect(handle.indexRebuild.name).toBe("ingestion.index-rebuild");
     expect(handle.cleanup.name).toBe("ingestion.cleanup");
+    // PR-W6 (phase-a appendix #11 follow-up #65): the two forget
+    // consumer workers bind to the multi-dot queue slugs the route's
+    // `forgetJobEnqueuer` produces into. Drift between these names
+    // and the slugs in `@opencoo/shared/forget` would silently park
+    // jobs forever — the test pins the wire.
+    expect(handle.forgetRecompile.name).toBe("wiki.recompile");
+    expect(handle.forgetDelete.name).toBe("wiki.delete");
 
     await expect(handle.closeAll()).resolves.toBeUndefined();
 
@@ -298,6 +305,8 @@ describe("startIngestionWorkers", () => {
       vi.spyOn(handle.reviewDispatch, "close"),
       vi.spyOn(handle.indexRebuild, "close"),
       vi.spyOn(handle.cleanup, "close"),
+      vi.spyOn(handle.forgetRecompile, "close"),
+      vi.spyOn(handle.forgetDelete, "close"),
     ];
 
     await handle.closeAll();
