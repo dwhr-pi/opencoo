@@ -1,0 +1,99 @@
+# opencoo .dockerignore — engine image (PR-X2, phase-a follow-up).
+#
+# Inclusion-by-exclusion approach: we exclude everything that the build
+# stages don't need or that absolutely must not ship in a published image
+# (secrets, partner-private docs, .git history, test fixtures).
+#
+# Belt-and-braces against .gitignore: docker build uses THIS file, not
+# .gitignore. A file gitignored from the public repo (architecture.md,
+# docs/local/) is still on disk in the maintainer's worktree and would
+# be tar-streamed into the build context unless this file blocks it.
+
+# --- Version control + IDE + tooling state ---
+.git
+.gitattributes
+.github
+.husky
+.claude
+.agents
+.vscode
+.idea
+.DS_Store
+
+# --- Build outputs + dependency state (re-built inside the image) ---
+node_modules
+**/node_modules
+dist
+**/dist
+build
+**/build
+**/.turbo
+**/.tsbuildinfo
+**/.tsbuildinfo.tsbuildinfo
+**/coverage
+**/.vitest
+
+# --- Tests + fixtures (build stage runs `pnpm build`, not `pnpm test`;
+#     fixtures inflate the build context for zero runtime value) ---
+tests
+**/__fixtures__
+**/__snapshots__
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/playwright.config.ts
+**/playwright-report
+**/test-results
+**/vitest.config.ts
+vitest.config.ts
+vitest.injection.config.ts
+vitest.e2e.config.ts
+vitest.live-pilot.config.ts
+
+# --- Local dev compose + env (image runtime ships its own envs) ---
+compose.yml
+compose.e2e.yml
+.env
+.env.*
+!.env.example
+
+# --- Internal / partner-private docs (CLAUDE.md "Do not publish ...
+#     filenames from docs/local/ in any public artifact") ---
+architecture.md
+DECISIONS.md
+docs/local
+docs/plan-appendix
+docs/pilot-runbook.md
+
+# --- Public spec / planning docs (no value at runtime; if devops needs
+#     a doc baked into the image, the image is the wrong place — link
+#     to the GitHub repo) ---
+THREAT-MODEL.md
+PRD.md
+IMPLEMENTATION-PLAN.md
+CHANGES-v0.1.md
+CONVENTIONS.md
+CLAUDE.md
+README.md
+LICENSE.md
+docs/ARCHITECTURE.md
+docs/decisions-resolved.md
+docs/threat-model-signoff-*.md
+
+# --- Design system (only ships in the UI dist, which the build stage
+#     writes into packages/engine-self-operating/dist/ui already) ---
+design_system
+diagrams
+
+# --- Misc artifacts ---
+*.log
+*.tmp
+*.bak
+.npmrc.local
+**/Dockerfile
+**/docker-compose.yml
+**/.dockerignore
+deploy
+scripts/regen-injection-fixtures.ts
+skills-lock.json

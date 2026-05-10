@@ -47,14 +47,43 @@ Optional:
 
 The required `_URL`-style vars and `ENCRYPTION_KEY` accept a `_FILE` suffix variant (Docker secrets pattern) — namely `DATABASE_URL_FILE`, `REDIS_URL_FILE`, `GITEA_URL_FILE`, `GITEA_PAT_FILE`, `ENCRYPTION_KEY_FILE`, `SESSION_HMAC_KEY_FILE`, `GITEA_BASE_URL_FILE`, `OPENCOO_ADMIN_PAT_FILE`, `MCP_BEARER_TOKEN_FILE`, `MCP_BASE_URL_FILE`, `N8N_MCP_BEARER_TOKEN_FILE`, `N8N_MCP_BASE_URL_FILE`. `_FILE` wins when both are set; the loader at `packages/shared/src/engine-scaffold/config.ts:53-67` reads the file and trims a single trailing newline. Variables that are NOT URLs or secrets — `PORT`, `NODE_ENV`, `LOG_LEVEL`, `LLM_DEBUG_LOG`, `TELEMETRY_ENDPOINT`, and per-provider keys like `OPENROUTER_API_KEY` — do NOT have a `_FILE` form (they're never read through `readWithFile`).
 
-## 2. First-boot sequence
+## 2. First-boot sequence (partner deployment — GHCR images)
 
-Run from the repo root, with the env above present in `.env` or the shell:
+Per PR-X2 (phase-a follow-up), partner deployments pull tagged images from GitHub Container Registry instead of building from source. The `deploy/compose.partner.yml` template wires the engine + the gitea-wiki-mcp-server + co-managed Postgres + Redis. Gitea is partner-owned per §1 (substrate-is-yours rule) and is NOT included in this stack.
+
+```
+cd deploy
+cp .env.example .env                                          # populate the required vars (see §1)
+docker compose -f compose.partner.yml pull                    # pull ghcr.io/czlonkowski/opencoo:<tag> + the mcp-server image
+docker compose -f compose.partner.yml up -d                   # start postgres → redis → mcp-server → opencoo
+docker compose -f compose.partner.yml logs -f opencoo         # tail engine boot
+```
+
+Image source: `ghcr.io/czlonkowski/opencoo:${OPENCOO_TAG:-0.1.0-a}` (engine) and `ghcr.io/czlonkowski/opencoo-gitea-wiki-mcp-server:${OPENCOO_TAG:-0.1.0-a}` (MCP server). Pin a specific release with `OPENCOO_TAG=0.1.0-a.N` in `.env`. The compose stack publishes only the engine on the host (default `${OPENCOO_PORT:-8080}`); Postgres + Redis + the MCP server stay on the internal `backend` Docker network and are not reachable from outside the stack.
+
+Per-step notes:
+
+- **Schema migrations apply automatically on first boot** (PR-X1). The engine acquires a `pg_advisory_xact_lock` keyed on `hashtext('opencoo.auto_migrate')::bigint` and runs the Drizzle migrator before Fastify binds the listener. To revert to the legacy manual flow, set `OPENCOO_AUTO_MIGRATE=0` in `.env` and run `docker compose -f compose.partner.yml run --rm opencoo opencoo migrate` after every image pull. Concurrent migrators serialise safely (one waits at the lock, the other becomes a no-op).
+- **Healthcheck endpoint** is `GET /health` on `${OPENCOO_PORT}` (always-200, no probes); the deeper Postgres + Redis + Gitea probe is `GET /ready`. Docker's internal HEALTHCHECK uses `/health`; reverse-proxy readiness gates should poll `/ready`.
+- **Boot signal**: `docker compose -f compose.partner.yml ps opencoo` showing `Status: Up (healthy)` is the green light. Equivalent to the from-source `opencoo: starting...` → `opencoo: started` log lines, which still appear in `docker compose logs opencoo` for diagnostics.
+- **Composition fall-back to `mode: 'probes-only'`** still applies inside the container: missing `GITEA_PAT` or `ENCRYPTION_KEY` means the management UI stays up but the webhook receiver is unavailable until the env is fixed and the stack restarted (`docker compose -f compose.partner.yml restart opencoo`). The stderr line in the engine log names the missing ingredient.
+- **Bootstrap admin verbs** (`opencoo setup`, `opencoo agents seed`, `opencoo doctor`, `opencoo agents fire`) run through `docker compose -f compose.partner.yml run --rm opencoo <verb> [args]`. Each verb spawns a one-shot container against the same Postgres + Redis + Gitea so behavior matches the long-running engine. Example:
+  ```
+  docker compose -f compose.partner.yml run --rm opencoo opencoo agents seed --domain wiki-pilot
+  docker compose -f compose.partner.yml run --rm opencoo opencoo doctor
+  docker compose -f compose.partner.yml run --rm opencoo opencoo agents fire heartbeat --dry-run
+  ```
+  `opencoo setup` is the exception — it writes a host `.env` that the from-source flow uses, but a partner deployment edits `deploy/.env` directly.
+- **Image-pull discipline**: re-running `docker compose -f compose.partner.yml pull` is a safe no-op when the registry has no newer tag for the pinned `OPENCOO_TAG`. To upgrade, edit `OPENCOO_TAG` in `.env`, then `docker compose -f compose.partner.yml pull && up -d` — see §11.2.
+
+### 2.5. Bootstrap from source (contributors only)
+
+Maintainers and contributors who build opencoo from a checked-out git tree (rather than pulling images) follow this flow. NOT recommended for partner deployments — production should pull tagged images per §2.
 
 ```
 pnpm install
 pnpm build
-opencoo migrate                                  # apply Drizzle migrations to the Postgres DSN
+opencoo migrate                                  # apply Drizzle migrations to the Postgres DSN (optional after PR-X1; auto-applied on engine boot when OPENCOO_AUTO_MIGRATE != "0")
 opencoo setup                                    # interactive: writes .env at mode 0600 if missing
 opencoo agents seed --domain wiki-pilot          # idempotent INSERT of default Heartbeat/Lint/Surfacer rows scoped to <slug>; omit --domain when only one domain exists (auto-pick)
 opencoo agents fire heartbeat --dry-run          # verifies the heartbeat runner is registered (dry-run reports the requested slug only)
@@ -342,13 +371,27 @@ PR-X1 (phase-a follow-up) lifted the v0.1 deferral: `engine-self-operating`'s `s
 
 Skipping the migrate when one is needed reproduces the symptom Chrome QA hit on 2026-05-09: R1 (appendix #10) added `domains.disabled_at` in migration `0011_domains_disabled_at`; if the migration is not applied, the Domains tab returns 500 because the SELECT references a column that doesn't exist yet. With auto-migrate-on-boot the engine refuses to bind the listener until migrations succeed — start() throws and the supervisor restarts the process. With `OPENCOO_AUTO_MIGRATE=0` set, you re-acquire the responsibility to run `opencoo migrate` after every `git pull` BEFORE starting the engine; nothing else has changed in that legacy flow.
 
-### 11.2 UI bundle rebuild
+### 11.2 Image pull (partner deployments)
 
-> **REQUIRED after every `git pull` of UI changes**: run `pnpm build` then restart `pnpm opencoo` so the static UI dist is in sync.
+> **Image-pull upgrade for partner deployments** (PR-X2): the UI dist ships baked into the engine image, so a tag bump pulls the new SPA atomically with the engine binary. No separate `pnpm build` step.
+
+```
+cd deploy
+docker compose -f compose.partner.yml pull
+docker compose -f compose.partner.yml up -d
+```
+
+`up -d` is a no-op for services whose image SHA didn't change; only the engine + mcp-server containers cycle. Pin a specific release by editing `OPENCOO_TAG` in `.env` before the pull (e.g. `OPENCOO_TAG=0.1.0-a.2`).
+
+**Image-pull discipline:** the engine's auto-migrate path (PR-X1) covers schema drift on the new tag automatically. If the new tag carries a migration that takes longer than the HEALTHCHECK `--start-period` (15s), the container reports `unhealthy` briefly; it recovers as soon as the migrator commits and the listener binds. Watch `docker compose -f compose.partner.yml logs -f opencoo` for the `migrate.applied` line.
+
+### 11.2.5 UI bundle rebuild (contributors only)
+
+> **REQUIRED after every `git pull` of UI changes** when running from source per §2.5: run `pnpm build` then restart `pnpm opencoo` so the static UI dist is in sync.
 
 Symptom of skipping this: the SPA shell loads (paper-colored screen, the engine serves the OLD `index.html` from memory whose `<head>` still references the previous asset hash) but `#root` stays empty because the bundled JS file at the old hash is now 404. Browser devtools network tab will show the JS request returning 404 from Fastify's static handler.
 
-The engine reads `UI_DIST_PATH` from `.env` (defaults to the local repo path). After a fresh `pnpm build`, the `index.html` in that directory points at the new asset hash, but a long-running engine process holds the OLD HTML in memory. Restart picks up the fresh dist. Surfaced by Chrome QA on 2026-05-09 during wave-10 closeout.
+The engine reads `UI_DIST_PATH` from `.env` (defaults to the local repo path). After a fresh `pnpm build`, the `index.html` in that directory points at the new asset hash, but a long-running engine process holds the OLD HTML in memory. Restart picks up the fresh dist. Surfaced by Chrome QA on 2026-05-09 during wave-10 closeout. Partner deployments are not affected — the image-pull flow in §11.2 supersedes this.
 
 ## 12. Residual advisories (wave-10 / wave-11 follow-ups)
 

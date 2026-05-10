@@ -1,0 +1,213 @@
+# opencoo — partner deployment template (PR-X2, phase-a follow-up).
+#
+# This compose file pulls the engine + the gitea-wiki-mcp-server from
+# ghcr.io/czlonkowski. Postgres + Redis are co-managed by this stack.
+# Gitea is partner-owned per pilot-runbook.md §1 — opencoo does NOT
+# ship its own Gitea ("substrate-is-yours" rule).
+#
+# Quickstart:
+#   cd deploy
+#   cp .env.example .env       # then populate the required vars
+#   docker compose -f compose.partner.yml pull
+#   docker compose -f compose.partner.yml up -d
+#   docker compose -f compose.partner.yml logs -f opencoo
+#
+# Pin a specific release: set OPENCOO_TAG=0.1.0-a.N in .env.
+#
+# Image-pin policy (PR-X2 deferral): postgres:16-alpine + redis:7-alpine
+# are tag-pinned today. Pin by digest in steady-state production:
+#
+#   docker pull postgres:16-alpine
+#   docker inspect --format='{{index .RepoDigests 0}}' postgres:16-alpine
+#   # → use `image: postgres@sha256:...` here, replacing the tag
+#
+# Same procedure for redis:7-alpine. Re-pin when a new minor lands and
+# the operator has tested it. Engine + MCP-server tags are operator-
+# controlled via OPENCOO_TAG, so digest-pinning them is unnecessary
+# (the tag is already specific).
+
+name: opencoo
+
+services:
+  opencoo:
+    # Engine. Bare CLI = `opencoo` boot verb (engine-self-operating +
+    # engine-ingestion in one process). Auto-applies pending Drizzle
+    # migrations on boot per PR-X1 (set OPENCOO_AUTO_MIGRATE=0 to opt
+    # out and run `docker compose run --rm opencoo opencoo migrate`
+    # manually).
+    image: ghcr.io/czlonkowski/opencoo:${OPENCOO_TAG:-0.1.0-a}
+    restart: unless-stopped
+    ports:
+      # Only the engine is reachable from the host — Postgres / Redis
+      # / mcp-server stay on the internal `backend` network.
+      - "${OPENCOO_PORT:-8080}:8080"
+    environment:
+      # Required, plain-string env (a partner deployment that hits the
+      # _FILE secrets path overrides via the `secrets:` block below).
+      DATABASE_URL: postgres://opencoo:${POSTGRES_PASSWORD}@postgres:5432/opencoo
+      REDIS_URL: redis://redis:6379
+      GITEA_URL: ${GITEA_URL}
+      GITEA_PAT: ${GITEA_PAT}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      # Admin-API session config (required when ADMIN_TEAM_SLUG is set
+      # — otherwise the engine boots in static-UI-only mode).
+      ADMIN_TEAM_SLUG: ${ADMIN_TEAM_SLUG}
+      SESSION_HMAC_KEY: ${SESSION_HMAC_KEY}
+      GITEA_BASE_URL: ${GITEA_BASE_URL:-${GITEA_URL}}
+      GITEA_PROVISION_ORG: ${GITEA_PROVISION_ORG:-opencoo}
+      # MCP wiring — bearer must match the value the gitea-wiki-mcp
+      # service runs with.
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
+      MCP_BASE_URL: http://gitea-wiki-mcp-server:3000/mcp
+      # Optional provider keys — set when a domain's LLM policy points
+      # at the provider. Per-provider keys are NOT feature config (see
+      # CLAUDE.md "UI-first configuration"); they're standard provider
+      # credentials, lazily read by the dispatcher only when the
+      # provider is actually selected.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      # Operational knobs.
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      OPENCOO_AUTO_MIGRATE: ${OPENCOO_AUTO_MIGRATE:-1}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      gitea-wiki-mcp-server:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+    # Resource limits — note Compose vs. Swarm semantics:
+    # `mem_limit:` / `cpus:` / `mem_reservation:` below are the
+    # Compose-native keys honored by `docker compose up`.
+    # The `deploy.resources.*` keys further down are honored ONLY by
+    # Swarm or `docker compose --compatibility up` — kept for operators
+    # who run that path. `reservations.cpus` has no Compose equivalent
+    # and applies under --compatibility / Swarm only.
+    mem_limit: 1024m
+    mem_reservation: 256m
+    cpus: 1.0
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  gitea-wiki-mcp-server:
+    # MCP server bridging Gitea wikis to LLM agents. Talks to the
+    # operator's existing Gitea (per the substrate-is-yours rule) so
+    # it needs outbound network — `frontend`. The engine reaches it
+    # internally via the `backend` network on port 3000.
+    image: ghcr.io/czlonkowski/opencoo-gitea-wiki-mcp-server:${OPENCOO_TAG:-0.1.0-a}
+    restart: unless-stopped
+    environment:
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN}
+      GITEA_BASE_URL: ${GITEA_BASE_URL:-${GITEA_URL}}
+      GITEA_PAT: ${GITEA_PAT}
+      MCP_MODE: http
+      HOST: 0.0.0.0
+      PORT: "3000"
+      NODE_ENV: production
+    volumes:
+      # Local clone + index cache. Volume preserves git state across
+      # container restarts so a /refresh doesn't re-clone every wiki.
+      - mcp_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    networks:
+      # `frontend` provides outbound to the partner's Gitea (which may
+      # be on the public internet); `backend` exposes the MCP service
+      # to the engine. Without `frontend` the git clone/pull would
+      # fail closed — see backend.internal: true note below.
+      - frontend
+      - backend
+    # See note on opencoo service above for Compose-vs-Swarm semantics.
+    mem_limit: 256m
+    cpus: 0.5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: opencoo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: opencoo
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opencoo -d opencoo"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+    # See note on opencoo service above for Compose-vs-Swarm semantics.
+    mem_limit: 512m
+    cpus: 1.0
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+      retries: 5
+    # See note on opencoo service above for Compose-vs-Swarm semantics.
+    mem_limit: 256m
+    cpus: 0.5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    # `internal: true` blocks containers on this network from reaching
+    # the outside world. Postgres + Redis legitimately have no
+    # outbound need. The engine + mcp-server are on BOTH networks so
+    # their outbound traffic (LLM provider calls, Gitea pulls) takes
+    # the `frontend` route while their cross-service chatter
+    # (engine→postgres, engine→redis, engine→mcp-server) stays on
+    # `backend`. If the engine ever needs to reach a service that
+    # lives ONLY on `backend`, that's fine — bridge routing picks
+    # the matching network.
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  mcp_data:
