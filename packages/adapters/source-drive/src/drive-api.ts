@@ -60,10 +60,60 @@ export interface DriveExportArgs {
   readonly mimeType: string;
 }
 
+/**
+ * Args for the per-folder `listFiles` call backing Drive's
+ * `seed()` primitive (PR-Z2). One call returns one page of
+ * direct children of `folderId`; the caller continues
+ * paginating via `pageToken` and recurses into subfolder
+ * entries it discovers. Drive's `q` parameter has no
+ * "descendants of" operator, so the recursion is engine-side.
+ */
+export interface DriveListFilesArgs {
+  /** Folder whose DIRECT children we want this page of. */
+  readonly folderId: string;
+  /** Optional pagination token from a previous response;
+   *  omit / undefined on the first page. */
+  readonly pageToken?: string;
+}
+
+/**
+ * One entry returned by `listFiles`. The seed walker keys off
+ * `mimeType === application/vnd.google-apps.folder` to recurse.
+ */
+export interface DriveFileEntry {
+  readonly fileId: string;
+  readonly mimeType: string;
+  /** `modifiedTime` — used as `sourceRevision` so the same
+   *  file landing through a subsequent change-feed scan with
+   *  an unchanged `modifiedTime` is intake-dedupe no-op. */
+  readonly modifiedTime: string;
+}
+
+export interface DriveListFilesResult {
+  readonly files: readonly DriveFileEntry[];
+  readonly nextPageToken: string | null;
+}
+
 export interface DriveLikeApi {
   /** First-scan bootstrap — returns the cursor token to use
-   *  on the very first `listChanges` call. */
+   *  on the very first `listChanges` call. Also captured at
+   *  seed-START to hand off to subsequent `scan()` calls. */
   getStartPageToken(): Promise<string>;
   listChanges(args: DriveListChangesArgs): Promise<DriveListChangesResult>;
   exportAsBytes(args: DriveExportArgs): Promise<Buffer>;
+  /**
+   * List direct children of `folderId` (PR-Z2). Drive's `q`
+   * parameter has no "descendants of" operator — the seed
+   * walker recurses into folder-typed entries itself. The
+   * production client passes
+   * `q: "'<folderId>' in parents and trashed=false"` +
+   * `supportsAllDrives + includeItemsFromAllDrives + corpora`
+   * for shared-drive parity with `listChanges`.
+   *
+   * Optional on the interface so existing test mocks (the
+   * scan-focused `makeMockDrive`) don't need a body change to
+   * compile. The Drive `seed()` implementation throws a clear
+   * error if `listFiles` is absent on the injected client.
+   */
+  listFiles?(args: DriveListFilesArgs): Promise<DriveListFilesResult>;
 }

@@ -75,9 +75,12 @@ import { JWT } from "google-auth-library";
 import type {
   DriveChangeEntry,
   DriveExportArgs,
+  DriveFileEntry,
   DriveLikeApi,
   DriveListChangesArgs,
   DriveListChangesResult,
+  DriveListFilesArgs,
+  DriveListFilesResult,
 } from "./drive-api.js";
 
 /**
@@ -289,6 +292,55 @@ export function createGoogleDriveApi(
         { responseType: "arraybuffer" },
       );
       return arrayBufferDataToBuffer(response.data);
+    },
+
+    async listFiles(args: DriveListFilesArgs): Promise<DriveListFilesResult> {
+      // PR-Z2 — direct children of `folderId`. Drive's `q`
+      // operator has no "descendants of"; recursion is handled
+      // by the seed walker in `seed.ts`. We DO NOT filter by
+      // mime type here — the seed walker needs to see folders
+      // (the recursion targets) AND files; mime-type filtering
+      // is applied after the children come back, mirroring the
+      // C1 strict include-test in `listChanges`.
+      //
+      // Shared-drive support: same shape as `listChanges` —
+      // `supportsAllDrives + includeItemsFromAllDrives` opt the
+      // call into shared drives without needing to know the
+      // drive type. `corpora: 'allDrives'` is required when
+      // walking files across a shared drive without restricting
+      // by `driveId` (Google's documented pattern for
+      // "I don't know which drive type the user has").
+      const response = await drive.files.list({
+        q: `'${args.folderId}' in parents and trashed = false`,
+        pageSize: DEFAULT_PAGE_SIZE,
+        fields: "nextPageToken,files(id,mimeType,modifiedTime)",
+        // Explicit page token on every call. Drive's SDK
+        // tolerates `undefined` (treats it as "first page"),
+        // but being explicit keeps the call shape symmetric
+        // with `listChanges`.
+        ...(args.pageToken !== undefined ? { pageToken: args.pageToken } : {}),
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+        corpora: "allDrives",
+      });
+      const data = response.data;
+      const rawFiles = data.files ?? [];
+      const files: DriveFileEntry[] = [];
+      for (const f of rawFiles) {
+        const id = f.id;
+        const mimeType = f.mimeType;
+        if (typeof id !== "string" || id.length === 0) continue;
+        if (typeof mimeType !== "string" || mimeType.length === 0) continue;
+        files.push({
+          fileId: id,
+          mimeType,
+          modifiedTime: typeof f.modifiedTime === "string" ? f.modifiedTime : "",
+        });
+      }
+      return {
+        files,
+        nextPageToken: typeof data.nextPageToken === "string" ? data.nextPageToken : null,
+      };
     },
   };
 }

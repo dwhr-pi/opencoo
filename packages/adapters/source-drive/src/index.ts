@@ -16,10 +16,26 @@ export {
 export {
   type DriveChangeEntry,
   type DriveExportArgs,
+  type DriveFileEntry,
   type DriveLikeApi,
   type DriveListChangesArgs,
   type DriveListChangesResult,
+  type DriveListFilesArgs,
+  type DriveListFilesResult,
 } from "./drive-api.js";
+
+/**
+ * `seed()` primitive helpers (PR-Z2). The adapter wires
+ * `runDriveSeed` into the returned `SourceAdapter.seed`
+ * automatically; this export lets the engine-ingestion
+ * scanner-seed integration test exercise the walker in
+ * isolation.
+ */
+export {
+  partitionSeedListing,
+  runDriveSeed,
+  type RunDriveSeedArgs,
+} from "./seed.js";
 
 export {
   DRIVE_ADAPTER_SLUG,

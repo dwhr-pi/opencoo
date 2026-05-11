@@ -19,10 +19,17 @@
 import type {
   DriveChangeEntry,
   DriveExportArgs,
+  DriveFileEntry,
   DriveLikeApi,
   DriveListChangesArgs,
   DriveListChangesResult,
+  DriveListFilesArgs,
+  DriveListFilesResult,
 } from "../drive-api.js";
+
+/** Drive folder mime — used by `listFiles` to surface
+ *  subfolders to the seed walker. */
+const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 export interface MockFile {
   readonly fileId: string;
@@ -42,8 +49,19 @@ export interface MockFile {
   changeIndex: number;
 }
 
+/** A subfolder modeled in the simulator. The seed walker
+ *  recurses into folder-typed `listFiles` entries; this is
+ *  the shape the mock surfaces them with. PR-Z2 only. */
+export interface MockFolder {
+  readonly folderId: string;
+  readonly parentId: string;
+}
+
 export interface MockDriveState {
   readonly files: Map<string, MockFile>;
+  /** Subfolder index for the seed walker. Optional so existing
+   *  scan-focused fixtures don't need to touch it. */
+  readonly folders?: Map<string, MockFolder>;
   changeCounter: number;
 }
 
@@ -101,6 +119,36 @@ export function makeMockDrive(
         }
         return file.bytes;
       },
+      async listFiles(args: DriveListFilesArgs): Promise<DriveListFilesResult> {
+        // PR-Z2 — return direct children of `args.folderId`.
+        // The mock supports both file-typed and folder-typed
+        // entries; folders are surfaced via `MockFolder` rows
+        // attached to the state. Pagination is intentionally
+        // skipped (the seed walker exercises pagination
+        // through a separately-injected test mock when it
+        // needs that path; the realistic in-memory fixture
+        // would otherwise need a synthetic page-size knob).
+        const entries: DriveFileEntry[] = [];
+        const folders = options.state.folders ?? new Map();
+        for (const f of options.state.files.values()) {
+          if (f.removed) continue;
+          if (f.folderId !== args.folderId) continue;
+          entries.push({
+            fileId: f.fileId,
+            mimeType: f.mimeType,
+            modifiedTime: f.revision,
+          });
+        }
+        for (const folder of folders.values()) {
+          if (folder.parentId !== args.folderId) continue;
+          entries.push({
+            fileId: folder.folderId,
+            mimeType: FOLDER_MIME,
+            modifiedTime: "",
+          });
+        }
+        return { files: entries, nextPageToken: null };
+      },
     };
   };
 }
@@ -124,11 +172,16 @@ export interface MockDriveSimulator {
     newBytes: Buffer,
   ): void;
   removeFile(fileId: string): void;
+  /** PR-Z2: add a subfolder so the seed walker recurses into
+   *  it. `parentId` ties it to the binding folder OR to
+   *  another simulator-known folder. */
+  addFolder(folder: { readonly folderId: string; readonly parentId: string }): void;
 }
 
 export function createMockDriveSimulator(): MockDriveSimulator {
   const state: MockDriveState = {
     files: new Map(),
+    folders: new Map(),
     changeCounter: 0,
   };
   return {
@@ -163,6 +216,12 @@ export function createMockDriveSimulator(): MockDriveSimulator {
       state.changeCounter += 1;
       file.removed = true;
       file.changeIndex = state.changeCounter;
+    },
+    addFolder(folder): void {
+      state.folders!.set(folder.folderId, {
+        folderId: folder.folderId,
+        parentId: folder.parentId,
+      });
     },
   };
 }

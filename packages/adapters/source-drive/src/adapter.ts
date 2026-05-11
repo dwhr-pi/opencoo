@@ -29,10 +29,13 @@ import type {
   SourceChangedDocument,
   SourceScanArgs,
   SourceScanResult,
+  SourceSeedArgs,
+  SourceSeedResult,
 } from "@opencoo/shared/source-adapter";
 
 import { driveBindingConfigSchema } from "./binding-config.js";
 import type { DriveLikeApi } from "./drive-api.js";
+import { runDriveSeed } from "./seed.js";
 
 /** Per-adapter-instance content size ceiling. Matches the
  *  SourceAdapter contract assertion 7 + the Compilation
@@ -122,6 +125,20 @@ export function createGoogleDriveAdapter(
         documents,
         nextCursor: result.nextPageToken,
       };
+    },
+    async seed(seedArgs: SourceSeedArgs): Promise<SourceSeedResult> {
+      // Resolve the refresh token at seed time so a rotated
+      // credential picks up on the next seed without an engine
+      // restart — same pattern as scan().
+      const record = await args.credentialStore.read(args.credentialId);
+      const drive = args.makeDrive(record.plaintext);
+      return runDriveSeed({
+        seedArgs,
+        drive,
+        folderId: config.folderId,
+        mimeTypes: config.mimeTypes,
+        now,
+      });
     },
   };
 }

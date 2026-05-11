@@ -53,6 +53,8 @@ import type {
   SourceChangedDocument,
   SourceScanArgs,
   SourceScanResult,
+  SourceSeedArgs,
+  SourceSeedResult,
   SourceWebhookEvent,
   SourceWebhookHelpers,
 } from "@opencoo/shared/source-adapter";
@@ -69,6 +71,7 @@ import { deriveEventType } from "./derive-event-type.js";
 import type { AsanaClient, ProjectSnapshot } from "./asana-client.js";
 import type { LightSummaryRouter } from "./light-summary.js";
 import { summarizeAsanaEvent } from "./light-summary.js";
+import { runAsanaSeed } from "./seed.js";
 
 export const ASANA_ADAPTER_SLUG = "asana" as const;
 
@@ -763,9 +766,121 @@ export function createAsanaSourceAdapter(
   // is respected end-to-end. For now the injected client pattern is the
   // only wiring path and the comment above covers the contract.
 
+  /**
+   * Lazy resolver for the AsanaClient at the FACTORY scope —
+   * separate from the per-helper resolver inside
+   * `buildAsanaWebhookHelpers` so seed() doesn't have to
+   * route through the webhook helpers' enrichEvents resolver
+   * (which would conflate two distinct "first call" timings).
+   * Resolution precedence: explicit `asanaClient` wins;
+   * otherwise `makeAsanaClient` is invoked once and cached.
+   * Returns undefined when neither is provided — seed() then
+   * throws cleanly so the operator sees the misconfig.
+   *
+   * PR-Z2.
+   */
+  let seedCachedClient: AsanaClient | undefined = args.asanaClient;
+  // The factory-invoked flag means "the factory has been called
+  // SUCCESSFULLY". When `args.asanaClient` is injected at
+  // construction we treat that as an already-resolved (cached)
+  // outcome — `seedCachedClient` is set, so resolveSeedClient
+  // short-circuits before consulting the flag.
+  //
+  // PR-Z2 Copilot triage: previously the flag was flipped to
+  // `true` BEFORE invoking `makeAsanaClient()`. A transient
+  // factory failure (e.g. a credential reload that races a
+  // network blip) would set the flag, leave the cached client
+  // undefined, and lock subsequent seed attempts out of the
+  // factory forever. We now flip the flag only on the success
+  // path so transient failures can retry on the next tick.
+  let seedFactoryInvoked = false;
+  function resolveSeedClient(): AsanaClient | undefined {
+    if (seedCachedClient !== undefined) return seedCachedClient;
+    if (seedFactoryInvoked) return undefined;
+    if (args.makeAsanaClient !== undefined) {
+      try {
+        seedCachedClient = args.makeAsanaClient();
+        // Only mark the factory invoked AFTER it returned a
+        // client successfully. A throw must remain retryable so
+        // the next scanner tick (cursor-not-advanced → re-seed)
+        // gets another shot. Without this, a single transient
+        // network blip during makeAsanaClient permanently locks
+        // a binding out of seeding.
+        seedFactoryInvoked = true;
+      } catch (err) {
+        seedCachedClient = undefined;
+        // Same fail-open pattern enrichEvents uses (PR-Q8
+        // Copilot triage). A broken `makeAsanaClient` closure
+        // must not propagate out of seed() because the
+        // scanner's at-least-once retry already handles
+        // transient client-construction failures via the
+        // cursor-not-advanced path.
+        console.warn("source-asana: seed() makeAsanaClient threw; seed will skip", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return seedCachedClient;
+    }
+    return undefined;
+  }
+
+  /**
+   * Seed primitive — backfill existing tasks in the bound
+   * project(s) at binding-create / first-tick. Uses
+   * `monitoredProjectGids` when configured, else the binding's
+   * primary `projectGid`. Cursor handoff is the
+   * `asana-seeded:<ISO>` sentinel produced by `runAsanaSeed()`
+   * — Asana is webhook-driven for incremental and has no
+   * resumable cursor in the REST API, but a non-null sentinel
+   * is intentional: the scanner uses `last_scan_cursor === null`
+   * as the "this binding still needs seeding" flag, so returning
+   * a literal null would cause every 4h tick to re-seed every
+   * task forever. The sentinel is opaque to `scan()` (Asana's
+   * `scan()` ignores its input cursor entirely) and is
+   * operator-readable for forensics.
+   *
+   * When neither `asanaClient` nor `makeAsanaClient` is wired,
+   * we surface a clear error rather than silently returning
+   * empty — webhook-only deployments that genuinely don't want
+   * a seed should leave the `seed` property off the adapter
+   * (which they can't do here because seed() is defined on the
+   * factory; the scanner's `seed === undefined` short-circuit
+   * is for adapters where the property is omitted at module
+   * level). This bias toward "throw on missing client" matches
+   * the factory guards above for periodic/on-event modes.
+   */
+  async function seed(seedArgs: SourceSeedArgs): Promise<SourceSeedResult> {
+    const asanaClient = resolveSeedClient();
+    if (asanaClient === undefined) {
+      throw new Error(
+        "source-asana: seed() requires asanaClient or makeAsanaClient injection",
+      );
+    }
+    const projectGids =
+      config.monitoredProjectGids !== undefined &&
+      config.monitoredProjectGids.length > 0
+        ? config.monitoredProjectGids
+        : [config.projectGid];
+    return runAsanaSeed({
+      seedArgs,
+      asanaClient,
+      projectGids,
+      now: () => new Date(),
+    });
+  }
+
+  // Only attach `seed` to the adapter when a client (eager or lazy)
+  // is wired. Webhook-only deployments without an Asana client
+  // configured get `seed: undefined` so the scanner falls back to
+  // `scan()` on the first tick (which is the existing webhook-mode
+  // behavior — empty intake until the first webhook delivery).
+  const hasAsanaClient =
+    args.asanaClient !== undefined || args.makeAsanaClient !== undefined;
+
   return {
     slug: ASANA_ADAPTER_SLUG,
     scan,
+    ...(hasAsanaClient ? { seed } : {}),
     webhook: buildAsanaWebhookHelpers({
       // exactOptionalPropertyTypes: omit key when undefined.
       ...(config.monitoredProjectGids !== undefined
