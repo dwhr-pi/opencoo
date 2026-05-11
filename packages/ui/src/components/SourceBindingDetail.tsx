@@ -326,6 +326,16 @@ const DESTRUCTIVE_CONFIRM_BTN_STYLE: CSSProperties = {
   cursor: "pointer",
 };
 
+/** PR-Z3 (phase-a appendix #12) — "Scan now" button disabled-window
+ *  in ms. Prevents the operator from spamming the endpoint while a
+ *  scan is in flight. The server doesn't rate-limit `:id/scan-now`
+ *  in v0.1 (a per-binding cooldown is parked at v0.2 per the
+ *  wave-12 scoping doc); this client-side gate is the only
+ *  protection from accidental fork-bombing. 3s is generous enough
+ *  for the operator to see the toast + short enough that a real
+ *  retry click after the toast clears succeeds. */
+const SCAN_NOW_DISABLE_MS = 3000;
+
 export function SourceBindingDetail(
   props: SourceBindingDetailProps,
 ): JSX.Element {
@@ -336,6 +346,12 @@ export function SourceBindingDetail(
   const [copyState, setCopyState] = useState<"idle" | "copied" | "manual">(
     "idle",
   );
+  /** PR-Z3 — "Scan now" feedback state. `queued` flashes the success
+   *  toast; `cooldown` keeps the button disabled for
+   *  `SCAN_NOW_DISABLE_MS`. */
+  const [scanNowState, setScanNowState] = useState<
+    "idle" | "queued" | "cooldown"
+  >("idle");
   // PR-R2 edit-mode state. The descriptor is fetched on demand (the
   // first time the operator opens edit mode) and cached for the
   // lifetime of the modal.
@@ -445,6 +461,69 @@ export function SourceBindingDetail(
       setActionError(mapActionError(err, defaultKey));
     } finally {
       if (mountedRef.current) setSubmitting(false);
+    }
+  };
+
+  /** PR-Z3 (phase-a appendix #12) — POST `:id/scan-now`. Closes G8.
+   *
+   *  Success path:
+   *    1. POST → 202 with `{enqueued: true, jobId}`.
+   *    2. Flash a `--healthy` toast for ~3s ("Scan queued; see
+   *       Activity tab").
+   *    3. Disable the button for `SCAN_NOW_DISABLE_MS` to prevent
+   *       operator-spam (the server doesn't rate-limit yet — v0.2
+   *       follow-up per the wave-12 scoping doc).
+   *
+   *  Error paths route through the existing `mapActionError` /
+   *  i18n machinery for consistency with the other PATCH/DELETE
+   *  actions:
+   *    - 409 (`binding_disabled`)         → "Enable the binding…"
+   *    - 503 (`scanner_queue_unavailable`)→ "Scanner queue is not wired…"
+   *    - 5xx / network                    → generic "Could not queue…"
+   */
+  const submitScanNow = async (): Promise<void> => {
+    setActionError(null);
+    setScanNowState("cooldown");
+    try {
+      await fetchAdmin<{ enqueued: boolean; jobId: string }>(
+        `/api/admin/source-bindings/${props.binding.id}/scan-now`,
+        {
+          method: "POST",
+          ...fetchOptsFor(props.fetchImpl),
+        },
+      );
+      if (!mountedRef.current) return;
+      setScanNowState("queued");
+      // Hold the cooldown (button disabled) + toast for the full
+      // window so the operator can't fire 5 scans before the first
+      // success message lands. After the window, drop both back to
+      // idle in one render so the button re-enables alongside the
+      // toast clearing.
+      window.setTimeout(() => {
+        if (mountedRef.current) setScanNowState("idle");
+      }, SCAN_NOW_DISABLE_MS);
+    } catch (err) {
+      if (!mountedRef.current) return;
+      // Reset cooldown so the operator can retry immediately on
+      // error — the request didn't actually queue anything, so the
+      // anti-spam reasoning doesn't apply.
+      setScanNowState("idle");
+      // Map the structured error to the right i18n string. The
+      // route emits 409 with `error: 'binding_disabled'` when the
+      // binding's `enabled = false`; surface a more specific copy
+      // so the operator picks "Enable" instead of retrying. 503 is
+      // a composition-incomplete signal (scanner queue not wired);
+      // everything else routes through the generic scanNowFailed
+      // copy.
+      if (err instanceof ApiValidationError && err.status === 409) {
+        setActionError(t("sources.detail.scanNow.disabled"));
+        return;
+      }
+      if (err instanceof ApiTransientError && err.status === 503) {
+        setActionError(t("sources.detail.errors.scanNowUnavailable"));
+        return;
+      }
+      setActionError(mapActionError(err, "sources.detail.errors.scanNowFailed"));
     }
   };
 
@@ -1084,6 +1163,27 @@ export function SourceBindingDetail(
             {t("sources.detail.actions.close")}
           </Btn>
           <div style={DESTRUCTIVE_GROUP_STYLE}>
+            {/* PR-Z3 (phase-a appendix #12) — "Scan now". Closes G8.
+             *  Disabled for `SCAN_NOW_DISABLE_MS` after a successful
+             *  click so consecutive operator-clicks don't fork-bomb
+             *  the scanner queue (the server doesn't rate-limit yet —
+             *  v0.2 follow-up). The button is also disabled while the
+             *  binding is `enabled: false` — the server returns 409,
+             *  but disabling client-side gives the operator a clear
+             *  affordance instead of a fired-and-failed click. */}
+            <Btn
+              variant="subtle"
+              disabled={
+                scanNowState === "cooldown" ||
+                scanNowState === "queued" ||
+                !props.binding.enabled
+              }
+              onClick={(): void => {
+                void submitScanNow();
+              }}
+            >
+              {t("sources.detail.actions.scanNow")}
+            </Btn>
             <Btn
               variant="subtle"
               onClick={(): void => {
@@ -1187,6 +1287,29 @@ export function SourceBindingDetail(
           <p style={ERROR_TEXT_STYLE} role="alert">
             {actionError}
           </p>
+        ) : null}
+
+        {/* PR-Z3 (phase-a appendix #12) — "Scan now" success toast.
+         *  Reuses the same `--healthy` filled-disc glyph the copy
+         *  feedback uses so the operator gets a consistent
+         *  "this worked" signal across the modal. Hidden in idle
+         *  and cooldown-only states; visible only after a successful
+         *  202 lands. The button stays disabled until the cooldown
+         *  window expires (which clears `scanNowState` back to idle
+         *  in one render). */}
+        {scanNowState === "queued" ? (
+          <span
+            style={COPY_FEEDBACK_STYLE}
+            role="status"
+            data-testid="scan-now-success"
+          >
+            <GlyphFilledDisc
+              size={10}
+              title="queued"
+              style={{ color: "var(--healthy)" }}
+            />
+            {t("sources.detail.scanNow.success")}
+          </span>
         ) : null}
       </div>
     </Modal>

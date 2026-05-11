@@ -197,6 +197,12 @@ describe("composeProductionFromEnv — PR-Z4 output-channels wiring", () => {
         name === WIKI_RECOMPILE_QUEUE_SLUG
           ? f.recompileQueue
           : f.deleteQueue,
+      // PR-Z3 (phase-a appendix #12) — bypass the BullMQ scanner-cron
+      // registration the composition does in production. Without this
+      // stub the test's fake Redis (no full ioredis surface) causes
+      // `webhookScannerQueue.add(repeat=...)` to hang BullMQ's Lua
+      // script.
+      registerScannerCronFn: async () => undefined,
     });
 
     expect(result.outputChannels).toBeInstanceOf(OutputChannelRegistry);

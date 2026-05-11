@@ -35,6 +35,8 @@ import {
 import type { SourceAdapter } from "@opencoo/shared/source-adapter";
 
 import {
+  SCANNER_CRON_DEFAULT,
+  SCANNER_REPEAT_KEY,
   composeProductionWorkerContext,
   type ComposeProductionContextArgs,
 } from "../../src/workers/production-context.js";
@@ -171,6 +173,14 @@ function buildArgs(
     } as unknown as ComposeProductionContextArgs["guardAdapter"],
     author: { name: "opencoo-test", email: "test@opencoo.local" },
     instanceId: "test-deployment",
+    // PR-Z3 (phase-a appendix #12) — every test that boots
+    // composition needs this seam wired so the scanner-cron
+    // registration call doesn't hit BullMQ's Lua-scripted repeat
+    // path (which hangs on ioredis-mock — same limitation the
+    // AgentDispatcher tests document at agent-dispatcher.ts:104).
+    // Default seam is a no-op record; the PR-Z3-specific tests
+    // override with a recording stub.
+    registerScannerCronFn: async () => undefined,
     ...overrides,
   };
   return args;
@@ -259,6 +269,81 @@ describe("composeProductionWorkerContext", () => {
     // makes it onto Redis (ioredis-mock approximates the queue);
     // we care that the type / shape is right.
     expect(typeof ctx.enqueue?.add).toBe("function");
+    await ctx.closeProducers?.();
+  });
+
+  // PR-Z3 (phase-a appendix #12) — scanner cron registration.
+  // Closes G3 (polling adapters never tick automatically). The
+  // composition root registers ONE repeat-job on the
+  // `ingestion.scanner` queue at boot; the scanner ENUMERATES every
+  // enabled binding on each tick, so per-binding repeat jobs are
+  // unnecessary (and would explode at scale).
+  //
+  // The test uses the `registerScannerCronFn` test seam (parallel
+  // to the AgentDispatcher's `registerScheduleFn` seam — same
+  // pattern, same reason: BullMQ's Lua-scripted repeat path hangs
+  // on ioredis-mock).
+  it("registers the scanner cron on the ingestion.scanner queue at boot (closes G3)", async () => {
+    const fixture = await freshFixture();
+    const registerCalls: Array<{ repeatKey: string; pattern: string }> = [];
+    const args = buildArgs(fixture, {
+      registerScannerCronFn: async ({ repeatKey, pattern }) => {
+        registerCalls.push({ repeatKey, pattern });
+      },
+    });
+    const ctx = await composeProductionWorkerContext(args);
+
+    // Exactly one cron registration: the SCANNER_REPEAT_KEY +
+    // SCANNER_CRON_DEFAULT pair. One repeat-job per engine; the
+    // scanner enumerates all bindings on each tick.
+    expect(registerCalls).toEqual([
+      { repeatKey: SCANNER_REPEAT_KEY, pattern: SCANNER_CRON_DEFAULT },
+    ]);
+    expect(SCANNER_REPEAT_KEY).toBe("ingestion.scanner.tick");
+    expect(SCANNER_CRON_DEFAULT).toBe("0 */4 * * *");
+
+    expect(ctx.webhookScannerQueue).toBeDefined();
+    expect(typeof ctx.webhookScannerQueue?.add).toBe("function");
+
+    await ctx.closeProducers?.();
+  });
+
+  it("honors an operator-supplied scannerCronPattern override", async () => {
+    // The composition root threads `OPENCOO_SCANNER_CRON` here.
+    // Pins that the operator's pattern reaches the registration
+    // call (not the default).
+    const fixture = await freshFixture();
+    const customPattern = "*/15 * * * *"; // every 15 minutes
+    const registerCalls: Array<{ repeatKey: string; pattern: string }> = [];
+    const args = buildArgs(fixture, {
+      scannerCronPattern: customPattern,
+      registerScannerCronFn: async ({ repeatKey, pattern }) => {
+        registerCalls.push({ repeatKey, pattern });
+      },
+    });
+    const ctx = await composeProductionWorkerContext(args);
+    expect(registerCalls).toEqual([
+      { repeatKey: SCANNER_REPEAT_KEY, pattern: customPattern },
+    ]);
+    await ctx.closeProducers?.();
+  });
+
+  it("scanner cron registration failure does not crash composition (best-effort)", async () => {
+    // A failed cron registration must not crash boot — the webhook
+    // fast-path + on-demand "Scan now" still work without the cron
+    // backstop. The composition's try/catch around the registration
+    // converts the failure to a warn log + continues.
+    const fixture = await freshFixture();
+    const args = buildArgs(fixture, {
+      registerScannerCronFn: async () => {
+        throw new Error("simulated redis outage");
+      },
+    });
+    const ctx = await composeProductionWorkerContext(args);
+    expect(ctx.enqueue).toBeDefined();
+    expect(ctx.webhookScannerQueue).toBeDefined();
+    expect(ctx.webhookDlqQueue).toBeDefined();
+    expect(ctx.closeProducers).toBeDefined();
     await ctx.closeProducers?.();
   });
 });

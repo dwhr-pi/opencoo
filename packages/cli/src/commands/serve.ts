@@ -156,6 +156,15 @@ export type ServeStartFactory = (opts: {
    *  rendering works. Same typed-unknown treatment as
    *  `outputChannels`. */
   readonly outputChannelDescriptors?: unknown;
+  /** PR-Z3 (phase-a appendix #12) — composition-built scanner Queue
+   *  handle (the SAME `ingestion.scanner` Queue the workers consume).
+   *  Threaded into self-op so the admin-API source-bindings POST
+   *  handler can enqueue a post-create initial scan (closes G6) AND
+   *  the `:id/scan-now` route can enqueue an on-demand scan
+   *  (closes G8). Typed `unknown` to keep this layer on the
+   *  no-cross-engine-import side; the engine narrows back at
+   *  consumption. */
+  readonly scannerQueue?: unknown;
 }) => Promise<ServeStartedEngine>;
 
 /** Matches `start({env})` from `@opencoo/engine-ingestion`. The
@@ -249,6 +258,13 @@ export interface ServeIngestionPreflightResult {
    *  rendering works. Same typed-unknown treatment as
    *  `outputChannels`. */
   readonly outputChannelDescriptors?: unknown;
+  /** PR-Z3 (phase-a appendix #12) — composition-built scanner Queue
+   *  handle (BullMQ Queue on `ingestion.scanner`). The orchestrator
+   *  threads this through to self-op via `start({scannerQueue})` so
+   *  the admin-API source-bindings POST handler + `:id/scan-now`
+   *  route can enqueue scans on the SAME queue the workers
+   *  dequeue from. */
+  readonly scannerQueue?: unknown;
 }
 
 export type ServeIngestionPreflightFactory = (opts: {
@@ -336,6 +352,11 @@ type EngineStartFn = (opts: {
   readonly forgetJobEnqueuer?: unknown;
   readonly outputChannels?: unknown;
   readonly outputChannelDescriptors?: unknown;
+  /** PR-Z3 (phase-a appendix #12) — passed verbatim into
+   *  `engine-self-operating.start({ingestionQueue})` so the admin-API
+   *  POST source-bindings handler + `:id/scan-now` route can enqueue
+   *  scans against the workers' queue. */
+  readonly ingestionQueue?: unknown;
 }) => Promise<ServeStartedEngine>;
 
 interface ComposeStartedEngineArgs {
@@ -359,6 +380,11 @@ interface ComposeStartedEngineArgs {
   /** PR-Z4 — descriptor map for the admin-API Outputs-tab CRUD
    *  routes. */
   readonly outputChannelDescriptors?: unknown;
+  /** PR-Z3 (phase-a appendix #12) — forwarded verbatim into
+   *  `engine-self-operating.start({ingestionQueue})` so the
+   *  admin-API source-bindings POST + `:id/scan-now` routes can
+   *  enqueue against the workers' queue. */
+  readonly scannerQueue?: unknown;
   /** Logger for the round-2 fix #3 boot-failure-close-failed
    *  warn line. */
   readonly logger: {
@@ -439,6 +465,17 @@ export async function composeStartedEngineWithBundle(
       ...(args.outputChannelDescriptors !== undefined
         ? { outputChannelDescriptors: args.outputChannelDescriptors }
         : {}),
+      // PR-Z3 (phase-a appendix #12) — wire the writable
+      // `ingestion.scanner` queue handle from the preflight into
+      // self-op. The admin-API's source-bindings POST handler uses
+      // it to fire an initial scan immediately after a binding is
+      // created (closes G6); the new `:id/scan-now` endpoint uses
+      // it to fire on-demand scans (closes G8). When preflight
+      // returned null, `args.scannerQueue` is undefined and both
+      // surfaces no-op (POST returns 201 normally; scan-now → 503).
+      ...(args.scannerQueue !== undefined
+        ? { ingestionQueue: args.scannerQueue }
+        : {}),
     });
   } catch (err) {
     if (bundle !== null) {
@@ -482,6 +519,10 @@ async function defaultStartFactory(opts: {
   readonly forgetJobEnqueuer?: unknown;
   readonly outputChannels?: unknown;
   readonly outputChannelDescriptors?: unknown;
+  /** PR-Z3 (phase-a appendix #12) — scanner Queue handle threaded
+   *  through to self-op for the source-bindings POST + scan-now
+   *  routes. */
+  readonly scannerQueue?: unknown;
 }): Promise<ServeStartedEngine> {
   const mod = await import("@opencoo/engine-self-operating");
   const composition = await import(
@@ -525,6 +566,13 @@ async function defaultStartFactory(opts: {
       : {}),
     ...(opts.outputChannelDescriptors !== undefined
       ? { outputChannelDescriptors: opts.outputChannelDescriptors }
+      : {}),
+    // PR-Z3 (phase-a appendix #12) — forward the preflight-built
+    // scanner queue handle into the engine so the admin-API
+    // source-bindings POST + `:id/scan-now` routes can enqueue
+    // against the SAME queue the workers dequeue from.
+    ...(opts.scannerQueue !== undefined
+      ? { scannerQueue: opts.scannerQueue }
       : {}),
   });
 }
@@ -605,6 +653,13 @@ async function defaultIngestionPreflightFactory(opts: {
     // not wired).
     outputChannels: composed.outputChannels as unknown,
     outputChannelDescriptors: composed.outputChannelDescriptors as unknown,
+    // PR-Z3 (phase-a appendix #12) — surface the composition's
+    // `ingestion.scanner` Queue handle so the orchestrator can
+    // forward it into self-op's `start({scannerQueue})`. Without
+    // this, the source-bindings POST handler's initial-scan
+    // enqueue silently no-ops (binding still creates, just no
+    // immediate scan) and `:id/scan-now` returns 503.
+    scannerQueue: composed.scannerQueue as unknown,
   };
 }
 
@@ -839,6 +894,14 @@ export async function runServe(args: ServeArgs): Promise<void> {
         : {}),
       ...(preflight?.outputChannelDescriptors !== undefined
         ? { outputChannelDescriptors: preflight.outputChannelDescriptors }
+        : {}),
+      // PR-Z3 (phase-a appendix #12) — forward the preflight's
+      // scanner Queue handle so the source-bindings POST + scan-now
+      // routes can enqueue against the SAME queue the workers
+      // dequeue from. When preflight returned null, the field stays
+      // omitted and the route surfaces 503 (composition-incomplete).
+      ...(preflight?.scannerQueue !== undefined
+        ? { scannerQueue: preflight.scannerQueue }
         : {}),
     });
   } catch (err) {

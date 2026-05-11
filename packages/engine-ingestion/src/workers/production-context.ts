@@ -85,6 +85,17 @@ import type { IngestionRunEventEmitter, WorkerContext } from "./context.js";
 
 type Db = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
+/** PR-Z3 (phase-a appendix #12) — BullMQ jobId used for the scanner
+ *  cron repeat-job. Stable across engine restarts so a re-register
+ *  lands on the same entry instead of stacking duplicates. Exported
+ *  so tests can assert the registration is in place. */
+export const SCANNER_REPEAT_KEY = "ingestion.scanner.tick" as const;
+
+/** PR-Z3 (phase-a appendix #12) — default scanner cadence: every
+ *  4h UTC. Mirrors architecture.md §9.1 (Ingestion Scanner cadence).
+ *  Overridable via `OPENCOO_SCANNER_CRON` env at composition root. */
+export const SCANNER_CRON_DEFAULT = "0 */4 * * *" as const;
+
 /** Per-adapter factory — same shape as the shared
  *  `AdapterRegistry`'s `SourceAdapterFactory`, narrowed here to
  *  what the production composition needs (the slug union is
@@ -157,6 +168,27 @@ export interface ComposeProductionContextArgs {
    *  `wikiWrite.deleteCap.reserve` would address two different caps
    *  and a forget could exceed the daily budget undetected). */
   readonly deleteCap?: DeleteCap;
+  /** PR-Z3 (phase-a appendix #12) — operator-overridable cron pattern
+   *  for the scanner backstop. Defaults to `SCANNER_CRON_DEFAULT`
+   *  (every 4h UTC; see the constant in this module for the literal)
+   *  when undefined. The composition root reads `OPENCOO_SCANNER_CRON`
+   *  and threads it here; per the no-feature-env-vars invariant this
+   *  is INFRASTRUCTURE config (cron cadence, not feature behaviour)
+   *  and follows the same Docker-secrets `_FILE` convention as the
+   *  rest of the boot env. */
+  readonly scannerCronPattern?: string;
+  /** @internal PR-Z3 (phase-a appendix #12) test seam — override the
+   *  scanner cron registration call. Production passes `undefined`;
+   *  the composition uses the real `webhookScannerQueue.add(...)` with
+   *  BullMQ's `repeat: { pattern, tz, immediately }` shape. Tests
+   *  inject a stub that records the call without round-tripping
+   *  through BullMQ's Lua-scripted repeat path (which hangs on
+   *  ioredis-mock — same limitation the AgentDispatcher tests
+   *  document at agent-dispatcher.ts:104). */
+  readonly registerScannerCronFn?: (args: {
+    readonly repeatKey: string;
+    readonly pattern: string;
+  }) => Promise<void>;
 }
 
 /** Same shape as the WorkerContext the engine consumes, but
@@ -283,6 +315,64 @@ export async function composeProductionWorkerContext(
   const webhookDlqQueue = new Queue("ingestion.intake.dlq", {
     connection: args.redisConnection,
   });
+
+  // PR-Z3 (phase-a appendix #12) — register the SCANNER CRON on
+  // the `ingestion.scanner` queue. Closes G3 (polling adapters
+  // never tick automatically). One repeat-job for the entire
+  // engine; the scanner ENUMERATES every enabled binding on each
+  // tick (per-binding repeat jobs would explode at scale).
+  //
+  // The cron pattern is operator-overridable via `OPENCOO_SCANNER_CRON`
+  // — same `_FILE` Docker-secret convention as every other env in
+  // this composition. Defaults to every-4h UTC per architecture §9.1
+  // (Ingestion Scanner cadence).
+  //
+  // Pinned to `tz: 'UTC'` to match the AgentDispatcher's repeat
+  // pattern (agent-dispatcher.ts:539) — without this, BullMQ resolves
+  // the cron against the host's local timezone and schedules drift on
+  // non-UTC dev hosts. `immediately: false` prevents a boot-time
+  // burst (the scanner runs on the cron, not on engine start).
+  //
+  // `jobId: SCANNER_REPEAT_KEY` makes the repeat-job dedupe stable
+  // across engine restarts: BullMQ keys the repeatable by
+  // (queue, name, pattern, tz, jobId), so a re-registration on
+  // restart lands on the same entry instead of stacking duplicates.
+  const scannerCronPattern = args.scannerCronPattern ?? SCANNER_CRON_DEFAULT;
+  try {
+    if (args.registerScannerCronFn !== undefined) {
+      // Test path — stub records the call without hitting BullMQ's
+      // Lua-scripted repeat path (which hangs on ioredis-mock).
+      await args.registerScannerCronFn({
+        repeatKey: SCANNER_REPEAT_KEY,
+        pattern: scannerCronPattern,
+      });
+    } else {
+      await webhookScannerQueue.add(
+        SCANNER_REPEAT_KEY,
+        {},
+        {
+          jobId: SCANNER_REPEAT_KEY,
+          repeat: {
+            pattern: scannerCronPattern,
+            tz: "UTC",
+            immediately: false,
+          },
+          removeOnComplete: 100,
+          removeOnFail: 1000,
+        },
+      );
+    }
+  } catch (err) {
+    // Best-effort: a failed cron registration must not crash boot.
+    // The webhook fast-path and on-demand "Scan now" (PR-Z3 part 3)
+    // still work; only the periodic backstop is missing. Operator
+    // sees this in logs + can verify the absence of the repeatable
+    // entry via redis-cli `KEYS bull:ingestion.scanner:repeat*`.
+    args.logger.warn("scanner.cron_register_failed", {
+      pattern: scannerCronPattern,
+      error: safeErrorMessage(err),
+    });
+  }
 
   // The webhook verifier itself is stateless — same instance can
   // serve every binding. v0.1 ships `HmacSha256Verifier` only;

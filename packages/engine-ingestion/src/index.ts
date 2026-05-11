@@ -45,6 +45,8 @@ export {
 // engine's `start({ mode: 'workers' })` consumes.
 export {
   composeProductionWorkerContext,
+  SCANNER_CRON_DEFAULT,
+  SCANNER_REPEAT_KEY,
   type ComposeProductionContextArgs,
   type ProductionSourceAdapterFactory,
   type ProductionWorkerContext,

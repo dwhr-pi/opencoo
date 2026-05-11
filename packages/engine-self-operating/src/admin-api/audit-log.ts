@@ -74,6 +74,13 @@ export const AUDIT_LOG_ACTIONS = [
   // Only the actual-forget path (`?dryRun=0`) writes audit; the
   // dry-run preview is read-only and writes nothing.
   "source_binding.forget",
+  // Phase-a appendix #12 (PR-Z3) — Sources `Scan now` on-demand
+  // scanner dispatch. Metadata captures binding_id + caller_username
+  // ONLY (no payload — the URL param is the binding UUID + the body
+  // is empty). NEVER any operator-supplied freeform text
+  // (THREAT-MODEL §3.13). Audit row is written BEFORE the BullMQ
+  // enqueue so a partial enqueue still leaves a forensic trail.
+  "source_binding.scan_now",
   // Phase-a appendix #10 (PR-R1) — Domains tab drill-down
   // actions. `update` covers PATCH (display_name / locale /
   // is_aggregator); `disable` covers DELETE (soft-delete);

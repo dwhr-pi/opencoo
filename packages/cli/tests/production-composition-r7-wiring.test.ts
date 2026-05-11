@@ -233,6 +233,11 @@ describe("composeProductionFromEnv — PR-R7 forget wiring (PR-W1)", () => {
           ? f.recompileQueue
           : f.deleteQueue;
       },
+      // PR-Z3 (phase-a appendix #12) — stub the scanner-cron
+      // registration so ioredis-mock doesn't hit the Lua-scripted
+      // repeat path. The Z3-specific composition tests below
+      // override this with a recording stub.
+      registerScannerCronFn: async () => undefined,
     });
 
     // 1. The deleteCap field is populated and is an InMemoryDeleteCap
@@ -267,6 +272,11 @@ describe("composeProductionFromEnv — PR-R7 forget wiring (PR-W1)", () => {
           ? f.recompileQueue
           : f.deleteQueue;
       },
+      // PR-Z3 (phase-a appendix #12) — stub the scanner-cron
+      // registration so ioredis-mock doesn't hit the Lua-scripted
+      // repeat path. The Z3-specific composition tests below
+      // override this with a recording stub.
+      registerScannerCronFn: async () => undefined,
     });
 
     // The queue factory was called for both queue slugs at composition.
@@ -329,6 +339,7 @@ describe("composeProductionFromEnv — PR-R7 forget wiring (PR-W1)", () => {
       redisFactory: () => f.redis,
       forgetQueueFactory: (name) =>
         name === WIKI_RECOMPILE_QUEUE_SLUG ? f.recompileQueue : f.deleteQueue,
+      registerScannerCronFn: async () => undefined,
     });
 
     await result.closeForgetQueues();

@@ -117,8 +117,22 @@ export interface RegisterAdminApiArgs {
    *  `productionServerFactory` via `ProductionServerFactoryArgs.ingestionQueue`,
    *  which threads it through to `RegisterAdminApiArgs.ingestionQueue` and
    *  onwards to `registerSourceBindingsRoutes` + `registerPipelinesRoutes`.
-   *  The queue handle is read-only — no jobs are enqueued from this side. */
-  readonly ingestionQueue?: { getJobCounts: (...states: string[]) => Promise<Record<string, number>>; name?: string };
+   *
+   *  PR-Z3 (phase-a appendix #12) widens the shape with optional
+   *  `add` so the source-bindings route can enqueue a post-create
+   *  initial scan (closes G6) and the `:id/scan-now` route can
+   *  enqueue an on-demand scan (closes G8). Read paths
+   *  (`getJobCounts`) work even when `add` is undefined — same
+   *  boot-tolerance pattern. */
+  readonly ingestionQueue?: {
+    getJobCounts: (...states: string[]) => Promise<Record<string, number>>;
+    add?: (
+      name: string,
+      data: unknown,
+      opts?: unknown,
+    ) => Promise<unknown>;
+    name?: string;
+  };
   /** Phase-a appendix #4 PR-B — SSE bus for the Activity feed.
    *  When undefined a fresh bus is created internally (production path).
    *  Tests may inject a mock bus if they need to assert on bus interactions. */

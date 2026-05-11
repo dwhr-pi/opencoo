@@ -441,7 +441,11 @@ export interface AdminFixtureOptions {
   readonly adminTeamSlug?: string;
   readonly llmDebugLog?: boolean;
   /** Phase-a appendix #4 PR-B — injected queue for pipelines-list tests. */
-  readonly ingestionQueue?: { getJobCounts: (...states: string[]) => Promise<Record<string, number>>; name?: string };
+  readonly ingestionQueue?: {
+    getJobCounts: (...states: string[]) => Promise<Record<string, number>>;
+    name?: string;
+    add?: (jobName: string, payload: unknown, opts?: unknown) => Promise<{ id?: string | null }>;
+  };
   /** Phase-a appendix #4 PR-B — injected SSE bus for heartbeat / run-lifecycle tests. */
   readonly sseBus?: SseBus;
   /** PR-R7 (phase-a appendix #10) — read-only delete-cap state injection

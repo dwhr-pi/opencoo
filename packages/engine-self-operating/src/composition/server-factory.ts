@@ -72,8 +72,22 @@ export interface ProductionServerFactoryArgs {
   /** Phase-a appendix #4 PR-B — optional BullMQ queue handle for the
    *  ingestion-scanner queue. When provided, GET /api/admin/pipelines
    *  returns live depth + failed counts instead of zeroed stats.
-   *  Read-only — no jobs are added from this side. */
-  readonly ingestionQueue?: { getJobCounts: (...states: string[]) => Promise<Record<string, number>>; name?: string };
+   *
+   *  PR-Z3 (phase-a appendix #12) widens the shape with optional
+   *  `add` so the orchestrator can thread the SAME `ingestion.scanner`
+   *  Queue handle the workers consume — supporting the source-bindings
+   *  route's post-create initial scan (closes G6) AND the
+   *  `:id/scan-now` route (closes G8). `add === undefined` keeps the
+   *  pre-Z3 read-only behaviour. */
+  readonly ingestionQueue?: {
+    getJobCounts: (...states: string[]) => Promise<Record<string, number>>;
+    add?: (
+      name: string,
+      data: unknown,
+      opts?: unknown,
+    ) => Promise<unknown>;
+    name?: string;
+  };
   /** Phase-a appendix #4 PR-B — SSE bus for the Activity feed.
    *  When undefined, `productionServerFactory` creates a fresh bus.
    *  Exposed on the returned object so `start.ts` can thread it to

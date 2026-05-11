@@ -290,6 +290,11 @@ describe("webhook → wiki end-to-end (PR-M1)", () => {
       guardAdapter: passThroughGuard(),
       author: STUB_AUTHOR,
       instanceId: "test-instance",
+      // PR-Z3 (phase-a appendix #12) — stub the scanner-cron
+      // registration so BullMQ's Lua-scripted repeat path doesn't
+      // hit ioredis-mock (which hangs on it). Same seam pattern
+      // every other test using composeProductionWorkerContext uses.
+      registerScannerCronFn: async () => undefined,
     });
 
     const handle = startIngestionWorkers({

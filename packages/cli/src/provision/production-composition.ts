@@ -141,6 +141,27 @@ export interface ProductionCompositionResult {
   readonly outputChannelDescriptors: Readonly<
     Record<OutputAdapterSlug, OutputAdapterDescriptor>
   >;
+  /** PR-Z3 (phase-a appendix #12) — producer-side BullMQ Queue for
+   *  the `ingestion.scanner` backlog. Same instance the worker
+   *  context's `webhookScannerQueue` carries — exposed at the
+   *  composition root so the orchestrator can thread it into the
+   *  self-op engine's admin-API for:
+   *    1. Post-binding-create initial-scan enqueue (closes G6).
+   *    2. `POST /api/admin/source-bindings/:id/scan-now` (closes G8).
+   *
+   *  Read-write (`add` is invoked by the admin-API route + the
+   *  webhook receiver). Single shared queue handle: opening a
+   *  second `new Queue("ingestion.scanner", ...)` against the same
+   *  Redis would technically also work (BullMQ deduplicates by
+   *  name), but threading the same instance is cleaner and matches
+   *  the `forgetJobEnqueuer` shape. */
+  readonly scannerQueue: {
+    add: (
+      name: string,
+      data: unknown,
+      opts?: unknown,
+    ) => Promise<unknown>;
+  };
 }
 
 /** Narrow shape of the run-event emitter the WorkerContext consumes.
@@ -193,6 +214,15 @@ export interface ComposeProductionArgs {
    *  {maxRetriesPerRequest:null,enableReadyCheck:false})`. Tests
    *  pass an ioredis-mock instance. */
   readonly redisFactory?: (redisUrl: string) => Redis;
+  /** @internal Test seam (PR-Z3, phase-a appendix #12) — passes
+   *  through to `composeProductionWorkerContext({registerScannerCronFn})`
+   *  so tests can record the scanner-cron registration call without
+   *  hitting BullMQ's Lua-scripted repeat path (which hangs on
+   *  ioredis-mock). Production passes `undefined`. */
+  readonly registerScannerCronFn?: (args: {
+    readonly repeatKey: string;
+    readonly pattern: string;
+  }) => Promise<void>;
 }
 
 /** Construct the production WorkerContext + the underlying pg.Pool
@@ -219,6 +249,15 @@ export async function composeProductionFromEnv(
   const wikiBranch = "main";
   const wikiRepoPrefix = "wiki";
   const instanceId = "opencoo";
+
+  // PR-Z3 (phase-a appendix #12) — operator-overridable cron pattern
+  // for the scanner backstop. Reads `OPENCOO_SCANNER_CRON` via the
+  // same Docker-secrets `_FILE` convention as the rest of boot env.
+  // The cadence is INFRASTRUCTURE config (poll frequency, not feature
+  // behaviour), so the no-feature-env-vars invariant (THREAT-MODEL §2
+  // invariant 9) does not apply. Default is every-4h UTC; the engine
+  // narrows to `SCANNER_CRON_DEFAULT` when this is undefined.
+  const scannerCronPattern = readWithFile(args.env, "OPENCOO_SCANNER_CRON");
 
   // Single ConnectionOptions object reused for both the Redis
   // client construction options AND the BullMQ queue handle the
@@ -404,6 +443,21 @@ export async function composeProductionFromEnv(
     // the workers so their `wikiWrite` reservations and the route's
     // `peek/reserve` address the SAME budget.
     deleteCap,
+    // PR-Z3 (phase-a appendix #12) — operator-overridable scanner
+    // cadence. Threaded through here so the cron registration inside
+    // `composeProductionWorkerContext` uses the operator's pattern
+    // (or the default when undefined).
+    ...(scannerCronPattern !== undefined
+      ? { scannerCronPattern }
+      : {}),
+    // PR-Z3 (phase-a appendix #12) — test seam forwarding. When the
+    // caller (test) supplied a stub, thread it through so the
+    // composition's scanner-cron registration bypasses BullMQ.
+    // Production passes `undefined`; the engine uses the real
+    // `webhookScannerQueue.add(...)` path.
+    ...(args.registerScannerCronFn !== undefined
+      ? { registerScannerCronFn: args.registerScannerCronFn }
+      : {}),
     // Round-2 fix #1: forward the orchestrator-supplied bus so
     // every PR-M1 sse-bridge listener (compile / scanner /
     // index-rebuild / cleanup workers) emits onto the SAME bus
@@ -434,6 +488,23 @@ export async function composeProductionFromEnv(
     logger,
   });
 
+  // PR-Z3 (phase-a appendix #12) — narrow the WorkerContext's
+  // `webhookScannerQueue` to the read-write shape the admin-API
+  // route needs. The full `Queue` instance constructed in
+  // production-context.ts structurally satisfies `add(...)`; we
+  // surface it at the composition root so the orchestrator can
+  // thread it into self-op via `start({ scannerQueue })`.
+  const scannerQueueHandle = workerContext.webhookScannerQueue;
+  if (scannerQueueHandle === undefined) {
+    // composeProductionWorkerContext always populates this in the
+    // production path; this branch guards a future refactor that
+    // could regress the contract. A defensive throw here is louder
+    // than a 503 at first scan-now click.
+    throw new Error(
+      "cli/serve: composeProductionWorkerContext returned without webhookScannerQueue — PR-Z3 wiring broken",
+    );
+  }
+
   return {
     workerContext,
     redisConnection,
@@ -444,6 +515,7 @@ export async function composeProductionFromEnv(
     closeForgetQueues,
     outputChannels,
     outputChannelDescriptors,
+    scannerQueue: scannerQueueHandle,
   };
 }
 

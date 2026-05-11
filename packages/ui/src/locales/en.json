@@ -186,6 +186,7 @@
         "enable": "Enable",
         "delete": "Delete",
         "forget": "Forget source",
+        "scanNow": "Scan now",
         "close": "Close",
         "confirmDisableTitle": "Disable this binding?",
         "confirmDisableBody": "Inbound webhook events will still be accepted (HMAC verified, audit row written) but the scanner queue will not dispatch them, so no compile fires.",
@@ -198,12 +199,18 @@
         "confirmDelete": "Confirm delete",
         "cancel": "Cancel"
       },
+      "scanNow": {
+        "success": "Scan queued — see the Activity tab.",
+        "disabled": "Enable the binding before queuing a scan."
+      },
       "errors": {
         "patchFailed": "Could not update the binding. Try again or check the audit log.",
         "disableFailed": "Could not disable binding (server rejected the request).",
         "enableFailed": "Could not enable binding (server rejected the request).",
         "deleteFailed": "Could not delete binding (server rejected the request).",
         "deleteFkRestricted": "This binding has audit history that prevents deletion. Disable it instead.",
+        "scanNowFailed": "Could not queue a scan. Try again or check the audit log.",
+        "scanNowUnavailable": "Scanner queue is not wired in this deployment — check engine logs.",
         "auth": "Sign-in expired or insufficient permissions — re-paste your PAT.",
         "transient": "Server is unreachable or returned an error. Try again."
       }

@@ -31,6 +31,8 @@
  *      `adapter_slug`, `target_domain_slug` — NEVER the
  *      credential bytes.
  */
+import { randomBytes } from "node:crypto";
+
 import { sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -216,9 +218,21 @@ export interface RegisterSourceBindingsRoutesArgs {
    *  (composition-incomplete). The GET handler is unaffected. */
   readonly credentialStore?: CredentialStore;
   /** BullMQ ingestion queue, probed for DLQ depth in the GET handler.
-   *  Optional: when undefined the DLQ signal contributes nothing to
-   *  status (treated as 0 — no alert from DLQ alone). */
-  readonly ingestionQueue?: { getJobCounts: (...states: string[]) => Promise<Record<string, number>> };
+   *  PR-Z3 (phase-a appendix #12) widens the shape to also expose
+   *  `add` so the POST handler can enqueue a post-create initial
+   *  scan (closes G6) AND the `:id/scan-now` route can enqueue an
+   *  on-demand scan (closes G8). Optional: when undefined the GET
+   *  handler treats DLQ depth as 0, the POST handler skips the
+   *  initial-scan enqueue (binding is created cleanly; next 4h cron
+   *  picks it up), and the scan-now route returns 503. */
+  readonly ingestionQueue?: {
+    getJobCounts: (...states: string[]) => Promise<Record<string, number>>;
+    add?: (
+      name: string,
+      data: unknown,
+      opts?: unknown,
+    ) => Promise<unknown>;
+  };
   /** PR-R7 — read-only delete-cap probe + reserve. The route reads
    *  `peek` to surface today's budget in the dry-run response and
    *  calls `reserve` on `?dryRun=0` BEFORE the audit row + enqueue
@@ -558,7 +572,176 @@ export function registerSourceBindingsRoutes(
         userAgent: req.headers["user-agent"],
       });
 
+      // PR-Z3 (phase-a appendix #12) — closes G6.
+      // Enqueue an immediate scan so the partner sees content
+      // without waiting for the 4h cron tick. The scanner picks up
+      // the binding via SELECT (the existing scanner enumerates all
+      // bindings on each tick + dedupes via cursor / source_doc_id).
+      // No payload needed — `ingestion.scanner` jobs are markers
+      // (`webhook-receiver.ts:644` and the cron tick both enqueue
+      // empty payloads + the scanner worker re-scans every enabled
+      // binding).
+      //
+      // When PR-Z2 lands its `SourceAdapter.seed()` primitive, the
+      // scanner internally dispatches seed-vs-scan based on
+      // `last_scan_cursor === null`. PR-Z3 doesn't need to know about
+      // seed — just enqueue.
+      //
+      // Best-effort: a transport failure must not roll back the
+      // binding row (the operator already saw 201, the binding is
+      // already live, the next 4h cron tick still picks it up).
+      // We log + continue.
+      if (args.ingestionQueue?.add !== undefined) {
+        try {
+          // NOTE: scanner currently scans all enabled bindings per tick;
+          // the empty payload is intentional. Threading bindingId through
+          // scanner.add() to scope a single scan is a follow-up (filed
+          // as Z10 / phase-b candidate). The dedupe pipeline keeps this
+          // correct — extra bindings re-scanned by the same tick fall
+          // out via source_doc_id + cursor dedupe — but it is mildly
+          // confusing operator UX worth tightening later.
+          await args.ingestionQueue.add(
+            "post-create-scan",
+            {},
+            {
+              jobId: `post-create-scan-${id}`,
+              removeOnComplete: 10,
+              removeOnFail: 100,
+            },
+          );
+        } catch (err) {
+          // Route through `safeErrorMessage` (scrub-then-cap) rather
+          // than `err.name` — `err.name` is almost always "Error" and
+          // not actionable. THREAT-MODEL §3 invariant: logged error
+          // bytes are scrubbed before they hit the structured log.
+          req.log?.warn({
+            msg: "binding_create.initial_scan_enqueue_failed",
+            binding_id: id,
+            err: safeErrorMessage(err),
+          });
+        }
+      }
+
       return reply.code(201).send({ id });
+    },
+  );
+
+  // PR-Z3 (phase-a appendix #12) — `Scan now` on-demand scanner
+  // dispatch. Closes G8 (operator wanting to verify a binding works
+  // currently has to wait 4h for the cron OR shell into the box).
+  //
+  // Mirrors the existing PATCH/DELETE/forget pattern on this same
+  // route file: CSRF-gated, admin-team-gated (via the wrapper in
+  // index.ts), audit-row-emitting, no new credential surface.
+  //
+  // Unlike the agents `dispatch_now` route (agents-dispatch.ts), this
+  // endpoint does NOT rate-limit in v0.1 — operators iterate fast
+  // when binding a new source and the scanner enqueue is cheap (it
+  // sets a marker, the worker dedupes downstream). A per-binding
+  // cooldown is parked at v0.2 per the wave-12 scoping doc.
+  args.app.post(
+    "/api/admin/source-bindings/:id/scan-now",
+    { preHandler: requireCsrf },
+    async (req, reply) => {
+      const ctx = requireAdminContext(req);
+      const id = (req.params as { id: string }).id;
+      if (!z.string().uuid().safeParse(id).success) {
+        return reply.code(400).send({ error: "invalid_id" });
+      }
+
+      // Composition gate — the scanner queue must be wired.
+      // Returns 503 if undefined, matching the rest of the admin
+      // API's boot-tolerance pattern (forgetJobEnqueuer, deleteCap).
+      const enqueue = args.ingestionQueue?.add;
+      if (enqueue === undefined) {
+        return reply.code(503).send({
+          error: "scanner_queue_unavailable",
+          reason:
+            "Composition did not register a writable ingestion queue — check engine logs for `production_context` failures",
+        });
+      }
+
+      // Verify the binding exists + is enabled.
+      const existing = (await args.db.execute(sql`
+        SELECT enabled
+        FROM sources_bindings
+        WHERE id = ${id}::uuid
+        LIMIT 1
+      `)) as unknown as { rows: Array<{ enabled: boolean }> };
+      const row = existing.rows[0];
+      if (row === undefined) {
+        return reply.code(404).send({ error: "not_found", id });
+      }
+      if (!row.enabled) {
+        // 409 mirrors the binding-disabled signal the operator's UI
+        // already handles for other endpoints (e.g. the enabled-flip
+        // PATCH). The scanner skips disabled bindings on its own
+        // tick, so enqueuing here would be wasted.
+        return reply.code(409).send({
+          error: "binding_disabled",
+          id,
+        });
+      }
+
+      // Distinct jobId per click so back-to-back operator clicks
+      // each fire (the route does NOT rate-limit in v0.1).
+      // `Date.now()` alone has ms precision — fine for human clicks
+      // but a programmatic burst (curl loop, test script) can fire
+      // two requests inside the same ms and collide. Append a
+      // short random suffix to harden against that without adding
+      // a real dep. PR-Z3 code-quality review #1.
+      const jobId = `scan-now-${id}-${Date.now()}-${randomBytes(3).toString("hex")}`;
+
+      // Audit BEFORE enqueue (audit-before-side-effect invariant —
+      // a partial enqueue still leaves a forensic trail). The audit
+      // row carries the binding_id + caller_username; NEVER any
+      // operator-supplied freeform text (the route has none to
+      // smuggle — UUID URL param + no body).
+      await writeAuditLog(args.db, {
+        action: "source_binding.scan_now",
+        userId: ctx.userId,
+        metadata: {
+          binding_id: id,
+          caller_username: ctx.username,
+        },
+        sourceIp: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+
+      try {
+        // NOTE: scanner currently scans all enabled bindings per tick;
+        // the empty payload is intentional. Threading bindingId through
+        // scanner.add() to scope a single scan is a follow-up (filed as
+        // Z10 / phase-b candidate). The dedupe pipeline keeps this
+        // correct (cursor + source_doc_id), but a per-binding tick
+        // would be the cleaner operator UX.
+        await enqueue(
+          "scan-now",
+          {},
+          {
+            jobId,
+            removeOnComplete: 10,
+            removeOnFail: 100,
+          },
+        );
+      } catch (err) {
+        // Route through `safeErrorMessage` (scrub-then-cap) rather
+        // than `err.name` — `err.name` is almost always "Error" and
+        // not actionable. Matches the response body's `reason` field
+        // (which already uses `safeErrorMessage`) so the log and the
+        // 500 response carry the same scrubbed string.
+        req.log?.warn({
+          msg: "binding_scan_now.enqueue_failed",
+          binding_id: id,
+          err: safeErrorMessage(err),
+        });
+        return reply.code(500).send({
+          error: "enqueue_failed",
+          reason: safeErrorMessage(err),
+        });
+      }
+
+      return reply.code(202).send({ enqueued: true, jobId });
     },
   );
 
