@@ -578,3 +578,61 @@ describe("admin-api POST /api/admin/source-bindings — post-create initial scan
     expect(mock.calls).toHaveLength(0);
   });
 });
+
+describe("admin-api POST /api/admin/source-bindings/:id/scan-now — receiver-binding regression (PR-Y1)", () => {
+  let cleanup: (() => Promise<void>) | undefined;
+  afterEach(async () => {
+    if (cleanup !== undefined) await cleanup();
+    cleanup = undefined;
+  });
+
+  it("calls queue.add as a method, NOT a detached function (preserves `this` for BullMQ)", async () => {
+    // Pre-fix bug: route extracted `const enqueue = args.ingestionQueue?.add`
+    // then called `enqueue(...)`. BullMQ's real Queue.add reads `this.trace`
+    // internally; called with a lost receiver it throws
+    // "Cannot read properties of undefined (reading 'trace')". The previous
+    // mock used `add: async (...) => {}` (arrow function — no this) so the
+    // bug couldn't be caught. This test asserts the route calls add AS A
+    // METHOD by using a class with a private `this`-bound field that the
+    // add implementation reads — if the route detaches, the read throws.
+    class QueueWithThis {
+      readonly name = "ingestion.scanner";
+      private readonly secret = "bound";
+      async getJobCounts(): Promise<Record<string, number>> {
+        return {};
+      }
+      async add(name: string, data: unknown, opts: unknown): Promise<unknown> {
+        void data;
+        void opts;
+        // The very act of reading `this.secret` is what fails when the
+        // method is called as a detached function — `this` is undefined.
+        if (this.secret !== "bound") throw new Error("receiver lost");
+        return { id: `job-with-this-${name}` };
+      }
+    }
+    const queue = new QueueWithThis();
+    const f = await makeAdminFixture({
+      adminTeamSlug: "opencoo-admins",
+      adminTeamMembers: ["opencoo-admin"],
+      ingestionQueue: queue,
+    });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { bindingId } = await seedBinding(f.raw);
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const res = await f.app.inject({
+      method: "POST",
+      url: `/api/admin/source-bindings/${bindingId}/scan-now`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+      },
+    });
+    expect(res.statusCode).toBe(202);
+    const body = JSON.parse(res.body) as { enqueued: boolean; jobId: string };
+    expect(body.enqueued).toBe(true);
+    expect(body.jobId).toContain("scan-now-");
+  });
+});

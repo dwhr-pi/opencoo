@@ -652,8 +652,13 @@ export function registerSourceBindingsRoutes(
       // Composition gate — the scanner queue must be wired.
       // Returns 503 if undefined, matching the rest of the admin
       // API's boot-tolerance pattern (forgetJobEnqueuer, deleteCap).
-      const enqueue = args.ingestionQueue?.add;
-      if (enqueue === undefined) {
+      // NOTE: hold the queue reference, NOT a detached `queue.add`
+      // bound function — BullMQ's `Queue.add` reads `this.trace`
+      // internally and throws "Cannot read properties of undefined
+      // (reading 'trace')" when called with a lost receiver. Hotfix
+      // PR-Y1 (phase-a-followup) — observed on partner cutover.
+      const queue = args.ingestionQueue;
+      if (queue?.add === undefined) {
         return reply.code(503).send({
           error: "scanner_queue_unavailable",
           reason:
@@ -715,7 +720,7 @@ export function registerSourceBindingsRoutes(
         // Z10 / phase-b candidate). The dedupe pipeline keeps this
         // correct (cursor + source_doc_id), but a per-binding tick
         // would be the cleaner operator UX.
-        await enqueue(
+        await queue.add(
           "scan-now",
           {},
           {
