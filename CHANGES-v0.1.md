@@ -926,6 +926,47 @@ After Z1 landed, a code-quality review surfaced one Critical + three Important i
 
 Test count moves from 36 passed + 1 skipped to 53 passed + 1 skipped on `pnpm --filter @opencoo/source-drive test` (delta: +17 tests). Repo-wide `pnpm test` reports 2537 passed + 14 skipped (was 2520 passed + 14 skipped pre-fix-up). The pre-existing EPIPE flake in `engine-ingestion/tests/start-webhook-mount.test.ts` is unaffected.
 
+## Phase-a follow-up — Z5 (worldview seed)
+
+### Why
+
+Wave-12 gap **G4** (`docs/plan-appendix/phase-a-12-cutover-completion.md`): the domain-create flow seeded `index.md` + `log.md` + `schema.md` into the new Gitea repo but NOT `worldview.md`. The Heartbeat agent reads `worldview://<slug>` via `gitea-wiki-mcp-server` (`packages/gitea-wiki-mcp-server/src/resources/worldview.ts`'s `readWorldview`), which raises `McpResourceNotFoundError` when the file is missing. Verified live on the partner deployment: every Heartbeat dispatch on a freshly-provisioned domain failed at validation (`error_class=validation, output={"name":"McpResourceNotFoundError"}`) until the first ingest cycle produced a worldview body.
+
+### What shipped
+
+- **4th seed file in `provisionDomainRepo`** (`packages/engine-self-operating/src/composition/gitea-provisioning.ts`). The function was already opencoo's single sanctioned exception to the "every Gitea write flows through `wikiWrite`" invariant (architecture.md §1424, THREAT-MODEL §3.5); Z5 extends it from 3 seed POSTs to 4. Provisioning is still atomic — any seed failure rolls back the `domains` row inside the existing `db.transaction` wrapper in `POST /api/admin/domains`.
+- **Locale-aware placeholder body.** `buildWorldviewPlaceholder(locale)` returns the canonical placeholder in English (default) or Polish; `auto` and any unknown locale fall back to English, mirroring the prompt-loader convention (`packages/shared/src/prompts/loader.ts` §7). The text deliberately leads with the lede ("Awaiting first ingest" / "Oczekiwanie na pierwszą synchronizację") so an operator viewing the file in Gitea immediately understands it is a placeholder.
+- **Commit-message pin.** The legacy three seeds use `[provisioning] seed <path>`; the worldview seed uses `seed: empty worldview placeholder` so a partner inspecting `git log` on the wiki repo immediately sees the file's intent.
+- **Tests.** `packages/engine-self-operating/tests/composition/gitea-provisioning.test.ts` grows from 11 to 18 assertions: the happy-path now asserts 5 fetch calls (1 repo create + 4 seeds) and pins the worldview commit message; the fresh-empty-repo bug-C regression test asserts the 4th URL ends with `/contents/worldview.md`; three new wire-shape tests pin the locale-correct placeholder body (en + pl + auto fallback) + the path; four unit tests cover `buildWorldviewPlaceholder` directly.
+
+### IMPORTANT — what Z5 does NOT do
+
+**The worldview compiler does NOT automatically overwrite `worldview.md` on subsequent ingests.** Tracing `packages/engine-self-operating/src/pipelines/worldview/compile-domain.ts` — `compileDomainWorldview` is exported through `pipelines/worldview/index.ts` and re-exported from `src/index.ts`, but a repo-wide grep (`compileDomainWorldview` + `compile-domain`) finds **no production caller**: it's invoked only from the unit-test suite (`tests/pipelines/worldview/compile-domain.test.ts`). The compiler emits a `worldview_impact: string[]` bullet array per page (handled via `normaliseWorldviewImpact` in `packages/engine-ingestion/src/compiler/worldview-impact.ts`), but no aggregator wires those bullets into a single `worldview.md` write.
+
+Wave-12 scoping doc (the "Out of scope" section) asserts: _"Z5 seeds a placeholder; the existing compiler overwrites it on the first ingest cycle."_ That sentence is incorrect — there is no production aggregator today. Z5 ships the placeholder regardless (it closes G4 either way: Heartbeat now succeeds against an empty domain), but the placeholder may live indefinitely on a partner deployment until the compiler-aggregator gap is filled.
+
+This is a **previously-uncatalogued gap** in the wave-12 inventory. Surfaced here for the next wave's planning; not blocking Z5's G4 closure. Candidate scope for a follow-up PR (call it Z11 / phase-b appendix item): wire the `IngestionProcessor` worker to call `compileDomainWorldview` post-merge per affected domain and route the result through `wikiWrite` with `path='worldview.md'` + tag `[compiler]`. The compiler already enforces a 24 KB byte cap with a single retry-on-overflow path (`WorldviewOverflowError` → DLQ), so the missing piece is the trigger + the write, not the compilation.
+
+### Migrations / DB
+
+None. Z5 is composition-helper code only.
+
+### Documentation
+
+- **`IMPLEMENTATION-PLAN.md` §1.1** updates the wave-12 status-snapshot line to include Z5 (and pins Z1's merge sha + PR number `b7e1a4b` / #106).
+- **`docs/plan-appendix/phase-a-12-cutover-completion.md`** — no edit needed; Z5 was already enumerated in the wave roster + file-overlap map.
+- **No `architecture.md` impact.** The worldview placeholder is a domain-create-time bootstrap detail; the §9 worldview-compiler spec is unchanged.
+
+### Deferred (tracked outside Z5)
+
+- **Compiler-aggregator wiring** — the production path that turns `worldview_impact` bullets into a regenerated `worldview.md` per ingest cycle (see "what Z5 does NOT do" above). Filed for follow-up; v0.1 or v0.2 depending on partner pressure.
+
+### Tests + verification
+
+- `pnpm --filter @opencoo/engine-self-operating test`: 669 passed (was 662). Delta: +7 (4 new worldview placeholder + 3 unit tests for `buildWorldviewPlaceholder` + 4 wire-shape tests on the worldview seed call; some assertions extended existing tests, net new-test count is 7).
+- `pnpm lint` clean. `pnpm typecheck` clean (29/29 tasks).
+- `pnpm test` repo-wide: 2545 passed (was 2537 post-Z1). The pre-existing EPIPE flake in `engine-ingestion/tests/start-webhook-mount.test.ts` (Redis socket teardown noise unrelated to Z5) still surfaces in test-runner output as an unhandled rejection without failing any test; the runner emits non-zero only because of that unhandled-rejection — captured for the wave-end Chrome QA. Mitigation candidate logged for v0.2.
+
 ---
 
 ## Phase-a follow-up — Z2 (`SourceAdapter.seed()` primitive + Drive seed + Asana seed)

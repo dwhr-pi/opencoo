@@ -1,5 +1,5 @@
 /**
- * `provisionDomainRepo` tests (phase-a appendix #2).
+ * `provisionDomainRepo` tests (phase-a appendix #2 + #12).
  *
  * Sanctioned exception per architecture.md §1424 — the
  * domain-create flow MUST be able to seed a fresh Gitea repo
@@ -8,19 +8,25 @@
  *
  * Provisioning steps:
  *   1. POST /api/v1/orgs/{org}/repos with {name: slug, private: true}.
- *   2. Create three seed files via PUT /api/v1/repos/{org}/{slug}/contents/{path}:
+ *   2. Create four seed files via POST /api/v1/repos/{org}/{slug}/contents/{path}:
  *      - index.md
  *      - log.md
  *      - schema.md
+ *      - worldview.md  ← PR-Z5 (phase-a appendix #12, closes G4)
  *   3. Idempotent — a 409 from steps 1/2 is treated as
  *      "already provisioned, continue" not a hard error.
  *   4. PAT scrubbed from any error message (THREAT-MODEL §3.13).
  *   5. Domain-class-aware: catalog-* class seeds use the
  *      catalog-class schema/index template.
+ *   6. Locale-aware: `worldview.md` placeholder body matches the
+ *      domain's `defaultLocale` (en | pl; auto + unknown → en).
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { provisionDomainRepo } from "../../src/composition/gitea-provisioning.js";
+import {
+  buildWorldviewPlaceholder,
+  provisionDomainRepo,
+} from "../../src/composition/gitea-provisioning.js";
 
 const SECRET_PAT = "ghp_provisioning-secret-7890abcdef";
 
@@ -32,7 +38,7 @@ function ok(body: unknown, status = 200): Response {
 }
 
 describe("provisionDomainRepo — happy path", () => {
-  it("creates the repo + seeds three files (index/log/schema) and returns repoUrl", async () => {
+  it("creates the repo + seeds four files (index/log/schema/worldview) and returns repoUrl", async () => {
     const fetchImpl = vi.fn();
     // 1) POST /api/v1/orgs/opencoo/repos → 201 with html_url.
     fetchImpl.mockResolvedValueOnce(
@@ -51,6 +57,8 @@ describe("provisionDomainRepo — happy path", () => {
     fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "b" } }, 201));
     // 4) POST /contents/schema.md
     fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "c" } }, 201));
+    // 5) POST /contents/worldview.md (PR-Z5)
+    fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "d" } }, 201));
 
     const result = await provisionDomainRepo({
       baseUrl: "https://gitea.test",
@@ -63,8 +71,9 @@ describe("provisionDomainRepo — happy path", () => {
     });
 
     expect(result.repoUrl).toBe("https://gitea.test/opencoo/wiki-main");
-    // 4 fetch calls: 1 repo create + 3 file seeds.
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    // 5 fetch calls: 1 repo create + 4 file seeds (PR-Z5 adds
+    // the worldview placeholder, closes G4 — phase-a appendix #12).
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
 
     // The repo-create call carries `private: true`.
     const repoCallInit = fetchImpl.mock.calls[0]![1] as RequestInit;
@@ -83,44 +92,61 @@ describe("provisionDomainRepo — happy path", () => {
       );
     }
 
-    // The seed-file URLs hit the right endpoints.
+    // The seed-file URLs hit the right endpoints — in the
+    // canonical order index → log → schema → worldview.
     const seedUrls = fetchImpl.mock.calls.slice(1).map((c) => String(c[0]));
     expect(seedUrls[0]).toMatch(/\/repos\/opencoo\/wiki-main\/contents\/index\.md$/);
     expect(seedUrls[1]).toMatch(/\/repos\/opencoo\/wiki-main\/contents\/log\.md$/);
     expect(seedUrls[2]).toMatch(/\/repos\/opencoo\/wiki-main\/contents\/schema\.md$/);
+    expect(seedUrls[3]).toMatch(/\/repos\/opencoo\/wiki-main\/contents\/worldview\.md$/);
 
     // Wire-shape regression for bug C — every seed-file fetch must
     // be POST (Gitea's "create file" verb). PUT is the "update"
     // endpoint and returns 422 [SHA]: Required on a fresh repo,
     // which the previous idempotency carve-out silently swallowed
-    // → empty repo. Index 0 is the repo-create POST; indices 1-3
-    // are the seed file POSTs.
+    // → empty repo. Index 0 is the repo-create POST; indices 1-4
+    // are the four seed-file POSTs.
     expect((fetchImpl.mock.calls[0]![1] as RequestInit).method).toBe("POST");
     expect((fetchImpl.mock.calls[1]![1] as RequestInit).method).toBe("POST");
     expect((fetchImpl.mock.calls[2]![1] as RequestInit).method).toBe("POST");
     expect((fetchImpl.mock.calls[3]![1] as RequestInit).method).toBe("POST");
+    expect((fetchImpl.mock.calls[4]![1] as RequestInit).method).toBe("POST");
+
+    // PR-Z5 commit-message pin: the worldview seed uses the more
+    // explicit `seed: empty worldview placeholder` message so a
+    // partner inspecting `git log` immediately sees the file's
+    // purpose (the legacy three seeds use `[provisioning] seed
+    // <path>`).
+    const worldviewInit = fetchImpl.mock.calls[4]![1] as RequestInit;
+    const worldviewBody = JSON.parse(String(worldviewInit.body)) as {
+      message: string;
+      content: string;
+    };
+    expect(worldviewBody.message).toBe("seed: empty worldview placeholder");
   });
 });
 
 describe("provisionDomainRepo — fresh empty repo (regression for bug C)", () => {
-  it("provisionDomainRepo on a fresh empty repo seeds all three files (regression for the PUT-on-empty-repo bug)", async () => {
+  it("provisionDomainRepo on a fresh empty repo seeds all four files (regression for the PUT-on-empty-repo bug, + PR-Z5 worldview)", async () => {
     // Smoke test against a freshly created Gitea repo (no default
     // branch yet). The bug was: PUT on contents/<path> for a repo
     // with no commits returned 422 [SHA]: Required, which the
     // idempotency carve-out swallowed as "already seeded" — leaving
     // the repo empty. Helper must POST (Gitea's "Create a file"
     // endpoint creates the default branch automatically when the
-    // repo has no commits) and the three seeds must each land.
+    // repo has no commits) and the four seeds must each land
+    // (index/log/schema legacy + PR-Z5 worldview placeholder).
     const fetchImpl = vi.fn();
     // 1) repo create POST → 201
     fetchImpl.mockResolvedValueOnce(
       ok({ html_url: "https://gitea.test/opencoo/fresh-repo" }, 201),
     );
-    // 2-4) three seed POSTs → 201 each (Gitea returns the new
+    // 2-5) four seed POSTs → 201 each (Gitea returns the new
     //      content sha in the body)
     fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "i1" } }, 201));
     fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "i2" } }, 201));
     fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "i3" } }, 201));
+    fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "i4" } }, 201));
 
     const result = await provisionDomainRepo({
       baseUrl: "https://gitea.test",
@@ -133,12 +159,12 @@ describe("provisionDomainRepo — fresh empty repo (regression for bug C)", () =
     });
 
     expect(result.repoUrl).toBe("https://gitea.test/opencoo/fresh-repo");
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
 
-    // Three seed-file calls — methods MUST be POST and URLs MUST
+    // Four seed-file calls — methods MUST be POST and URLs MUST
     // end with the expected `contents/<path>` paths.
     const seedCalls = fetchImpl.mock.calls.slice(1);
-    expect(seedCalls).toHaveLength(3);
+    expect(seedCalls).toHaveLength(4);
     expect(String(seedCalls[0]![0])).toMatch(
       /\/repos\/opencoo\/fresh-repo\/contents\/index\.md$/,
     );
@@ -147,6 +173,9 @@ describe("provisionDomainRepo — fresh empty repo (regression for bug C)", () =
     );
     expect(String(seedCalls[2]![0])).toMatch(
       /\/repos\/opencoo\/fresh-repo\/contents\/schema\.md$/,
+    );
+    expect(String(seedCalls[3]![0])).toMatch(
+      /\/repos\/opencoo\/fresh-repo\/contents\/worldview\.md$/,
     );
     for (const call of seedCalls) {
       const init = call[1] as RequestInit;
@@ -173,6 +202,10 @@ describe("provisionDomainRepo — idempotency", () => {
     );
     fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "ok" } }, 201));
     fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "ok" } }, 201));
+    // PR-Z5: 4th seed call (worldview.md). 201 OK keeps the test
+    // scoped to the 422-already-exists idempotency path on a
+    // single seed file.
+    fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "ok" } }, 201));
     const result = await provisionDomainRepo({
       baseUrl: "https://gitea.test",
       pat: SECRET_PAT,
@@ -198,6 +231,8 @@ describe("provisionDomainRepo — idempotency", () => {
       ok({ message: "file already exists" }, 409),
     );
     fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "ok" } }, 201));
+    fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "ok" } }, 201));
+    // PR-Z5: 4th seed call (worldview.md).
     fetchImpl.mockResolvedValueOnce(ok({ content: { sha: "ok" } }, 201));
     const result = await provisionDomainRepo({
       baseUrl: "https://gitea.test",
@@ -258,6 +293,8 @@ describe("provisionDomainRepo — idempotency", () => {
     // The helper falls through to seeding — assume seeds also already exist.
     fetchImpl.mockResolvedValueOnce(ok({ message: "exists" }, 409));
     fetchImpl.mockResolvedValueOnce(ok({ message: "exists" }, 409));
+    fetchImpl.mockResolvedValueOnce(ok({ message: "exists" }, 409));
+    // PR-Z5: 4th seed (worldview.md) also already exists.
     fetchImpl.mockResolvedValueOnce(ok({ message: "exists" }, 409));
 
     const result = await provisionDomainRepo({
@@ -328,13 +365,15 @@ describe("provisionDomainRepo — PAT scrub", () => {
 });
 
 describe("provisionDomainRepo — domain class shapes the seed templates", () => {
-  it("knowledge-class seeds carry the basic three-file template", async () => {
+  it("knowledge-class seeds carry the basic four-file template", async () => {
     const fetchImpl = vi.fn();
     fetchImpl.mockResolvedValueOnce(
       ok({ html_url: "https://gitea.test/opencoo/wiki-knowledge" }, 201),
     );
     fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
     fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
+    fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
+    // PR-Z5: worldview.md is the 4th seed.
     fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
 
     await provisionDomainRepo({
@@ -364,6 +403,10 @@ describe("provisionDomainRepo — domain class shapes the seed templates", () =>
     fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
     fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
     fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
+    // PR-Z5: worldview.md is the 4th seed (catalog domains also
+    // serve agents — the worldview placeholder applies regardless
+    // of domain class).
+    fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
 
     await provisionDomainRepo({
       baseUrl: "https://gitea.test",
@@ -380,5 +423,144 @@ describe("provisionDomainRepo — domain class shapes the seed templates", () =>
     const decoded = Buffer.from(indexBody.content, "base64").toString("utf8");
     // Catalog index advertises content_kind awareness.
     expect(decoded.toLowerCase()).toMatch(/catalog|workflow/);
+  });
+});
+
+describe("provisionDomainRepo — PR-Z5 worldview placeholder (closes G4)", () => {
+  // The 4th seed body is the load-bearing addition. Before Z5, a
+  // freshly provisioned domain had no `worldview.md`; the
+  // Heartbeat agent's `worldview://<slug>` MCP read raised
+  // `McpResourceNotFoundError` → every dispatch failed at
+  // validation. These tests pin the placeholder's locale-correct
+  // content + the on-the-wire shape (path, commit message).
+
+  function decodeSeedBody(call: unknown[]): {
+    message: string;
+    content: string;
+  } {
+    const init = call[1] as RequestInit;
+    const parsed = JSON.parse(String(init.body)) as {
+      message: string;
+      content: string;
+    };
+    return {
+      message: parsed.message,
+      content: Buffer.from(parsed.content, "base64").toString("utf8"),
+    };
+  }
+
+  function newSuccessfulMock(): ReturnType<typeof vi.fn> {
+    const fetchImpl = vi.fn();
+    fetchImpl.mockResolvedValueOnce(
+      ok({ html_url: "https://gitea.test/opencoo/wiki-z5" }, 201),
+    );
+    fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
+    fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
+    fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
+    fetchImpl.mockResolvedValueOnce(ok({ content: {} }, 201));
+    return fetchImpl;
+  }
+
+  it("English locale: placeholder lead-in matches 'Awaiting first ingest'", async () => {
+    const fetchImpl = newSuccessfulMock();
+    await provisionDomainRepo({
+      baseUrl: "https://gitea.test",
+      pat: SECRET_PAT,
+      org: "opencoo",
+      slug: "wiki-z5",
+      domainClass: "knowledge",
+      defaultLocale: "en",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const seed = decodeSeedBody(fetchImpl.mock.calls[4]!);
+    expect(seed.message).toBe("seed: empty worldview placeholder");
+    expect(seed.content).toMatch(/^# Domain Worldview\n/);
+    expect(seed.content).toContain("Awaiting first ingest");
+    // Cross-language smoke: en placeholder must NOT carry the
+    // Polish phrasing (catches accidental locale crosswiring).
+    expect(seed.content).not.toContain("Oczekiwanie");
+  });
+
+  it("Polish locale: placeholder lead-in matches 'Oczekiwanie na pierwszą synchronizację'", async () => {
+    const fetchImpl = newSuccessfulMock();
+    await provisionDomainRepo({
+      baseUrl: "https://gitea.test",
+      pat: SECRET_PAT,
+      org: "opencoo",
+      slug: "wiki-z5",
+      domainClass: "knowledge",
+      defaultLocale: "pl",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const seed = decodeSeedBody(fetchImpl.mock.calls[4]!);
+    expect(seed.message).toBe("seed: empty worldview placeholder");
+    expect(seed.content).toMatch(/^# Worldview domeny\n/);
+    expect(seed.content).toContain("Oczekiwanie na pierwszą synchronizację");
+    expect(seed.content).not.toContain("Awaiting first ingest");
+  });
+
+  it("'auto' locale falls back to English (matching the prompt-loader convention)", async () => {
+    const fetchImpl = newSuccessfulMock();
+    await provisionDomainRepo({
+      baseUrl: "https://gitea.test",
+      pat: SECRET_PAT,
+      org: "opencoo",
+      slug: "wiki-z5",
+      domainClass: "knowledge",
+      defaultLocale: "auto",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const seed = decodeSeedBody(fetchImpl.mock.calls[4]!);
+    expect(seed.content).toContain("Awaiting first ingest");
+  });
+
+  it("path is exactly `worldview.md` (Heartbeat reads `worldview://<slug>` → maps to this filename)", async () => {
+    const fetchImpl = newSuccessfulMock();
+    await provisionDomainRepo({
+      baseUrl: "https://gitea.test",
+      pat: SECRET_PAT,
+      org: "opencoo",
+      slug: "wiki-z5",
+      domainClass: "knowledge",
+      defaultLocale: "en",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const seedUrl = String(fetchImpl.mock.calls[4]![0]);
+    // The URL-encoded path must end with exactly `worldview.md` —
+    // any other casing or extension breaks gitea-wiki-mcp-server's
+    // resolver and re-opens G4.
+    expect(seedUrl).toMatch(/\/contents\/worldview\.md$/);
+  });
+});
+
+describe("buildWorldviewPlaceholder — pure unit (PR-Z5)", () => {
+  // The placeholder body is content-load-bearing: the worldview
+  // compiler will overwrite it on first ingest, but until then
+  // it's what Heartbeat / Lint / Surfacer see. Pin the key
+  // sentences so a future refactor can't silently regress them.
+
+  it("English: leads with 'Awaiting first ingest' and references the Worldview Compiler", () => {
+    const body = buildWorldviewPlaceholder("en");
+    expect(body).toMatch(/^# Domain Worldview\n/);
+    expect(body).toContain("Awaiting first ingest");
+    expect(body).toContain("Worldview Compiler");
+  });
+
+  it("Polish: leads with 'Oczekiwanie na pierwszą synchronizację' and references the Worldview Compiler", () => {
+    const body = buildWorldviewPlaceholder("pl");
+    expect(body).toMatch(/^# Worldview domeny\n/);
+    expect(body).toContain("Oczekiwanie na pierwszą synchronizację");
+    expect(body).toContain("Worldview Compiler");
+  });
+
+  it("unknown locale falls back to English (defensive, mirrors prompt-loader §7)", () => {
+    const body = buildWorldviewPlaceholder("fr");
+    expect(body).toMatch(/^# Domain Worldview\n/);
+    expect(body).toContain("Awaiting first ingest");
+  });
+
+  it("'auto' falls back to English", () => {
+    const body = buildWorldviewPlaceholder("auto");
+    expect(body).toMatch(/^# Domain Worldview\n/);
   });
 });
