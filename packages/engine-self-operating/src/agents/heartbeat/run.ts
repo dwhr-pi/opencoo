@@ -28,6 +28,12 @@ import {
 } from "../tools/index.js";
 
 import {
+  gatherSystemHealth as defaultGatherSystemHealth,
+  type GatherSystemHealthArgs,
+  type SystemHealth,
+  type WikiReader,
+} from "./system-health.js";
+import {
   HEARTBEAT_OUTPUT_SCHEMA,
   type HeartbeatOutput,
 } from "./types.js";
@@ -45,8 +51,24 @@ export interface RunHeartbeatArgs {
    *  scopeDomainIds before doing any further work — a slug
    *  outside scope throws DomainScopeMismatchError (DLQ). */
   readonly domainSlug: string;
+  /** Optional WikiAdapter handle threaded through to the
+   *  system-health gatherer. When omitted the gatherer
+   *  gracefully degrades to `page_count: 0` + `worldview_bytes:
+   *  0` rather than throwing — useful for legacy test paths
+   *  that don't construct an adapter. Production composition
+   *  (`cli/src/provision/agent-runners.ts`) MUST pass the real
+   *  Gitea-backed adapter so the heartbeat's empty-wiki branch
+   *  reads true page counts. */
+  readonly wikiAdapter?: WikiReader;
   /** Optional clock for deterministic test fetched-at metadata. */
   readonly now?: () => Date;
+  /** Test seam — swap in a fake gatherer so the runHeartbeat
+   *  body can be asserted without standing up the full SQL
+   *  fixture. Production callers leave this undefined and the
+   *  module-local `gatherSystemHealth` runs. */
+  readonly gatherSystemHealth?: (
+    args: GatherSystemHealthArgs,
+  ) => Promise<SystemHealth>;
 }
 
 export async function runHeartbeat(
@@ -89,6 +111,30 @@ export async function runHeartbeat(
     indexSearch(args.mcp, { domainSlug: args.domainSlug }),
   );
 
+  // PR-W6 (phase-a appendix #14) — pre-fetch operational-
+  // health context so the LLM has real signals to draw on
+  // when the wiki is sparsely populated. The gatherer reads
+  // ONLY from the heartbeat's scope (scope-anchored joins via
+  // `sources_bindings.domain_id` / `agent_instances.scope_
+  // domain_ids`); the prompt's empty-wiki branch directs the
+  // model to surface up to 5 operational-health alerts
+  // (intake backlog, source-binding lag, agent-run failures,
+  // worldview staleness) rather than regurgitating the
+  // worldview placeholder. The function is a pure read-side
+  // aggregate and not routed through `ctx.callTool` — it has
+  // no caller-supplied params (scope + slug come from the
+  // run's pre-validated args) and no external side effects.
+  const gatherer = args.gatherSystemHealth ?? defaultGatherSystemHealth;
+  const systemHealth = await gatherer({
+    db: args.db,
+    scopeDomainIds: scope,
+    domainSlug: args.domainSlug,
+    ...(args.wikiAdapter !== undefined
+      ? { wikiAdapter: args.wikiAdapter }
+      : {}),
+    now,
+  });
+
   const prompt = loadPrompt({ name: "heartbeat", locale: ctx.instance.locale });
 
   // Spotlight the fetched-at-runtime context. The harness has
@@ -106,13 +152,38 @@ export async function runHeartbeat(
     source: `index://${args.domainSlug}`,
     fetchedAt,
   });
+  const systemHealthEnvelope = spotlight({
+    // JSON-encode the snapshot so the LLM sees a structured
+    // payload it can lift fields from (`wiki_stats.page_count`,
+    // `intake_counts.failed`).
+    //
+    // Defense-in-depth chain for fields containing operator-
+    // visible strings (error_text_snippet, last_failure_message,
+    // binding_name):
+    //   (1) gatherSystemHealth applies `safeErrorMessage` —
+    //       scrubs credential-shaped substrings (postgres://,
+    //       sk-…, env-var-style tokens) AND caps to 200 chars.
+    //       This is the load-bearing layer for "no credentials
+    //       in the LLM prompt" (THREAT-MODEL §2 invariant 11).
+    //   (2) spotlight() — XML sentinel guard ONLY. It escapes
+    //       `<system>` / `</source_content>` tag-shaped bytes
+    //       so they cannot terminate the envelope or forge a
+    //       chat-format role marker. spotlight() is NOT a
+    //       secret-scrubber; a credential that survived (1)
+    //       would be XML-escaped here but still reach the model.
+    //   See `@opencoo/shared/spotlight` header for the
+    //   amp → sentinel → xmlbody escape order.
+    content: JSON.stringify(systemHealth, null, 2),
+    source: `system-health://${args.domainSlug}`,
+    fetchedAt,
+  });
 
   const memoryBlock =
     ctx.spotlightedMemory.length === 0
       ? ""
       : `\n\n# Prior briefings (your memory)\n${ctx.spotlightedMemory.join("\n\n")}`;
 
-  const fullPrompt = `${prompt.body}\n\n# Domain worldview\n${worldviewEnvelope}\n\n# Available wiki pages\n${indexEnvelope}${memoryBlock}`;
+  const fullPrompt = `${prompt.body}\n\n# Domain worldview\n${worldviewEnvelope}\n\n# Available wiki pages\n${indexEnvelope}\n\n# Operational system health\n${systemHealthEnvelope}${memoryBlock}`;
 
   const result = await ctx.router.generateObject({
     domainId,

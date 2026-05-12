@@ -41,6 +41,14 @@ Treść powinna:
   niejasności.
 - Pozostawać rzeczowa. Bez języka marketingowego.
 
-Jeśli domena jest pusta (brak stron), zwróć jedno zdanie to
-potwierdzające — pusta treść jest niepoprawna.
+Jeśli domena jest pusta (brak stron), zwróć DOKŁADNIE to jedno
+zdanie jako treść, nic więcej:
+
+  Domena nie ma jeszcze skompilowanych stron. Operator powinien sprawdzić zakładkę Sources, by zobaczyć stan przetwarzania.
+
+Bez wypełniaczy. Agent Heartbeat otrzyma osobną migawkę
+\`system-health://\` na pustej domenie i wystawi alerty
+operacyjne z niej; tu twoim zadaniem jest zachowanie
+krótkiego worldview, aby nie wypierał tej migawki z uwagi
+Heartbeata.
 `;

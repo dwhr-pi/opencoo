@@ -69,6 +69,7 @@ import { safeErrorMessage } from "@opencoo/shared/scrub";
 import {
   InMemoryDeleteCap,
   type DeleteCap,
+  type WikiAdapter,
 } from "@opencoo/shared/wiki-write";
 
 import {
@@ -1354,6 +1355,14 @@ export interface ComposeAgentRunnersArgs {
    *  without touching env vars. Production callers leave this
    *  undefined and let env-derivation run. (PR-O3, appendix #7). */
   readonly n8nMcpClient?: McpToolCallClientShape | null;
+  /** WikiAdapter handle the Heartbeat runner threads into
+   *  `runHeartbeat({ wikiAdapter })` so the system-health
+   *  gatherer (PR-W6, phase-a appendix #14) can read true
+   *  page counts + worldview bytes for the empty-wiki prompt
+   *  branch. Optional in this interface so test paths can
+   *  skip it; production composition always wires the
+   *  Gitea-backed adapter. */
+  readonly wikiAdapter?: WikiAdapter;
 }
 
 export interface ComposedAgentRunners {
@@ -1626,6 +1635,22 @@ export async function tryComposeAgentRunnersFromEnv(
     definitions,
     availableTemplateSlugs,
     surfacerEnabled,
+    // PR-W6 (phase-a appendix #14) — Heartbeat runner threads
+    // an optional wikiAdapter into `runHeartbeat({ wikiAdapter })`
+    // so the system-health gatherer can read true page counts +
+    // worldview bytes for the empty-wiki prompt branch.
+    //
+    // Wiring note: `tryComposeAgentRunnersFromEnv` is the env-only
+    // composition path — it does not construct its own Gitea
+    // adapter, so callers that want to populate the heartbeat's
+    // wiki_stats from real data must thread one in via
+    // `ComposeAgentRunnersArgs.wikiAdapter`. When the adapter is
+    // absent the gatherer falls back to `page_count: 0` +
+    // `worldview_bytes: 0`, which correctly triggers the prompt's
+    // "operational" branch on an empty domain.
+    ...(args.wikiAdapter !== undefined
+      ? { wikiAdapter: args.wikiAdapter }
+      : {}),
   });
 
   return { mcp, definitions, runners };

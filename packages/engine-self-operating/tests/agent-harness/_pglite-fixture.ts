@@ -155,6 +155,31 @@ const TABLES_DDL = `
     updated_at timestamp with time zone DEFAULT now() NOT NULL
   );
 
+  -- ingestion_intake (Heartbeat system-health gatherer reads
+  -- per-status counts + per-binding failed-row diagnostics
+  -- against this. PR-W6 phase-a appendix #14. The status
+  -- column is stored as TEXT in the fixture (rather than the
+  -- intake_status enum) so the test stays enum-tolerant
+  -- across W3 which adds the failed value to the enum. The
+  -- gatherer's status text-cast comparison works regardless
+  -- of whether the enum has the value yet, but the fixture
+  -- itself could not pre-populate rows with status=failed via
+  -- the enum cast unless failed is in the enum. Storing as
+  -- TEXT lets the fixture seed any status the test needs
+  -- without depending on W3 having merged.
+  CREATE TABLE ingestion_intake (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    binding_id uuid NOT NULL REFERENCES sources_bindings(id) ON DELETE RESTRICT,
+    source_doc_id text NOT NULL,
+    source_revision text NOT NULL,
+    content_hash text NOT NULL,
+    status text NOT NULL DEFAULT 'pending',
+    last_classifier_run_id text,
+    error_class error_class,
+    error_text text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+  );
+
   -- page_citations (Lint stale-pages / orphans / prompt-drift
   -- detectors aggregate over this).
   CREATE TABLE page_citations (

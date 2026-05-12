@@ -197,6 +197,44 @@ describe("loadPrompt — heartbeat prompts (PR 20)", () => {
     const pl = loadPrompt({ name: "heartbeat", locale: "pl" });
     expect(pl.version).toBe(en.version);
   });
+
+  // PR-W6 (phase-a appendix #14) — empty-wiki branch instructs
+  // the LLM to surface operational-health alerts from the
+  // `system-health://` envelope when the wiki is sparse. A
+  // future edit that drops this guidance would silently
+  // regress the empty-wiki heartbeat back to "wiki is empty"
+  // alerts — snapshot the load-bearing fragments so the diff
+  // surfaces in review.
+  it("EN heartbeat prompt anchors the operational-health (system-health://) empty-wiki branch", () => {
+    const en = loadPrompt({ name: "heartbeat", locale: "en" });
+    const body = en.body;
+    // Reference to the spotlight envelope source.
+    expect(body).toContain("system-health://");
+    // Branch trigger: page_count < 5 — the prompt has to name
+    // both the field path and the cutoff so the model knows
+    // when to flip kinds.
+    expect(body).toContain("wiki_stats.page_count");
+    expect(body).toMatch(/fewer than 5|less than 5|under 5/i);
+    // Anti-regurgitation directive — the most important new
+    // rule; without it the model falls back to repeating the
+    // worldview placeholder.
+    expect(body.toLowerCase()).toContain("regurgitate");
+    // summary_kind is named so the model knows to emit it.
+    expect(body).toContain("summary_kind");
+    expect(body).toContain('"operational"');
+  });
+
+  it("PL heartbeat prompt mirrors the operational-health empty-wiki branch", () => {
+    const pl = loadPrompt({ name: "heartbeat", locale: "pl" });
+    const body = pl.body;
+    expect(body).toContain("system-health://");
+    expect(body).toContain("wiki_stats.page_count");
+    expect(body).toContain("summary_kind");
+    // Polish anti-regurgitation directive — "NIE powtarzaj"
+    // ("do NOT repeat") rather than "regurgitate" since Polish
+    // has no idiom for the English word.
+    expect(body.toLowerCase()).toContain("nie powtarzaj");
+  });
 });
 
 describe("loadPrompt — lint prompts (PR 20)", () => {
@@ -375,6 +413,25 @@ describe("loadPrompt — worldview-domain prompts (PR 22 / plan #106)", () => {
     expect(body).toContain("source_content");
     expect(body).toMatch(/niezaufan|nie wykonuj/);
     expect(body).toMatch(/24[ ,]?000|24kb/);
+  });
+
+  // PR-W6 (phase-a appendix #14) — empty-wiki branch is
+  // tightened to a single sentence so the Heartbeat agent's
+  // system-health snapshot dominates the prompt on empty
+  // domains. Snapshot the exact sentence so a future edit
+  // that re-expands the empty-wiki text lights up in review.
+  it("EN worldview-domain prompt's empty-wiki branch is the tightened single sentence", () => {
+    const en = loadPrompt({ name: "worldview-domain", locale: "en" });
+    expect(en.body).toContain(
+      "Domain has no compiled pages yet. Operator should check the Sources tab for ingestion state.",
+    );
+  });
+
+  it("PL worldview-domain prompt's empty-wiki branch is the tightened single sentence", () => {
+    const pl = loadPrompt({ name: "worldview-domain", locale: "pl" });
+    expect(pl.body).toContain(
+      "Domena nie ma jeszcze skompilowanych stron. Operator powinien sprawdzić zakładkę Sources, by zobaczyć stan przetwarzania.",
+    );
   });
 });
 

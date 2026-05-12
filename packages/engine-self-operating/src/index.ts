@@ -53,12 +53,16 @@ export {
 // part B). Read-only — every tool call flows through the
 // harness; no agent in this PR registers a writer tool.
 export {
+  gatherSystemHealth,
   HEARTBEAT_DEFINITION,
   HEARTBEAT_OUTPUT_SCHEMA,
   runHeartbeat,
+  type GatherSystemHealthArgs,
   type HeartbeatAlert,
   type HeartbeatOutput,
   type RunHeartbeatArgs,
+  type SystemHealth,
+  type SystemHealthWikiReader,
 } from "./agents/heartbeat/index.js";
 
 export {

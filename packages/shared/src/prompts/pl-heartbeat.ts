@@ -11,6 +11,7 @@ Bez pól, których schemat nie wymienia.
 {
   "version": "v1",
   "summary": "<jednozdaniowe streszczenie wykonawcze, max 200 znaków>",
+  "summary_kind": "operational" | "synthesis",  // OPCJONALNE; patrz sekcja "Alerty operacyjne"
   "alerts": [
     {
       "priority": 1 | 2 | 3 | 4 | 5,
@@ -47,6 +48,61 @@ mieć własny numer priorytetu.
 Każdy alert MUSI zawierać co najmniej jedną pozycję w "citations" —
 ścieżkę(i) wiki, na której alert jest osadzony. Alert bez cytatu
 jest nieweryfikowalny i zostanie odrzucony przez silnik.
+
+# Alerty operacyjne (pusta / uboga wiki)
+
+Wejście zawiera kopertę
+\`<source_content source="system-health://...">\` z migawką
+JSON zawierającą pola \`intake_counts\`,
+\`intake_failures_recent\`, \`source_bindings\`,
+\`recent_agent_runs\` oraz \`wiki_stats\`.
+
+Jeśli \`wiki_stats.page_count\` jest mniejsze niż 5 (wiki nie
+zostało jeszcze skompilowane lub istnieją tylko strony
+techniczne zarządzane przez silnik), ustaw
+\`summary_kind: "operational"\` i wystaw maks. 5 alertów
+operacyjnych z bloku \`system-health://\`. Rozważ pięć źródeł
+w następującej kolejności:
+
+  1. Zaległości przetwarzania — gdy \`intake_counts.pending\`
+     lub \`intake_counts.failed\` jest niezerowe. Cytuj
+     odpowiednie bindingi po nazwie z
+     \`intake_failures_recent\` lub \`source_bindings\`. Użyj
+     \`sources/<binding-name>.md\` jako ścieżki cytatu (stałe
+     odwołanie operatorskie — wiersz bindingu istnieje w
+     panelu administracyjnym, nawet jeśli strona wiki nie).
+  2. Nieudane zadania kompilacji — wymień każdą pozycję
+     \`intake_failures_recent[i]\`: dołącz \`binding_name\` i
+     \`error_class\` w treści, by operator znalazł błędną
+     konfigurację bez zaglądania do logów workera.
+  3. Opóźnienia bindingów źródłowych — każda pozycja
+     \`source_bindings[i].hours_since_scan\` większa od 24
+     (lub null, czyli nigdy nieskanowana). Podaj nazwę
+     bindingu i liczbę godzin.
+  4. Niedawne błędy agentów — gdy
+     \`recent_agent_runs[i].failure_count\` > 0 w ostatnich 24h.
+     Dołącz \`last_failure_message\` (jest już skróconym
+     fragmentem powyżej).
+  5. Nieaktualny worldview — gdy
+     \`wiki_stats.worldview_last_compiled_at\` jest starsze niż
+     24h względem zegara uruchomienia.
+
+NIE powtarzaj placeholderu worldview. "Wiki nie ma jeszcze
+skompilowanych stron" to OBSERWACJA wyzwalająca ścieżkę
+operacyjną — nie samodzielna treść alertu.
+
+Jeśli \`wiki_stats.page_count\` ≥ 5, preferuj alerty oparte na
+syntezie (z treści wiki). Wystawiaj alerty operacyjne tylko
+gdy ich waga przekracza znaleziska po stronie wiedzy — np.
+200 nieprzetworzonych dokumentów to nowość nawet na zdrowej
+wiki, ale bezczynny binding po 36h jest istotny tylko, gdy
+nic innego się nie dzieje.
+
+Ustaw \`summary_kind: "synthesis"\` jeśli większość alertów
+pochodzi z syntezy treści wiki. Pole jest OPCJONALNE — pomiń
+je, jeśli nie umiesz rozróżnić jednoznacznie.
+
+# Reguły ogólne
 
 Nie wymyślaj ścieżek wiki. Nie odwołuj się do stron poza
 domenami podanymi w danych wejściowych. Nie proponuj nowych

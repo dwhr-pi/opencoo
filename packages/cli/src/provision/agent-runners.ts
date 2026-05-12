@@ -48,9 +48,11 @@ import {
   type AgentRunner,
   type AgentRunnerRegistry,
   type McpToolClient,
+  type SystemHealthWikiReader,
 } from "@opencoo/engine-self-operating";
 import type { Logger } from "@opencoo/shared/logger";
 import type { LlmRouter } from "@opencoo/shared/llm-router";
+import type { WikiAdapter } from "@opencoo/shared/wiki-write";
 
 /** Module-level alias for the Drizzle wrapper around node-postgres'
  *  `pg.Pool`. Used by `createProductionAgentRunners` (wrap once at
@@ -85,6 +87,17 @@ export interface ProductionAgentRunnersDeps {
    *  paths leave this undefined and let the closure resolve from
    *  `ctx.instance.scopeDomainIds[0]` at dispatch time. */
   readonly domainSlug?: string;
+  /** Optional WikiAdapter handle. The Heartbeat closure threads
+   *  this through to `runHeartbeat({ wikiAdapter })` so the
+   *  system-health gatherer (PR-W6, phase-a appendix #14) can
+   *  read `wiki_stats.page_count` + `worldview_bytes` from the
+   *  Gitea-backed wiki repo. Optional because: (a) test paths
+   *  may skip the adapter and accept `page_count: 0` reads, and
+   *  (b) the gatherer falls back gracefully (returns 0) when
+   *  the adapter is absent — degrading to "operational" alerts
+   *  is the correct behaviour when the wiki backend is
+   *  unreachable. */
+  readonly wikiAdapter?: WikiAdapter;
   /** The closed set of n8n template slugs Surfacer can propose.
    *  Mirrors the prompt's allow-list; `runSurfacer` rejects any
    *  candidate with an unknown slug. */
@@ -152,12 +165,24 @@ export function createProductionAgentRunners(
   // on first dispatch (PR-Q2, phase-a appendix #9).
   const drizzleDb: DrizzleDb = drizzle(deps.db);
 
+  // The WikiAdapter contract (`listMarkdown`, `readPage`) is a
+  // superset of the system-health gatherer's WikiReader
+  // structural contract — cast through the smaller interface
+  // to keep the gatherer's contract decoupled from the wider
+  // adapter API (no `writeAtomic` / `getHeadSha` needed for
+  // read-only stats).
+  const wikiReader: SystemHealthWikiReader | undefined =
+    deps.wikiAdapter !== undefined
+      ? (deps.wikiAdapter as unknown as SystemHealthWikiReader)
+      : undefined;
+
   const heartbeat: AgentRunner = async (ctx: AgentRunContext) => {
     const domainSlug = await resolveDomainSlug(drizzleDb, ctx, deps.domainSlug);
     return runHeartbeat(ctx, {
       db: drizzleDb,
       mcp: deps.mcp,
       domainSlug,
+      ...(wikiReader !== undefined ? { wikiAdapter: wikiReader } : {}),
     } as unknown as Parameters<typeof runHeartbeat>[1]);
   };
 

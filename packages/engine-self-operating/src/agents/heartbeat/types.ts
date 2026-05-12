@@ -33,6 +33,16 @@ export const HEARTBEAT_OUTPUT_SCHEMA = z
     // would let a verbose LLM payload through; downstream
     // channel renderers expect the cap.
     summary: z.string().min(1).max(200),
+    // `summary_kind` (PR-W6, phase-a appendix #14) is an
+    // OPTIONAL soft signal: 'operational' when the LLM drew
+    // alerts from the system-health envelope on a sparsely-
+    // populated wiki, 'synthesis' when it leaned on compiled
+    // wiki pages. The transformer doesn't branch on it today;
+    // it's persisted into `agent_runs.output` for v2 telemetry
+    // (e.g. surfacing the operational/synthesis ratio on the
+    // Heartbeat tile). Optional + additive so the existing
+    // transformer + Asana payload keep working unchanged.
+    summary_kind: z.enum(["operational", "synthesis"]).optional(),
     alerts: z.array(HEARTBEAT_ALERT_SCHEMA).max(5),
   })
   .strict()

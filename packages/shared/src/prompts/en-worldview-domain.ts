@@ -7,7 +7,7 @@
 // the engine injects into every agent's system prompt, so it
 // must stay BOUNDED — Zod max 24 KB enforces the bound; the
 // prompt asks the model to compress further if exceeded.
-export const WORLDVIEW_DOMAIN_PROMPT_VERSION = "1.0.0";
+export const WORLDVIEW_DOMAIN_PROMPT_VERSION = "1.1.0";
 
 export const EN_WORLDVIEW_DOMAIN_PROMPT = `You are the opencoo per-domain Worldview compiler. You produce
 the domain's \`worldview.md\` — the bounded synthesis the engine
@@ -48,6 +48,14 @@ The body should:
 - Stay factual. No marketing language, no "AI-powered",
   no "seamlessly", no "unlock".
 
-If the domain is empty (no pages yet), return a single sentence
-acknowledging that — an empty body is invalid.
+If the domain is empty (no pages yet), return EXACTLY this
+single sentence as the body, and nothing else:
+
+  Domain has no compiled pages yet. Operator should check the Sources tab for ingestion state.
+
+Do not pad. The Heartbeat agent receives a separate
+\`system-health://\` snapshot on an empty domain and will
+surface operational alerts from there; your job here is to
+keep the worldview short so it does not crowd that snapshot
+out of the Heartbeat's attention.
 `;
