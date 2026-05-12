@@ -842,8 +842,12 @@ const webhookHeadersSchema = z
 
 const webhookRetryPolicySchema = z
   .object({
-    maxAttempts: z.number().int().min(1).max(20).default(5),
-    baseDelayMs: z.number().int().min(0).default(500),
+    // PR-W4 follow-up: Zod bounds tightened to match the operator-
+    // facing UI JSON-schema (1–10 / 100–30000) so the form's reject
+    // limits and the server validator agree (Copilot triage flagged
+    // the inconsistency).
+    maxAttempts: z.number().int().min(1).max(10).default(5),
+    baseDelayMs: z.number().int().min(100).max(30_000).default(500),
   })
   .strict();
 
