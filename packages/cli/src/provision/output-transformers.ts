@@ -24,7 +24,15 @@
  * (NOT markdown — that's the most common mistake here). The
  * rules:
  *   - Root MUST be `<body>` — Asana parses html_notes as XML.
- *   - Supported tags: `<body>`, `<h1>`, `<h2>`, `<p>`,
+ *   - Supported tags (empirically verified — Asana's html_notes
+ *     parser is stricter than the public docs claim): `<body>`,
+ *     `<h1>`, `<h2>`, `<strong>`, `<em>`, `<u>`, `<s>`, `<code>`,
+ *     `<a>`, `<blockquote>`, `<pre>`, `<ol>`, `<ul>`, `<li>`,
+ *     `<hr/>`, `<img/>` (self-closing — XML requires it),
+ *     `<table>`, `<tr>`, `<td>`. **`<p>` and `<br/>` are NOT
+ *     supported** — observed live on partner cutover
+ *     (`xml_parsing_error: XML is invalid`).
+ *   - Old supported-tag list (now corrected): `<body>`, `<h1>`, `<h2>`,
  *     `<ul>/<ol>/<li>`, `<a>`, `<b>/<strong>`, `<i>/<em>`,
  *     `<u>`, `<s>`, `<code>`, `<pre>`.
  *   - Headers and lists MUST be SIBLINGS at the body level —
@@ -138,7 +146,9 @@ const BODY_WRAPPER_BYTES =
 
 /** Bytes of the truncation marker block we append when at least
  *  one sibling was dropped. */
-const TRUNCATION_MARKER = "<p>(truncated…)</p>";
+// PR-Y5: Asana html_notes parser rejects <p>; use <em> (allowed)
+// so the marker still stands out from the preceding content.
+const TRUNCATION_MARKER = "<em>(truncated…)</em>";
 const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER, "utf8");
 
 /** Extra safety budget on top of the wrapper + marker bytes —
@@ -146,7 +156,7 @@ const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER, "utf8");
  *  going over budget by a handful of bytes. */
 const SAFETY_BYTES = 64;
 
-/** Append HTML sibling blocks (e.g. `<h2>…</h2>`, `<p>…</p>`,
+/** Append HTML sibling blocks (e.g. `<h2>…</h2>`, bare text,
  *  `<ul>…</ul>`) under a `<body>…</body>` wrapper, stopping
  *  before the running byte total exceeds `HTML_NOTES_BYTE_CAP`.
  *
@@ -154,7 +164,7 @@ const SAFETY_BYTES = 64;
  *  tag or an HTML entity (the previous codepoint-walk version
  *  could leave a half-escaped `&amp` or a half-closed `<body`
  *  on the wire, which Asana 400s on). When at least one sibling
- *  is dropped we append a final `<p>(truncated…)</p>` marker so
+ *  is dropped we append a final `<em>(truncated…)</em>` marker so
  *  the operator sees the delivery was clipped.
  *
  *  Copilot triage #4 — replaces the old `capHtmlBody` byte-walk. */
@@ -173,7 +183,12 @@ function wrapBodyWithCap(siblings: readonly string[]): string {
     kept.push(block);
     used += blockBytes;
   }
-  const innerJoined = truncated ? kept.join("") + TRUNCATION_MARKER : kept.join("");
+  // PR-Y5 Copilot triage: separate the truncation marker from the
+  // last kept sibling with `<hr/>` so it doesn't glue to a bare-text
+  // body. `<hr/>` is on Asana's allow-list.
+  const innerJoined = truncated
+    ? kept.join("") + "<hr/>" + TRUNCATION_MARKER
+    : kept.join("");
   return `<body>${innerJoined}</body>`;
 }
 
@@ -240,7 +255,11 @@ function renderHeartbeatAlertHtml(alert: HeartbeatAlertLike): string[] {
   parts.push(`<h2>${escapeHtml(title)}</h2>`);
   const body = typeof alert.body === "string" ? alert.body : "";
   if (body.length > 0) {
-    parts.push(`<p>${escapeHtml(body)}</p>`);
+    // PR-Y5: Asana's html_notes parser rejects <p> despite the
+    // docs claiming support. Use bare escaped text instead;
+    // visual separation comes from the surrounding <h2> / <ul>
+    // siblings + <hr/> if needed.
+    parts.push(escapeHtml(body));
   }
   const citations: readonly unknown[] = Array.isArray(alert.citations)
     ? alert.citations
@@ -268,7 +287,7 @@ interface HeartbeatOutputLike {
 }
 
 /** Heartbeat → Asana html_notes. Each alert becomes one
- *  `<h2>` (title) + `<p>` (body) + `<ul>` (citations) triple
+ *  `<h2>` (title) + bare-text (body) + `<ul>` (citations) triple
  *  at the body level; the agent's `summary` field becomes the
  *  task title.
  *
@@ -292,7 +311,7 @@ export function heartbeatToAsana(args: OutputTransformerArgs): AsanaTaskPayload 
   // Empty-alerts case still produces a renderable body so Asana
   // doesn't reject the `html_notes` for a missing inner block.
   if (siblings.length === 0) {
-    siblings.push(`<p>${escapeHtml("No alerts today.")}</p>`);
+    siblings.push(escapeHtml("No alerts today."));
   }
   const htmlNotes = wrapBodyWithCap(siblings);
 
@@ -334,7 +353,7 @@ export function lintToAsana(args: OutputTransformerArgs): AsanaTaskPayload {
     siblings.push(`<h2>${escapeHtml(fHead)}</h2>`);
     const fBody = typeof f.body === "string" ? f.body : "";
     if (fBody.length > 0) {
-      siblings.push(`<p>${escapeHtml(fBody)}</p>`);
+      siblings.push(escapeHtml(fBody));
     }
     const citations: readonly unknown[] = Array.isArray(f.citations)
       ? f.citations
@@ -350,7 +369,7 @@ export function lintToAsana(args: OutputTransformerArgs): AsanaTaskPayload {
     }
   }
   if (siblings.length === 0) {
-    siblings.push(`<p>${escapeHtml("No findings.")}</p>`);
+    siblings.push(escapeHtml("No findings."));
   }
   const htmlNotes = wrapBodyWithCap(siblings);
 
@@ -392,7 +411,7 @@ export function surfacerToAsana(args: OutputTransformerArgs): AsanaTaskPayload {
   const rationale = typeof out.rationale === "string" ? out.rationale : "";
   if (rationale.length > 0) {
     siblings.push(`<h2>${escapeHtml("Rationale")}</h2>`);
-    siblings.push(`<p>${escapeHtml(rationale)}</p>`);
+    siblings.push(escapeHtml(rationale));
   }
   const citations: readonly unknown[] = Array.isArray(out.citations)
     ? out.citations
@@ -409,7 +428,7 @@ export function surfacerToAsana(args: OutputTransformerArgs): AsanaTaskPayload {
   }
   if (siblings.length === 0) {
     siblings.push(
-      `<p>${escapeHtml("Surfacer produced no rationale or citations.")}</p>`,
+      escapeHtml("Surfacer produced no rationale or citations."),
     );
   }
   const htmlNotes = wrapBodyWithCap(siblings);

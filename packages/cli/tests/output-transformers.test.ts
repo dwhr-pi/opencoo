@@ -84,9 +84,10 @@ describe("heartbeatToAsana", () => {
     // Root is <body>.
     expect(html.startsWith("<body>")).toBe(true);
     expect(html.endsWith("</body>")).toBe(true);
-    // Each alert produces one h2, one p, one ul.
+    // Each alert produces one h2 + bare-text body + one ul.
+    // PR-Y5: <p> dropped (Asana html_notes rejects it).
     expect(html.match(/<h2>/g)?.length).toBe(2);
-    expect(html.match(/<p>/g)?.length).toBe(2);
+    expect(html).not.toMatch(/<p\b/);
     expect(html.match(/<ul>/g)?.length).toBe(2);
     // Specific content present.
     expect(html).toContain("Q3 deck slipping");
@@ -139,12 +140,13 @@ describe("heartbeatToAsana", () => {
     expect(html).toContain("a&lt;b&gt;c");
   });
 
-  it("renders empty-alerts case with a default <p>", () => {
+  it("renders empty-alerts case with default bare text (PR-Y5: no <p>)", () => {
     const payload = heartbeatToAsana({
       channelConfig: CHANNEL_CONFIG,
       agentOutput: { summary: "", alerts: [] },
     });
-    expect(payload.htmlNotes).toContain("<p>No alerts today.</p>");
+    expect(payload.htmlNotes).toContain("No alerts today.");
+    expect(payload.htmlNotes).not.toMatch(/<p\b/);
     // Empty summary → fallback ISO-date title.
     expect(payload.title).toMatch(/^opencoo heartbeat — \d{4}-\d{2}-\d{2}$/);
   });
@@ -240,7 +242,8 @@ describe("heartbeatToAsana", () => {
         alerts: [{ title: "T", body: giantBody, citations: [] }],
       },
     });
-    expect(payload.htmlNotes!).toContain("<p>(truncated…)</p>");
+    // PR-Y5: truncation marker switched from <p> to <em> (Asana rejects <p>).
+    expect(payload.htmlNotes!).toContain("<em>(truncated…)</em>");
   });
 
   it("does NOT add a truncation marker when content fits under the cap", () => {
@@ -272,22 +275,22 @@ describe("heartbeatToAsana", () => {
     // Body wrapper intact.
     expect(html.startsWith("<body>")).toBe(true);
     expect(html.endsWith("</body>")).toBe(true);
-    // Each opening tag has its closing pair.
+    // Each opening tag has its closing pair (PR-Y5: <p> dropped).
     const countTag = (re: RegExp): number => (html.match(re) ?? []).length;
     expect(countTag(/<h2>/g)).toBe(countTag(/<\/h2>/g));
-    expect(countTag(/<p>/g)).toBe(countTag(/<\/p>/g));
+    expect(html).not.toMatch(/<p\b/);
     expect(countTag(/<ul>/g)).toBe(countTag(/<\/ul>/g));
     expect(countTag(/<li>/g)).toBe(countTag(/<\/li>/g));
+    expect(countTag(/<em>/g)).toBe(countTag(/<\/em>/g));
     expect(countTag(/<body>/g)).toBe(1);
     expect(countTag(/<\/body>/g)).toBe(1);
-    // Truncation marker present (we built much more than 32 KB
-    // of siblings).
-    expect(html).toContain("<p>(truncated…)</p>");
+    // Truncation marker present (we built much more than 32 KB of siblings).
+    expect(html).toContain("<em>(truncated…)</em>");
   });
 });
 
 describe("lintToAsana", () => {
-  it("renders findings as sibling h2/p/ul triples", () => {
+  it("renders findings as sibling h2 + bare-text + ul triples (PR-Y5: no <p>)", () => {
     const payload = lintToAsana({
       channelConfig: CHANNEL_CONFIG,
       agentOutput: {
@@ -308,7 +311,7 @@ describe("lintToAsana", () => {
     expect(html).toContain("<li>wiki-hr/x.md</li>");
   });
 
-  it("renders empty-findings case with a default <p>", () => {
+  it("renders empty-findings case with bare default text (PR-Y5: no <p>)", () => {
     const payload = lintToAsana({
       channelConfig: CHANNEL_CONFIG,
       agentOutput: { findings: [] },
@@ -362,7 +365,7 @@ describe("surfacerToAsana", () => {
     expect(s.title).toBe("S1");
   });
 
-  it("renders a default <p> when no rationale or citations are present", () => {
+  it("renders default bare text when no rationale or citations are present (PR-Y5: no <p>)", () => {
     const payload = surfacerToAsana({
       channelConfig: CHANNEL_CONFIG,
       agentOutput: { topic: "t" },
