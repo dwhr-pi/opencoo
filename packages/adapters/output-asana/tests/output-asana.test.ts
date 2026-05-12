@@ -178,6 +178,47 @@ describe("output-asana — payload schema", () => {
     };
     expect(() => asanaTaskPayloadSchema.parse(tooLong)).toThrow();
   });
+
+  // ── PR-W2 (phase-a appendix #13) — html_notes payload path ────────────
+
+  it("accepts htmlNotes alone (no notes)", () => {
+    const html = "<body><h2>Heartbeat</h2><p>Body</p></body>";
+    const parsed = asanaTaskPayloadSchema.parse({
+      title: "t",
+      htmlNotes: html,
+      projectGid: "p",
+    });
+    expect(parsed.htmlNotes).toBe(html);
+    expect(parsed.notes).toBeUndefined();
+  });
+
+  it("rejects payloads carrying BOTH notes and htmlNotes (Asana 400s on both)", () => {
+    expect(() =>
+      asanaTaskPayloadSchema.parse({
+        ...VALID_PAYLOAD,
+        htmlNotes: "<body><p>nope</p></body>",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects payloads with neither notes nor htmlNotes (task body required)", () => {
+    expect(() =>
+      asanaTaskPayloadSchema.parse({
+        title: "t",
+        projectGid: "p",
+      }),
+    ).toThrow();
+  });
+
+  it("caps htmlNotes at 32 KB", () => {
+    expect(() =>
+      asanaTaskPayloadSchema.parse({
+        title: "t",
+        htmlNotes: "x".repeat(32_769),
+        projectGid: "p",
+      }),
+    ).toThrow();
+  });
 });
 
 describe("output-asana — credential schema", () => {
@@ -217,6 +258,50 @@ describe("output-asana — adapter wiring", () => {
     );
     expect(state.calls[0]?.title).toBe(VALID_PAYLOAD.title);
     expect(state.calls[0]?.projectGid).toBe(VALID_PAYLOAD.projectGid);
+    expect(state.calls[0]?.notes).toBe(VALID_PAYLOAD.notes);
+    expect(state.calls[0]?.htmlNotes).toBeUndefined();
+  });
+
+  // ── PR-W2 (phase-a appendix #13) — html_notes round-trip ──────────────
+
+  it("write() forwards htmlNotes-only payloads to the API as htmlNotes (NOT notes)", async () => {
+    const { adapter, store, credentialId, state } = await makeFixture();
+    const html =
+      "<body><h2>opencoo heartbeat</h2><p>One alert today.</p></body>";
+    const result = await adapter.write({
+      credentialStore: store,
+      credentialId,
+      payload: {
+        title: "Heartbeat",
+        htmlNotes: html,
+        projectGid: VALID_PAYLOAD.projectGid,
+      },
+    });
+    expect(result.externalId).toMatch(/^asana-task-\d+$/);
+    expect(state.calls).toHaveLength(1);
+    expect(state.calls[0]?.htmlNotes).toBe(html);
+    expect(state.calls[0]?.notes).toBeUndefined();
+  });
+
+  it("write() rejects payloads that carry BOTH notes and htmlNotes (validation, no API call)", async () => {
+    const { adapter, store, credentialId, state } = await makeFixture();
+    await expect(
+      adapter.write({
+        credentialStore: store,
+        credentialId,
+        payload: {
+          title: "t",
+          notes: "plain",
+          // @ts-expect-error — schema rejects both; runtime asserts the error path.
+          htmlNotes: "<body><p>html</p></body>",
+          projectGid: VALID_PAYLOAD.projectGid,
+        },
+      }),
+    ).rejects.toThrow();
+    // The mock state must show ZERO upstream calls — Zod-rejected
+    // payloads do not reach the API. Mirrors assertion 8 of the
+    // output-adapter contract.
+    expect(state.calls).toHaveLength(0);
   });
 
   it("classifies HTTP 429 as upstream-quota with retryAfterSeconds", async () => {

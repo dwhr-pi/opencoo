@@ -99,6 +99,7 @@ import {
 } from "@opencoo/automation-n8n-mcp";
 
 import { createProductionAgentRunners } from "./agent-runners.js";
+import { mergePayloadFor } from "./output-transformers.js";
 
 const COMPOSITION_NAME = "cli/serve" as const;
 
@@ -589,7 +590,27 @@ async function registerOutputAdapters(
         outputAdapter: asanaAdapter,
         lookupChannel: args.lookupChannel,
         credentialStore: args.credentialStore,
-        mergePayload: mergeAsanaPayload,
+        // PR-W2 (phase-a appendix #13) — replace the v0.1 generic
+        // JSON-dump closure with the per-(agent, adapter) dispatcher.
+        // The bridge threads `agentSlug` from the dispatcher; the
+        // dispatcher picks `heartbeatToAsana` / `lintToAsana` /
+        // `surfacerToAsana` per agent and falls back to
+        // `mergeAsanaPayloadGeneric` (the old behaviour) when the
+        // agent slug isn't registered. Unknown adapters at this
+        // layer surface as a delivery failure (logged + non-fatal
+        // to the run) rather than a crash.
+        mergePayload: ({ channelConfig, agentOutput, agentSlug }) =>
+          mergePayloadFor({
+            // When the bridge didn't forward an agent slug (older
+            // call sites that don't thread it), fall through to the
+            // adapter-only generic. `mergePayloadFor`'s lookup table
+            // treats "" as "no agent-specific transformer" and
+            // routes to `mergeAsanaPayloadGeneric`.
+            agentSlug: agentSlug ?? "",
+            adapterSlug: "asana",
+            agentOutput,
+            channelConfig,
+          }) as import("@opencoo/output-asana").AsanaTaskPayload,
       }),
     );
     out.asana = {
@@ -632,42 +653,28 @@ async function registerOutputAdapters(
   return out as Readonly<Record<OutputAdapterSlug, OutputAdapterDescriptor>>;
 }
 
-/** PR-Z4 — Asana payload merge. The operator-supplied channel
- *  config carries `project_gid` (+ optional `assignee_gid` /
- *  `due_on`); the agent's JSON output carries the briefing /
- *  heartbeat / lint summary that becomes the task title + notes.
+/** PR-Z4 — Asana payload merge.
  *
- *  Shape resilience: the agent's output shape varies by definition
- *  (Heartbeat → `{version, summary, alerts}`, Lint → different).
- *  For v0.1 we duck-type: prefer `summary` as the title, fall back
- *  to a generic label; render the full output as notes (JSON
- *  pretty-print). When richer per-agent renderers land, swap the
- *  closure here without touching the bridge. */
+ *  PR-W2 (phase-a appendix #13) — this used to be the only
+ *  Asana payload closure; it's now the GENERIC fallback the
+ *  `mergePayloadFor` dispatcher uses when the agent slug
+ *  doesn't have a per-(agent, adapter) transformer registered.
+ *  Re-exported here for backward-compat with tests and any
+ *  external caller; new code should call `mergePayloadFor(...)`
+ *  via `output-transformers.ts`.
+ *
+ *  The body delegates verbatim to the new module so the two
+ *  surfaces can't drift. */
 export function mergeAsanaPayload(args: {
   readonly channelConfig: Record<string, unknown>;
   readonly agentOutput: unknown;
 }): import("@opencoo/output-asana").AsanaTaskPayload {
-  const cfg = args.channelConfig;
-  const projectGid = typeof cfg["project_gid"] === "string" ? cfg["project_gid"] : "";
-  if (projectGid.length === 0) {
-    throw new Error(
-      "output-asana: channel config is missing project_gid (string)",
-    );
-  }
-  const out = (args.agentOutput as Record<string, unknown> | null) ?? {};
-  const summaryCandidate = typeof out["summary"] === "string" ? out["summary"] : null;
-  const title = (summaryCandidate ?? "opencoo daily report").slice(0, 500);
-  const notes = JSON.stringify(out, null, 2).slice(0, 32_768);
-  const payload: import("@opencoo/output-asana").AsanaTaskPayload = {
-    projectGid,
-    title,
-    notes,
-  };
-  const assigneeGid = cfg["assignee_gid"];
-  if (typeof assigneeGid === "string" && assigneeGid.length > 0) {
-    return { ...payload, assigneeGid };
-  }
-  return payload;
+  return mergePayloadFor({
+    agentSlug: "",
+    adapterSlug: "asana",
+    agentOutput: args.agentOutput,
+    channelConfig: args.channelConfig,
+  }) as import("@opencoo/output-asana").AsanaTaskPayload;
 }
 
 /** Multi-provider dispatcher — routes every `LlmProviderCall` to

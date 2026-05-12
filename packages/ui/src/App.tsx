@@ -14,6 +14,7 @@ import {
 } from "./lib/api.js";
 import { clearPat, getPat, setPat } from "./lib/pat-store.js";
 import { Activity } from "./routes/Activity.js";
+import { Agents } from "./routes/Agents.js";
 import { Audit } from "./routes/Audit.js";
 import { Cost } from "./routes/Cost.js";
 import { Domains } from "./routes/Domains.js";
@@ -108,6 +109,7 @@ export function App(): JSX.Element {
   const tabs: Record<Tab, JSX.Element> = {
     domains: <Domains />,
     sources: <Sources />,
+    agents: <Agents />,
     outputs: <Outputs />,
     llmPolicy: <LlmPolicy />,
     prompts: <Prompts />,
@@ -121,6 +123,7 @@ export function App(): JSX.Element {
   const titles: Record<Tab, string> = {
     domains: t("domains.title"),
     sources: t("sources.title"),
+    agents: t("agents.title"),
     outputs: t("outputs.title"),
     llmPolicy: t("llmPolicy.title"),
     prompts: t("prompts.title"),

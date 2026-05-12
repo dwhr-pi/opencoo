@@ -82,10 +82,17 @@ export function createAsanaFetchApi(
       // flows in via the Authorization header; we render it from
       // the Buffer once, locally, and never log it.
       const tokenStr = callArgs.accessToken.toString("utf8");
+      // PR-W2 (phase-a appendix #13) — the adapter validates that
+      // exactly ONE of `notes` / `htmlNotes` is set; we mirror that
+      // discriminator here so the Asana REST payload carries either
+      // `notes` or `html_notes` but never both (Asana 400s on both).
       const body: Record<string, unknown> = {
         data: {
           name: callArgs.title,
-          notes: callArgs.notes,
+          ...(callArgs.notes !== undefined ? { notes: callArgs.notes } : {}),
+          ...(callArgs.htmlNotes !== undefined
+            ? { html_notes: callArgs.htmlNotes }
+            : {}),
           projects: [callArgs.projectGid],
           ...(callArgs.dueOn !== undefined ? { due_on: callArgs.dueOn } : {}),
           ...(callArgs.assigneeGid !== undefined

@@ -35,6 +35,7 @@ import { issueCsrfToken } from "./csrf.js";
 import { attachDebugBannerHook } from "./debug-banner.js";
 import { createSseBus, type SseBus } from "./sse-bus.js";
 import { registerAdaptersRoute } from "./routes/adapters.js";
+import { registerAgentInstancesRoutes } from "./routes/agent-instances.js";
 import { registerAgentRunsRoutes } from "./routes/agent-runs.js";
 import {
   registerAgentsDispatchRoute,
@@ -348,6 +349,18 @@ export async function registerAdminApi(
     ...(args.dispatchAgentJob !== undefined
       ? { dispatchAgentJob: args.dispatchAgentJob }
       : {}),
+  });
+
+  // Phase-a appendix #13 PR-W2 — Agent-instance binding admin.
+  // GET lists every instance for the new Agents tab; PATCH
+  // dispatches on a discriminated body (output_channel_ids |
+  // enabled | schedule_cron) so the operator can bind delivery
+  // channels, pause an instance, or edit its cron without
+  // shell access. No new composition deps — the route uses the
+  // same `db` handle every other admin-api route consumes.
+  registerAgentInstancesRoutes({
+    app: guardedApp,
+    db: args.db,
   });
 
   // Debug banner: registered LAST so it sees every JSON

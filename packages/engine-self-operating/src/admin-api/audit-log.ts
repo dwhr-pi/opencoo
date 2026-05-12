@@ -136,6 +136,28 @@ export const AUDIT_LOG_ACTIONS = [
   "output_channel.update",
   "output_channel.credentials_rotate",
   "output_channel.delete",
+  // Phase-a appendix #13 PR-W2 — Agent-instance admin actions.
+  // The new `/api/admin/agent-instances/:id` PATCH surface
+  // splits into three intents; each emits ONE audit verb so the
+  // operator's history reflects exactly which lever they pulled.
+  //
+  // `bind_outputs`  — replaces `agent_instances.output_channel_ids[]`.
+  //                   Metadata: instance_id (binding_id),
+  //                   output_channel_ids (UUID list only,
+  //                   NEVER credential bytes or channel config),
+  //                   caller_username.
+  // `set_enabled`   — toggles `agent_instances.enabled`.
+  //                   Metadata: instance_id (binding_id), the
+  //                   new boolean, caller_username.
+  // `set_schedule`  — sets `agent_instances.schedule_cron`. The
+  //                   route validates via cron-parser BEFORE the
+  //                   audit row so a garbage value can't leave
+  //                   a misleading audit trail. Metadata:
+  //                   instance_id (binding_id), the cron
+  //                   string, caller_username.
+  "agent_instance.bind_outputs",
+  "agent_instance.set_enabled",
+  "agent_instance.set_schedule",
   // Logout — records the operator-initiated session-end so an
   // audit-log read can correlate an action burst with the
   // operator's session window.

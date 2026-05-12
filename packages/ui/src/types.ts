@@ -5,9 +5,11 @@
 // 'reports' = 7th (PR-D).
 // Phase-a appendix #10 PR-R4: 'audit' = 8th tab (audit-log viewer).
 // Phase-a appendix #10 PR-R5: 'cost' = 9th tab (cost analytics).
+// Phase-a appendix #13 PR-W2: 'agents' = sits between 'sources' and 'outputs'.
 export type Tab =
   | "domains"
   | "sources"
+  | "agents"
   | "outputs"
   | "llmPolicy"
   | "prompts"
@@ -16,6 +18,30 @@ export type Tab =
   | "reports"
   | "audit"
   | "cost";
+
+/** PR-W2 (phase-a appendix #13) — agent instance row shape.
+ *  Mirrors the GET `/api/admin/agent-instances` response. */
+export interface AgentInstance {
+  readonly id: string;
+  readonly definitionSlug: string;
+  readonly name: string;
+  readonly scheduleCron: string | null;
+  readonly enabled: boolean;
+  /** Count of channels currently bound to this instance.
+   *  Surfaced by the list endpoint; the drill-down also
+   *  receives the full binding array via `outputChannelIds`. */
+  readonly outputChannelCount: number;
+  /** Verbatim binding array — each entry is the
+   *  `{adapter_slug, config: {channel_id}}` shape the
+   *  dispatcher already consumes. The detail modal reads
+   *  `config.channel_id` to pre-check the multi-select. */
+  readonly outputChannelIds: ReadonlyArray<{
+    readonly adapter_slug: string;
+    readonly config: Record<string, unknown>;
+  }>;
+  readonly lastRunStartedAt: string | null;
+  readonly lastRunStatus: string | null;
+}
 
 /** PR-Z4 (phase-a appendix #12 G5) — output channel row shape. */
 export interface OutputChannel {

@@ -46,4 +46,12 @@ export interface OutputChannelAdapter {
 export interface OutputChannelDeliverArgs {
   readonly payload: unknown;
   readonly config: Record<string, unknown>;
+  /** PR-W2 (phase-a appendix #13) — the agent's
+   *  `agent_instances.definition_slug` so the bridge can
+   *  dispatch the right per-(agent, adapter) payload
+   *  transformer. Optional for backward-compat with adapters
+   *  that don't care (e.g. mock adapters used in unit tests);
+   *  the production CLI bridge threads it through the
+   *  registry → adapter chain. */
+  readonly agentSlug?: string;
 }

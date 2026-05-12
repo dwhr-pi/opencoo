@@ -81,12 +81,20 @@ export type LookupOutputChannel = (
  *    notes: deriveNotes(agentOutput),
  *  }`.
  *
+ *  PR-W2 (phase-a appendix #13) — `agentSlug` is threaded
+ *  through so per-(agent, adapter) transformers can dispatch
+ *  on the agent's definition_slug. Optional for backward-compat
+ *  with closures registered before this change; production
+ *  wiring in `cli/src/provision/production-composition.ts`
+ *  threads the dispatcher's `definitionSlug` verbatim.
+ *
  *  The closure MUST be pure / side-effect-free — the bridge does
  *  no extra validation; the adapter's Zod schema parses + rejects
  *  malformed payloads downstream. */
 export type MergePayload<TPayload> = (args: {
   readonly channelConfig: Record<string, unknown>;
   readonly agentOutput: unknown;
+  readonly agentSlug?: string;
 }) => TPayload;
 
 export interface OutputAdapterToChannelAdapterArgs<TPayload> {
@@ -126,6 +134,9 @@ export function outputAdapterToChannelAdapter<TPayload>(
       const payload = args.mergePayload({
         channelConfig: record.config,
         agentOutput: deliverArgs.payload,
+        ...(deliverArgs.agentSlug !== undefined
+          ? { agentSlug: deliverArgs.agentSlug }
+          : {}),
       });
       await args.outputAdapter.write({
         credentialStore: args.credentialStore,

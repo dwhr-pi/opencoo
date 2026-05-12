@@ -8,6 +8,7 @@
   "nav": {
     "domains": "domains",
     "sources": "sources",
+    "agents": "agents",
     "outputs": "outputs",
     "llmPolicy": "llm policy",
     "prompts": "prompts",
@@ -565,6 +566,54 @@
       "tier": "tier",
       "agent": "agent"
     }
+  },
+  "agents": {
+    "title": "Agents",
+    "subtitle": "Schedule cadence, enable/disable, and bind output channels per agent instance.",
+    "empty": "No agent instances yet — seed via the opencoo CLI.",
+    "newInstanceStub": "+ New agent instance (CLI)",
+    "openAriaLabel": "Open agent instance {{name}}",
+    "columns": {
+      "name": "name",
+      "definitionSlug": "agent",
+      "schedule": "schedule",
+      "enabled": "enabled",
+      "boundChannels": "bound channels",
+      "lastRun": "last run"
+    }
+  },
+  "agentInstance": {
+    "detail": {
+      "title": "Agent instance",
+      "close": "Close",
+      "enable": "Enable",
+      "disable": "Disable",
+      "labels": {
+        "definitionSlug": "agent",
+        "name": "name",
+        "lastRun": "last run",
+        "boundChannels": "bound channels"
+      },
+      "outputChannels": "Output channels",
+      "outputChannelsEmpty": "No output channels available — add one in the Outputs tab first.",
+      "saveOutputChannels": "Save channels",
+      "enabled": "Enabled",
+      "scheduleCron": "Schedule (cron)",
+      "scheduleCronHint": "5-field UTC cron pattern. Example: 0 6 * * 1-5 (every weekday 06:00 UTC).",
+      "saveSchedule": "Save schedule",
+      "bindOutputs": {
+        "success": "Output channels saved."
+      },
+      "enabledToggled": {
+        "on": "Instance enabled.",
+        "off": "Instance disabled."
+      },
+      "scheduleSaved": "Schedule saved."
+    }
+  },
+  "errors": {
+    "bindOutputsFailed": "Could not save changes. Try again or check the audit log.",
+    "transient": "Transient error. Try again in a moment."
   },
   "outputs": {
     "title": "Outputs",

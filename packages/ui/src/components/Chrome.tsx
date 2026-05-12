@@ -29,6 +29,9 @@ interface SidebarProps {
 const TABS: ReadonlyArray<{ key: Tab; labelKey: string }> = [
   { key: "domains", labelKey: "nav.domains" },
   { key: "sources", labelKey: "nav.sources" },
+  // PR-W2 (phase-a appendix #13) — Agents tab between Sources and Outputs:
+  // operators bind an agent_instance to one or more output channels here.
+  { key: "agents", labelKey: "nav.agents" },
   // PR-Z4 (phase-a appendix #12 G5) — Outputs tab between Sources and LLM
   // policy: same surface family (binding-style CRUD over operator config).
   { key: "outputs", labelKey: "nav.outputs" },

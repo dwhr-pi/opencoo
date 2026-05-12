@@ -39,6 +39,13 @@ export interface OutputChannelBinding {
 export interface OutputChannelDelivery {
   readonly adapterSlug: string;
   readonly payload: unknown;
+  /** PR-W2 (phase-a appendix #13) — the agent's
+   *  `agent_instances.definition_slug`. Threaded through the
+   *  bridge so the per-(agent, adapter) transformer dispatch
+   *  can pick the right merge closure. Optional for
+   *  backward-compat; the production CLI dispatcher in
+   *  `agent-dispatcher.ts` always populates it. */
+  readonly agentSlug?: string;
 }
 
 export interface OutputChannelDeliverInvocation {
@@ -90,6 +97,9 @@ export class OutputChannelRegistry {
     const args: OutputChannelDeliverArgs = {
       payload: invocation.delivery.payload,
       config: binding.config,
+      ...(invocation.delivery.agentSlug !== undefined
+        ? { agentSlug: invocation.delivery.agentSlug }
+        : {}),
     };
     await adapter.deliver(args);
   }

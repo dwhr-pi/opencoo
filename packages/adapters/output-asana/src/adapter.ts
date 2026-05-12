@@ -96,11 +96,19 @@ export function createAsanaOutputAdapter(
       );
 
       const api = args.makeApi();
+      // PR-W2 (phase-a appendix #13) — branch on which body field
+      // the per-agent transformer supplied. The Zod schema's `.refine()`
+      // already enforced "exactly one of notes | htmlNotes"; we replay
+      // the discriminator here verbatim so the underlying Asana API
+      // receives exactly one of `notes` / `html_notes` per call.
       const callArgs: AsanaCreateTaskArgs = {
         accessToken: record.plaintext,
         projectGid: payload.projectGid,
         title: payload.title,
-        notes: payload.notes,
+        ...(payload.notes !== undefined ? { notes: payload.notes } : {}),
+        ...(payload.htmlNotes !== undefined
+          ? { htmlNotes: payload.htmlNotes }
+          : {}),
         ...(payload.dueOn !== undefined ? { dueOn: payload.dueOn } : {}),
         ...(payload.assigneeGid !== undefined
           ? { assigneeGid: payload.assigneeGid }

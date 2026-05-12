@@ -1100,6 +1100,13 @@ export class AgentDispatcher {
           delivery: {
             adapterSlug: binding.adapter_slug,
             payload: args.payload,
+            // PR-W2 (phase-a appendix #13) — thread the agent's
+            // definition slug through to the bridge so the
+            // per-(agent, adapter) transformer dispatch can pick
+            // the right merge closure. The dispatcher already has
+            // this in scope (`instance.definitionSlug`); the bridge
+            // forwards it into `MergePayload`'s args.
+            agentSlug: args.definitionSlug,
           },
         });
         this.logger.info("output_channel.deliver", {
