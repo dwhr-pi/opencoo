@@ -40,7 +40,10 @@ import type {
   OutputAdapterDescriptor,
   OutputAdapterSlug,
 } from "../admin-api/routes/output-channels.js";
-import type { ForgetJobEnqueueArgs } from "../admin-api/routes/source-bindings.js";
+import type {
+  ForgetJobEnqueueArgs,
+  RetryableFailedJob,
+} from "../admin-api/routes/source-bindings.js";
 import { createSseBus, type SseBus } from "../admin-api/sse-bus.js";
 import type {
   SchedulerSource,
@@ -120,6 +123,38 @@ export interface ProductionServerFactoryArgs {
    *  for the actual forget action (PR-R7). When undefined the
    *  forget endpoint returns 503. */
   readonly forgetJobEnqueuer?: (args: ForgetJobEnqueueArgs) => Promise<void>;
+  /** PR-W2 / PR-Y8 (phase-a appendix #14) — read-only enumerator
+   *  over the `ingestion.scanner.classify` BullMQ failed-set,
+   *  filtered by payload `bindingId` (+ optionally `intakeId`).
+   *  Production composition builds this via
+   *  `enumerateFailedJobsByBindingId(queue, ...)` in
+   *  `@opencoo/engine-ingestion` over the SAME producer-side Queue
+   *  handle the classifier worker writes onto. Threaded straight
+   *  through to `registerAdminApi` so the retry-failed route can
+   *  re-drive failed classify jobs. When undefined the route
+   *  returns 503 (composition incomplete) — same boot-tolerance
+   *  pattern as `forgetJobEnqueuer`.
+   *
+   *  PR-Y8 closeout: this field was missing in W2's wiring (the
+   *  callable existed in production-composition.ts and serve.ts
+   *  threaded it into start(), but neither this type nor the
+   *  forwarding inside `productionServerFactory` declared it, so
+   *  the route always 503'd in production). The forwarding pattern
+   *  mirrors `forgetJobEnqueuer` line-for-line. */
+  readonly failedClassifyJobsEnumerator?: (
+    bindingId: string,
+    intakeId?: string,
+  ) => Promise<readonly RetryableFailedJob[]>;
+  /** PR-W2 / PR-Y8 (phase-a appendix #14) — composition-supplied
+   *  enqueuer for the re-enqueue side of the retry-failed route.
+   *  Production wiring binds this to the classify queue's `add`
+   *  method. When undefined the route returns 503. Mirrors the
+   *  `forgetJobEnqueuer` boot-tolerance pattern. */
+  readonly classifyJobEnqueuer?: (
+    name: string,
+    data: unknown,
+    opts?: unknown,
+  ) => Promise<unknown>;
   /** PR-Z4 (phase-a appendix #12 G5) — per-adapter descriptor map
    *  the admin-API Outputs-tab CRUD consumes. Composition root
    *  builds one entry per shipped OutputAdapter; when undefined the
@@ -204,6 +239,19 @@ export async function productionServerFactory(
     ...(args.deleteCap !== undefined ? { deleteCap: args.deleteCap } : {}),
     ...(args.forgetJobEnqueuer !== undefined
       ? { forgetJobEnqueuer: args.forgetJobEnqueuer }
+      : {}),
+    // PR-W2 / PR-Y8 (phase-a appendix #14) — forward the retry-failed
+    // callables verbatim so the admin-API route at
+    // `source-bindings.ts:1137` reaches `args.failedClassifyJobs-
+    // Enumerator !== undefined` and `args.classifyJobEnqueuer !==
+    // undefined` and drops out of the 503 boot-tolerance branch.
+    // Mirrors the `forgetJobEnqueuer` line above; the W2 wiring
+    // gap that PR-Y8 closes was the absence of these two spreads.
+    ...(args.failedClassifyJobsEnumerator !== undefined
+      ? { failedClassifyJobsEnumerator: args.failedClassifyJobsEnumerator }
+      : {}),
+    ...(args.classifyJobEnqueuer !== undefined
+      ? { classifyJobEnqueuer: args.classifyJobEnqueuer }
       : {}),
     ...(args.outputChannelDescriptors !== undefined
       ? { outputChannelRegistry: args.outputChannelDescriptors }

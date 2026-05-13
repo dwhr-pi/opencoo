@@ -58,7 +58,10 @@ import {
 } from "@opencoo/shared/engine-scaffold";
 
 import type { GiteaClient } from "./admin-api/auth.js";
-import type { ForgetJobEnqueueArgs } from "./admin-api/routes/source-bindings.js";
+import type {
+  ForgetJobEnqueueArgs,
+  RetryableFailedJob,
+} from "./admin-api/routes/source-bindings.js";
 import {
   createSseBus,
   type SseBus,
@@ -253,6 +256,43 @@ export interface StartOptions
    *
    *  When undefined the route returns 503. */
   readonly forgetJobEnqueuer?: (args: ForgetJobEnqueueArgs) => Promise<void>;
+  /** PR-W2 / PR-Y8 (phase-a appendix #14) — read-only enumerator
+   *  over the `ingestion.scanner.classify` BullMQ failed-set,
+   *  filtered by payload `bindingId` (+ optionally `intakeId`).
+   *  Production composition (`cli/provision/production-composition.ts`)
+   *  builds this via `enumerateFailedJobsByBindingId(queue, ...)` in
+   *  `@opencoo/engine-ingestion` and threads it through
+   *  `serve.ts` → `start({ failedClassifyJobsEnumerator })` →
+   *  `productionServerFactory({ ... })` → `registerAdminApi({ ... })`
+   *  → the route handler.
+   *
+   *  When undefined the
+   *  `POST /api/admin/source-bindings/:id/retry-failed` route
+   *  returns 503 (composition incomplete) — same boot-tolerance
+   *  pattern as `forgetJobEnqueuer`.
+   *
+   *  PR-Y8 closeout: W2 (#131) shipped the route and the per-
+   *  route declaration, and added the field to the composition
+   *  result + `serve.ts` forwarding bundles, but DID NOT add the
+   *  field to `StartOptions` or `ProductionServerFactoryArgs`.
+   *  Result: the orchestrator-provided callable was silently
+   *  dropped at the start() boundary, the route saw undefined,
+   *  and every operator retry-click 503'd in production. This
+   *  field + the parallel forward at line ~629 close that gap. */
+  readonly failedClassifyJobsEnumerator?: (
+    bindingId: string,
+    intakeId?: string,
+  ) => Promise<readonly RetryableFailedJob[]>;
+  /** PR-W2 / PR-Y8 (phase-a appendix #14) — composition-supplied
+   *  enqueuer for the re-enqueue side of the retry-failed route.
+   *  Production wiring binds this to the classify queue's `add`
+   *  method. When undefined the route returns 503. Same wiring-
+   *  gap closure as `failedClassifyJobsEnumerator` above. */
+  readonly classifyJobEnqueuer?: (
+    name: string,
+    data: unknown,
+    opts?: unknown,
+  ) => Promise<unknown>;
   /** PR-Z4 (phase-a appendix #12 G5) — output-channel registry.
    *  When present, the AgentDispatcher invokes the post-run delivery
    *  hook after each successful agent run, routing the JSON output
@@ -628,6 +668,20 @@ export async function start(
         : {}),
       ...(options.forgetJobEnqueuer !== undefined
         ? { forgetJobEnqueuer: options.forgetJobEnqueuer }
+        : {}),
+      // PR-W2 / PR-Y8 (phase-a appendix #14) — forward the retry-
+      // failed callables verbatim into productionServerFactory.
+      // The orchestrator (cli/serve.ts) gets them from the
+      // ingestion preflight (production-composition.ts builds
+      // them over the SAME classify queue the workers consume) and
+      // threads them here so the admin-API retry-failed route
+      // reaches its non-503 branch. Mirrors the `forgetJobEnqueuer`
+      // forward two lines above.
+      ...(options.failedClassifyJobsEnumerator !== undefined
+        ? { failedClassifyJobsEnumerator: options.failedClassifyJobsEnumerator }
+        : {}),
+      ...(options.classifyJobEnqueuer !== undefined
+        ? { classifyJobEnqueuer: options.classifyJobEnqueuer }
         : {}),
       // PR-Z4 (phase-a appendix #12 G5) — thread the descriptor map
       // through to the admin-API Outputs-tab CRUD routes.
