@@ -73,6 +73,7 @@ import {
 import {
   registerSourceBindingsRoutes,
   type ForgetJobEnqueueArgs,
+  type RetryableFailedJob,
 } from "./routes/source-bindings.js";
 
 type Db = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
@@ -176,6 +177,29 @@ export interface RegisterAdminApiArgs {
    *  recompile + delete jobs. Tests inject a `vi.fn()`. When
    *  undefined the forget endpoint returns 503. */
   readonly forgetJobEnqueuer?: (args: ForgetJobEnqueueArgs) => Promise<void>;
+  /** PR-W2 (phase-a appendix #14) — read-only enumerator over the
+   *  `ingestion.scanner.classify` BullMQ failed-set, filtered by
+   *  payload `bindingId` (+ optionally `intakeId`). Powers the
+   *  `POST /api/admin/source-bindings/:id/retry-failed` route.
+   *  Production composition builds this via
+   *  `enumerateFailedJobsByBindingId(queue, ...)` in
+   *  `@opencoo/engine-ingestion` over the same producer-side Queue
+   *  handle the classifier worker writes onto. When undefined the
+   *  endpoint returns 503 — same boot-tolerance pattern. */
+  readonly failedClassifyJobsEnumerator?: (
+    bindingId: string,
+    intakeId?: string,
+  ) => Promise<readonly RetryableFailedJob[]>;
+  /** PR-W2 (phase-a appendix #14) — composition-supplied enqueuer
+   *  for the re-enqueue side of the retry-failed route. Production
+   *  wiring binds this to the classify queue's `add` method; tests
+   *  inject a `vi.fn()` to capture call shape. When undefined the
+   *  endpoint returns 503. */
+  readonly classifyJobEnqueuer?: (
+    name: string,
+    data: unknown,
+    opts?: unknown,
+  ) => Promise<unknown>;
   /** PR-Z4 (phase-a appendix #12 G5) — test seam for the
    *  `/api/admin/output-channels` CRUD routes. Production lets the
    *  routes lazy-import `@opencoo/output-asana` to derive the
@@ -269,6 +293,13 @@ export async function registerAdminApi(
       : {}),
     ...(args.forgetJobEnqueuer !== undefined
       ? { forgetJobEnqueuer: args.forgetJobEnqueuer }
+      : {}),
+    // PR-W2 (phase-a appendix #14) — retry-failed surface.
+    ...(args.failedClassifyJobsEnumerator !== undefined
+      ? { failedClassifyJobsEnumerator: args.failedClassifyJobsEnumerator }
+      : {}),
+    ...(args.classifyJobEnqueuer !== undefined
+      ? { classifyJobEnqueuer: args.classifyJobEnqueuer }
       : {}),
   });
   registerLintFindingsRoutes({ app: guardedApp, db: args.db });
@@ -448,7 +479,10 @@ export type {
   ProvisionDomainRepoFn,
 } from "./routes/domains.js";
 export type { AgentDispatchEnqueue } from "./routes/agents-dispatch.js";
-export type { ForgetJobEnqueueArgs } from "./routes/source-bindings.js";
+export type {
+  ForgetJobEnqueueArgs,
+  RetryableFailedJob,
+} from "./routes/source-bindings.js";
 export type {
   SchedulerSource,
   SchedulerUpdate,

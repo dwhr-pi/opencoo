@@ -271,6 +271,21 @@ export interface ServeIngestionPreflightResult {
    *  route can enqueue scans on the SAME queue the workers
    *  dequeue from. */
   readonly scannerQueue?: unknown;
+  /** PR-W2 (phase-a appendix #14) — composition-built read-only
+   *  enumerator over the `ingestion.scanner.classify` failed-set,
+   *  filtered by payload bindingId (+ optional intakeId). Threaded
+   *  into self-op via `start({failedClassifyJobsEnumerator})` so the
+   *  `POST /api/admin/source-bindings/:id/retry-failed` route can
+   *  list failed jobs without learning about BullMQ.
+   *
+   *  Typed `unknown` to keep this layer on the no-cross-engine-import
+   *  side; the engine narrows back at consumption. Optional for
+   *  backward-compat with test factories that don't synthesise it. */
+  readonly failedClassifyJobsEnumerator?: unknown;
+  /** PR-W2 (phase-a appendix #14) — companion enqueuer the retry
+   *  route hands the original payloads to. Threaded into self-op via
+   *  `start({classifyJobEnqueuer})`. Same typed-unknown treatment. */
+  readonly classifyJobEnqueuer?: unknown;
   /** PR-W1 (phase-a appendix #13) — composition-built worldview-
    *  compile bundle. Carries the producer queue + worker + safety-net
    *  cron. The orchestrator threads `bundle.queue` into self-op via
@@ -375,6 +390,11 @@ type EngineStartFn = (opts: {
    *  POST source-bindings handler + `:id/scan-now` route can enqueue
    *  scans against the workers' queue. */
   readonly ingestionQueue?: unknown;
+  /** PR-W2 (phase-a appendix #14) — passed verbatim into self-op so
+   *  the retry-failed admin-API route can enumerate failed classify
+   *  jobs and re-enqueue them. */
+  readonly failedClassifyJobsEnumerator?: unknown;
+  readonly classifyJobEnqueuer?: unknown;
   /** PR-W1 (phase-a appendix #13) — passed verbatim into
    *  `engine-self-operating.start({worldviewQueue})` so the admin-API
    *  recompile-worldview route can enqueue against the same backlog
@@ -408,6 +428,11 @@ interface ComposeStartedEngineArgs {
    *  admin-API source-bindings POST + `:id/scan-now` routes can
    *  enqueue against the workers' queue. */
   readonly scannerQueue?: unknown;
+  /** PR-W2 (phase-a appendix #14) — forwarded verbatim into self-op
+   *  so the retry-failed admin-API route stops returning 503.
+   *  Same typed-unknown pattern as the other queue handles. */
+  readonly failedClassifyJobsEnumerator?: unknown;
+  readonly classifyJobEnqueuer?: unknown;
   /** PR-W1 (phase-a appendix #13) — forwarded verbatim into
    *  `engine-self-operating.start({worldviewQueue})` so the
    *  admin-API recompile-worldview route stops returning 503. */
@@ -503,6 +528,18 @@ export async function composeStartedEngineWithBundle(
       ...(args.scannerQueue !== undefined
         ? { ingestionQueue: args.scannerQueue }
         : {}),
+      // PR-W2 (phase-a appendix #14) — wire the retry-failed
+      // surface. Both callables close over the SAME
+      // `ingestion.scanner.classify` Queue the worker context's
+      // `enqueue` writes onto. When preflight returned null, both
+      // are undefined and `POST /api/admin/source-bindings/:id/retry-failed`
+      // returns 503 (boot-tolerance).
+      ...(args.failedClassifyJobsEnumerator !== undefined
+        ? { failedClassifyJobsEnumerator: args.failedClassifyJobsEnumerator }
+        : {}),
+      ...(args.classifyJobEnqueuer !== undefined
+        ? { classifyJobEnqueuer: args.classifyJobEnqueuer }
+        : {}),
       // PR-W1 (phase-a appendix #13) — wire the worldview-compile
       // queue handle. When preflight returned null, the bundle is
       // undefined and the admin-API recompile-worldview route
@@ -557,6 +594,10 @@ async function defaultStartFactory(opts: {
    *  through to self-op for the source-bindings POST + scan-now
    *  routes. */
   readonly scannerQueue?: unknown;
+  /** PR-W2 (phase-a appendix #14) — retry-failed callables threaded
+   *  through to self-op for the retry-failed admin route. */
+  readonly failedClassifyJobsEnumerator?: unknown;
+  readonly classifyJobEnqueuer?: unknown;
   /** PR-W1 (phase-a appendix #13) — worldview-compile queue handle
    *  threaded through to self-op for the recompile-worldview route. */
   readonly worldviewQueue?: unknown;
@@ -610,6 +651,16 @@ async function defaultStartFactory(opts: {
     // against the SAME queue the workers dequeue from.
     ...(opts.scannerQueue !== undefined
       ? { scannerQueue: opts.scannerQueue }
+      : {}),
+    // PR-W2 (phase-a appendix #14) — forward the preflight-built
+    // retry-failed callables into the engine so the admin-API
+    // retry-failed route can enumerate + re-enqueue failed classify
+    // jobs.
+    ...(opts.failedClassifyJobsEnumerator !== undefined
+      ? { failedClassifyJobsEnumerator: opts.failedClassifyJobsEnumerator }
+      : {}),
+    ...(opts.classifyJobEnqueuer !== undefined
+      ? { classifyJobEnqueuer: opts.classifyJobEnqueuer }
       : {}),
     // PR-W1 (phase-a appendix #13) — forward the preflight-built
     // worldview-compile queue handle into the engine so the admin-API
@@ -704,6 +755,14 @@ async function defaultIngestionPreflightFactory(opts: {
     // enqueue silently no-ops (binding still creates, just no
     // immediate scan) and `:id/scan-now` returns 503.
     scannerQueue: composed.scannerQueue as unknown,
+    // PR-W2 (phase-a appendix #14) — surface the composition's
+    // retry-failed callables so the orchestrator can forward them
+    // into self-op's `start({failedClassifyJobsEnumerator,
+    // classifyJobEnqueuer})`. Without these the admin-API
+    // retry-failed route returns 503.
+    failedClassifyJobsEnumerator:
+      composed.failedClassifyJobsEnumerator as unknown,
+    classifyJobEnqueuer: composed.classifyJobEnqueuer as unknown,
     // PR-W1 (phase-a appendix #13) — surface the composition's
     // worldview compile bundle (producer queue + worker + safety-net
     // cron) so the orchestrator can forward `bundle.queue` into
@@ -956,6 +1015,17 @@ export async function runServe(args: ServeArgs): Promise<void> {
       // omitted and the route surfaces 503 (composition-incomplete).
       ...(preflight?.scannerQueue !== undefined
         ? { scannerQueue: preflight.scannerQueue }
+        : {}),
+      // PR-W2 (phase-a appendix #14) — forward the preflight's
+      // retry-failed callables so the admin-API retry-failed route
+      // can enumerate + re-enqueue failed classify jobs. Same
+      // boot-tolerance pattern: when preflight returned null, both
+      // fields stay omitted and the route returns 503.
+      ...(preflight?.failedClassifyJobsEnumerator !== undefined
+        ? { failedClassifyJobsEnumerator: preflight.failedClassifyJobsEnumerator }
+        : {}),
+      ...(preflight?.classifyJobEnqueuer !== undefined
+        ? { classifyJobEnqueuer: preflight.classifyJobEnqueuer }
         : {}),
       // PR-W1 (phase-a appendix #13) — forward the preflight's
       // worldview-compile queue handle so the admin-API

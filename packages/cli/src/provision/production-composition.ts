@@ -38,6 +38,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 
 import {
   composeProductionWorkerContext,
+  enumerateFailedJobsByBindingId,
+  type FailedJobsQueueLike,
   type ProductionSourceAdapterFactory,
   type ProductionWorkerContext,
 } from "@opencoo/engine-ingestion";
@@ -170,6 +172,27 @@ export interface ProductionCompositionResult {
       opts?: unknown,
     ) => Promise<unknown>;
   };
+  /** PR-W2 (phase-a appendix #14) — retry-failed admin-API surface.
+   *  The orchestrator threads these two callables into
+   *  `engine-self-operating.start({ failedClassifyJobsEnumerator,
+   *  classifyJobEnqueuer })` so the
+   *  `POST /api/admin/source-bindings/:id/retry-failed` route can:
+   *    1. Enumerate the `ingestion.scanner.classify` failed-set
+   *       filtered by payload bindingId (read-only `getFailed`
+   *       round-trip).
+   *    2. Re-enqueue each as a fresh classify job.
+   *  Both callables close over the SAME `Queue<ScannerClassifyJob>`
+   *  the worker context's `enqueue` writes onto — single shared
+   *  handle, no duplicate Redis connection. */
+  readonly failedClassifyJobsEnumerator: (
+    bindingId: string,
+    intakeId?: string,
+  ) => Promise<readonly import("@opencoo/engine-ingestion").FailedJobEntry[]>;
+  readonly classifyJobEnqueuer: (
+    name: string,
+    data: unknown,
+    opts?: unknown,
+  ) => Promise<unknown>;
   /** PR-W1 (phase-a appendix #13) — worldview compiler bundle.
    *  Carries the producer Queue (admin-API `recompile-worldview`
    *  route enqueues against it) + the consumer Worker + the safety-
@@ -539,6 +562,36 @@ export async function composeProductionFromEnv(
     );
   }
 
+  // PR-W2 (phase-a appendix #14) — bind the retry-failed callables to
+  // the SAME `ingestion.scanner.classify` Queue the worker context's
+  // `enqueue` writes onto. At runtime `workerContext.enqueue` IS the
+  // full `Queue<ScannerClassifyJob>` constructed in
+  // `production-context.ts`; the WorkerContext narrows the type to
+  // `ScannerEnqueue` (`add` only) for the Scanner pipeline. The cast
+  // below widens the local handle so we can call `getFailed` for
+  // enumeration. This is a type-only widening; the runtime object
+  // structurally satisfies both shapes.
+  const classifyQueueHandle = workerContext.enqueue;
+  if (classifyQueueHandle === undefined) {
+    throw new Error(
+      "cli/serve: composeProductionWorkerContext returned without enqueue (ingestion.scanner.classify queue) — PR-W2 wiring broken",
+    );
+  }
+  // The narrow `ScannerEnqueue.add` is a method on `Queue` so the
+  // structural shape we widen to includes BOTH `add` and `getFailed`.
+  const classifyQueueWide = classifyQueueHandle as unknown as
+    FailedJobsQueueLike & {
+      add: (name: string, data: unknown, opts?: unknown) => Promise<unknown>;
+    };
+  const failedClassifyJobsEnumerator: ProductionCompositionResult["failedClassifyJobsEnumerator"] =
+    (bindingId, intakeId) =>
+      enumerateFailedJobsByBindingId(classifyQueueWide, bindingId, intakeId);
+  // The retry route binds this directly so it doesn't need to know
+  // about the underlying BullMQ Queue — same boundary the rest of
+  // the admin-API uses for its queue handles (forgetJobEnqueuer).
+  const classifyJobEnqueuer: ProductionCompositionResult["classifyJobEnqueuer"] =
+    (name, data, opts) => classifyQueueWide.add(name, data, opts);
+
   // PR-W1 (phase-a appendix #13) — worldview compiler bundle.
   // Constructs the producer queue (admin-API recompile-worldview
   // route + the in-progress trigger pipeline enqueue against it),
@@ -600,6 +653,8 @@ export async function composeProductionFromEnv(
     outputChannels,
     outputChannelDescriptors,
     scannerQueue: scannerQueueHandle,
+    failedClassifyJobsEnumerator,
+    classifyJobEnqueuer,
     worldviewBundle,
   };
 }

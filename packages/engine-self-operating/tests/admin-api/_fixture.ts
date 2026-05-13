@@ -475,6 +475,22 @@ export interface AdminFixtureOptions {
   readonly worldviewQueue?: {
     add(name: string, data: unknown, opts?: unknown): Promise<unknown>;
   };
+  /** PR-W2 (phase-a appendix #14) — failed-classify-jobs enumerator
+   *  for the `POST /api/admin/source-bindings/:id/retry-failed` route.
+   *  Tests inject a stub that closes over a simulated failed set. */
+  readonly failedClassifyJobsEnumerator?: (
+    bindingId: string,
+    intakeId?: string,
+  ) => Promise<readonly import("../../src/admin-api/routes/source-bindings.js").RetryableFailedJob[]>;
+  /** PR-W2 — companion enqueuer that the retry-failed route hands
+   *  the original payloads to. Tests inject a stub that records
+   *  every call so the audit-before-enqueue invariant and the
+   *  payload-round-trip can be asserted. */
+  readonly classifyJobEnqueuer?: (
+    name: string,
+    data: unknown,
+    opts?: unknown,
+  ) => Promise<unknown>;
 }
 
 function silentLogger(): ConsoleLogger {
@@ -533,6 +549,13 @@ export async function makeAdminFixture(
       : {}),
     ...(opts.worldviewQueue !== undefined
       ? { worldviewQueue: opts.worldviewQueue }
+      : {}),
+    // PR-W2 (phase-a appendix #14)
+    ...(opts.failedClassifyJobsEnumerator !== undefined
+      ? { failedClassifyJobsEnumerator: opts.failedClassifyJobsEnumerator }
+      : {}),
+    ...(opts.classifyJobEnqueuer !== undefined
+      ? { classifyJobEnqueuer: opts.classifyJobEnqueuer }
       : {}),
   });
 

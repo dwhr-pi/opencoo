@@ -316,6 +316,49 @@ export interface RegisterSourceBindingsRoutesArgs {
    *  row was already written — operator can correlate via the
    *  audit log on retry). */
   readonly forgetJobEnqueuer?: (args: ForgetJobEnqueueArgs) => Promise<void>;
+  /** PR-W2 (phase-a appendix #14) — read-only enumerator over the
+   *  `ingestion.scanner.classify` BullMQ failed-set, filtered by
+   *  payload `bindingId` (+ optionally `intakeId`). Production wiring
+   *  builds this from `enumerateFailedJobsByBindingId(queue, ...)`
+   *  in `@opencoo/engine-ingestion` over the same producer-side
+   *  Queue handle the classifier worker writes onto. When undefined
+   *  the retry-failed endpoint returns 503 (composition incomplete).
+   *
+   *  Pinned as a callable rather than the raw Queue surface so the
+   *  admin-api package stays independent of `bullmq`. */
+  readonly failedClassifyJobsEnumerator?: (
+    bindingId: string,
+    intakeId?: string,
+  ) => Promise<readonly RetryableFailedJob[]>;
+  /** PR-W2 (phase-a appendix #14) — composition-supplied enqueuer
+   *  for the re-enqueue side of the retry-failed route. Receives the
+   *  same payload shape the original failed job carried and produces
+   *  a fresh BullMQ job (id assigned by the queue). When undefined
+   *  the endpoint returns 503.
+   *
+   *  Same callable shape as `ingestionQueue.add` but isolated to the
+   *  retry-failed flow so the route doesn't leak BullMQ semantics
+   *  into the rest of the admin-API. Production wiring binds this to
+   *  the classify queue's `add` method. */
+  readonly classifyJobEnqueuer?: (
+    name: string,
+    data: unknown,
+    opts?: unknown,
+  ) => Promise<unknown>;
+}
+
+/** PR-W2 (phase-a appendix #14) — a failed BullMQ job that the
+ *  retry route can re-drive. The route doesn't care about anything
+ *  beyond the id and the original payload (which it hands back to
+ *  the enqueuer so the new job is shape-identical to the old). */
+export interface RetryableFailedJob {
+  readonly jobId: string;
+  readonly data: {
+    readonly bindingId: string;
+    readonly intakeId?: string;
+    readonly [k: string]: unknown;
+  };
+  readonly failedReason: string;
 }
 
 export function registerSourceBindingsRoutes(
@@ -858,6 +901,183 @@ export function registerSourceBindingsRoutes(
       }
 
       return reply.code(202).send({ enqueued: true, jobId });
+    },
+  );
+
+  // PR-W2 (phase-a appendix #14) — re-enqueue failed compile-classify
+  // jobs for a binding. After W1 lands and the operator backfills
+  // `allowed_paths`, the existing failed BullMQ jobs are stale (they
+  // failed against the old, empty config) and will not re-drive on
+  // their own. This route enumerates the `ingestion.scanner.classify`
+  // failed-set filtered by payload bindingId (and optionally intakeId
+  // for the per-row Retry button) and re-enqueues each as a fresh job
+  // so the compile-worker drives it through the now-correctly-
+  // configured classifier guard.
+  //
+  // Threat-model:
+  //   • CSRF + admin-team gate (mirrors PR-Z3 scan-now + W1 PATCH).
+  //   • Audit row written BEFORE the re-enqueue calls so a partial
+  //     enqueue still leaves a forensic trail.
+  //   • The re-enqueued jobs go through the same compile-worker which
+  //     still hits the classifier guard — re-enqueue cannot escalate
+  //     scope (architecture.md §3.5 invariant 2). If `allowed_paths`
+  //     is still bad the job fails again and W3's catch moves the
+  //     intake row back to `failed`.
+  //   • The enumerator is read-only against Redis (BullMQ's
+  //     `getFailed` is a `ZRANGE` + `HGETALL` round-trip).
+  args.app.post(
+    "/api/admin/source-bindings/:id/retry-failed",
+    { preHandler: requireCsrf },
+    async (req, reply) => {
+      const ctx = requireAdminContext(req);
+      const id = (req.params as { id: string }).id;
+      if (!z.string().uuid().safeParse(id).success) {
+        return reply.code(400).send({ error: "invalid_id" });
+      }
+
+      // Optional `?intakeId=<id>` narrows to a single failed job — the
+      // W4 per-row Retry button uses this; the per-binding bulk button
+      // omits it. The intakeId carried inside the BullMQ payload is the
+      // `ingestion_intake.id` UUID; here we accept any non-empty string
+      // (the payload-side filter does the equality check) and cap the
+      // length so a maliciously crafted query string can't grow the
+      // audit-row metadata unbounded.
+      const intakeIdParam =
+        typeof (req.query as { intakeId?: unknown }).intakeId === "string"
+          ? (req.query as { intakeId: string }).intakeId
+          : undefined;
+      if (intakeIdParam !== undefined) {
+        if (intakeIdParam.length === 0 || intakeIdParam.length > 64) {
+          return reply.code(400).send({ error: "invalid_intake_id" });
+        }
+      }
+
+      // Composition gate — both the enumerator and the enqueuer must
+      // be wired. Either-or undefined → 503 with the same boot-
+      // tolerance pattern the rest of the admin-API uses (scan-now,
+      // forget, recompile-worldview).
+      const enumerate = args.failedClassifyJobsEnumerator;
+      const enqueue = args.classifyJobEnqueuer;
+      if (enumerate === undefined || enqueue === undefined) {
+        return reply.code(503).send({
+          error: "classify_queue_unavailable",
+          reason:
+            "Composition did not register the classify-queue retry surface — check engine logs for `production_context` failures",
+        });
+      }
+
+      // Verify the binding exists. Mirrors scan-now's contract — a
+      // 404 here means "no such binding"; an empty failed set is NOT
+      // an error (returns 0).
+      const existing = (await args.db.execute(sql`
+        SELECT 1 AS one
+        FROM sources_bindings
+        WHERE id = ${id}::uuid
+        LIMIT 1
+      `)) as unknown as { rows: Array<{ one: number }> };
+      if (existing.rows.length === 0) {
+        return reply.code(404).send({ error: "not_found", id });
+      }
+
+      // Enumerate first so we know N before the audit row + enqueue
+      // calls fire. The enumerator is read-only; surfacing a transport
+      // error here as 500 (rather than enqueue-failed) gives the
+      // operator a better diagnostic.
+      let toRetry: readonly RetryableFailedJob[];
+      try {
+        toRetry = await enumerate(id, intakeIdParam);
+      } catch (err) {
+        req.log?.warn({
+          msg: "binding_retry_failed.enumerate_failed",
+          binding_id: id,
+          err: safeErrorMessage(err),
+        });
+        return reply.code(500).send({
+          error: "retry_failed_enumerate_failed",
+          reason: safeErrorMessage(err),
+        });
+      }
+
+      // Audit BEFORE re-enqueue (audit-before-side-effect invariant).
+      // Metadata: binding_id + target_count + caller_username +
+      // (when scoped) intake_id. NEVER any operator-supplied freeform
+      // text — the URL params are bounded and the body is empty.
+      //
+      // Field naming: `target_count` (NOT `retried_count`). The audit
+      // row is written BEFORE the enqueue loop runs, so the value
+      // captures the operator's INTENT — how many failed jobs the
+      // route enumerated and planned to re-enqueue. On a partial
+      // enqueue failure (transport blip mid-loop) fewer jobs actually
+      // ship; the HTTP response's `retriedCount` reflects the actual
+      // completed count after the loop. Naming the audit field
+      // `target_count` makes that distinction explicit so an operator
+      // cross-referencing the audit log against BullMQ state doesn't
+      // assume both numbers must match. Copilot review #131 (id
+      // 3230502111) — security invariant (audit-before-mutate) is
+      // unchanged; this is a label rename for forensic clarity.
+      const auditMetadata: Record<string, unknown> = {
+        binding_id: id,
+        target_count: toRetry.length,
+        caller_username: ctx.username,
+      };
+      if (intakeIdParam !== undefined) {
+        auditMetadata["intake_id"] = intakeIdParam;
+      }
+      await writeAuditLog(args.db, {
+        action: "source_binding.retry_failed",
+        userId: ctx.userId,
+        metadata: auditMetadata,
+        sourceIp: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+
+      // Idempotent: if there are no matching failed jobs, return 0
+      // and skip the enqueue loop entirely. The audit row is in place
+      // so a future operator can see the action was attempted.
+      if (toRetry.length === 0) {
+        return reply.code(200).send({ retriedCount: 0 });
+      }
+
+      // Re-enqueue each failed payload as a fresh job. The BullMQ
+      // queue assigns a new job id; we don't pin the old id (the
+      // failed-set row remains until BullMQ's `removeOnFail` policy
+      // reaps it — re-enqueueing creates a NEW job rather than
+      // re-driving the failed one in place, which is the safe
+      // semantic against concurrent BullMQ activity).
+      //
+      // Job name: `retry-failed` so a downstream log/metrics consumer
+      // can distinguish operator-driven retries from cron-driven jobs.
+      // The compile-worker reads `name` only for telemetry — both
+      // names route through the same processor.
+      let retried = 0;
+      try {
+        for (const job of toRetry) {
+          await enqueue("retry-failed", job.data, {
+            // Don't pin a jobId — let BullMQ assign one so back-to-back
+            // operator clicks each enqueue cleanly (no dedupe).
+            removeOnComplete: 10,
+            removeOnFail: 100,
+          });
+          retried += 1;
+        }
+      } catch (err) {
+        // Partial-failure path: audit already recorded the operator's
+        // INTENDED retried_count (toRetry.length). Surface 500 with
+        // the actually-completed count so the UI can choose to re-fire.
+        req.log?.warn({
+          msg: "binding_retry_failed.enqueue_failed",
+          binding_id: id,
+          retried_so_far: retried,
+          err: safeErrorMessage(err),
+        });
+        return reply.code(500).send({
+          error: "retry_failed_enqueue_failed",
+          reason: safeErrorMessage(err),
+          retriedCount: retried,
+        });
+      }
+
+      return reply.code(200).send({ retriedCount: retried });
     },
   );
 

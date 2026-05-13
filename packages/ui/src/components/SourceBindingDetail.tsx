@@ -534,6 +534,58 @@ export function SourceBindingDetail(
     }
   };
 
+  /** PR-W2 (phase-a appendix #14) — "Retry failed jobs" state.
+   *  Mirrors the Scan-now pattern but without the cooldown — the
+   *  bulk retry can legitimately enqueue many jobs and a 3s
+   *  re-click protection is unnecessary (server is idempotent on
+   *  the no-failed-jobs path).
+   *
+   *  `queued` flashes the success toast with the retried count; the
+   *  count is recorded in state so the toast can render it without
+   *  re-querying. The toast auto-clears after `SCAN_NOW_DISABLE_MS`
+   *  (reuses the same constant for visual consistency with the
+   *  Scan-now success flash). */
+  const [retryFailedState, setRetryFailedState] = useState<
+    "idle" | "in-flight" | "queued"
+  >("idle");
+  const [retryFailedCount, setRetryFailedCount] = useState<number | null>(null);
+
+  const submitRetryFailed = async (): Promise<void> => {
+    setActionError(null);
+    setRetryFailedState("in-flight");
+    try {
+      const body = await fetchAdmin<{ retriedCount: number }>(
+        `/api/admin/source-bindings/${props.binding.id}/retry-failed`,
+        {
+          method: "POST",
+          ...fetchOptsFor(props.fetchImpl),
+        },
+      );
+      if (!mountedRef.current) return;
+      setRetryFailedCount(body.retriedCount);
+      setRetryFailedState("queued");
+      window.setTimeout(() => {
+        if (mountedRef.current) {
+          setRetryFailedState("idle");
+          setRetryFailedCount(null);
+        }
+      }, SCAN_NOW_DISABLE_MS);
+    } catch (err) {
+      if (!mountedRef.current) return;
+      setRetryFailedState("idle");
+      // 503 → composition-incomplete (classify queue not wired).
+      // Mirror the scan-now mapping so the operator gets a specific
+      // copy instead of the generic transient message.
+      if (err instanceof ApiTransientError && err.status === 503) {
+        setActionError(t("sources.detail.errors.retryFailedUnavailable"));
+        return;
+      }
+      setActionError(
+        mapActionError(err, "sources.detail.errors.retryFailedFailed"),
+      );
+    }
+  };
+
   const submitDelete = async (): Promise<void> => {
     setActionError(null);
     setSubmitting(true);
@@ -1191,6 +1243,32 @@ export function SourceBindingDetail(
             >
               {t("sources.detail.actions.scanNow")}
             </Btn>
+            {/* PR-W2 (phase-a appendix #14) — Retry failed jobs.
+             *  Re-enqueues the BullMQ failed-set jobs for this binding
+             *  after the operator has fixed `allowed_paths` (W1) and
+             *  intake_status='failed' (W3) showed them which jobs are
+             *  stuck. The button is disabled while the request is in
+             *  flight (avoids double-fire) and when the binding is
+             *  disabled (the route accepts the call but the re-enqueued
+             *  job would no-op until the binding is re-enabled —
+             *  surface the affordance up front).
+             *
+             *  W2 ships ONLY the per-binding bulk button. The per-row
+             *  Retry buttons described in the W4 surface are gated on
+             *  PR-W4 landing first (intake-state panel introduces the
+             *  failed-rows list); a follow-up wires the `?intakeId=`
+             *  query-param call. */}
+            <Btn
+              variant="subtle"
+              disabled={
+                retryFailedState !== "idle" || !props.binding.enabled
+              }
+              onClick={(): void => {
+                void submitRetryFailed();
+              }}
+            >
+              {t("sources.detail.actions.retryFailed")}
+            </Btn>
             <Btn
               variant="subtle"
               onClick={(): void => {
@@ -1328,6 +1406,28 @@ export function SourceBindingDetail(
               style={{ color: "var(--healthy)" }}
             />
             {t("sources.detail.scanNow.success")}
+          </span>
+        ) : null}
+        {/* PR-W2 (phase-a appendix #14) — Retry-failed success toast.
+         *  Reuses the healthy filled-disc glyph and copy-feedback row
+         *  for visual consistency with the Scan-now and copy-URL
+         *  flashes. Renders the retried_count so the operator sees
+         *  the scale of the action (zero is still surfaced — the
+         *  idempotent no-op path also acknowledges the click). */}
+        {retryFailedState === "queued" && retryFailedCount !== null ? (
+          <span
+            style={COPY_FEEDBACK_STYLE}
+            role="status"
+            data-testid="retry-failed-success"
+          >
+            <GlyphFilledDisc
+              size={10}
+              title="retried"
+              style={{ color: "var(--healthy)" }}
+            />
+            {t("sources.detail.retryFailed.success", {
+              count: retryFailedCount,
+            })}
           </span>
         ) : null}
       </div>
