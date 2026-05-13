@@ -7,6 +7,13 @@
 export { HEARTBEAT_DEFINITION } from "./definition.js";
 export { runHeartbeat, type RunHeartbeatArgs } from "./run.js";
 export {
+  HEARTBEAT_DRILLDOWN_DEFAULT,
+  HEARTBEAT_DRILLDOWN_HARD_CEILING,
+  extractCandidatePaths,
+  selectDrilldownPages,
+  type SelectDrilldownPagesArgs,
+} from "./page-drilldown.js";
+export {
   gatherSystemHealth,
   type GatherSystemHealthArgs,
   type SystemHealth,

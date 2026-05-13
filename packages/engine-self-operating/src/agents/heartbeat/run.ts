@@ -24,9 +24,11 @@ import type { McpToolClient } from "../../mcp-tool-client/index.js";
 import { assertDomainSlugInScope } from "../scope-check.js";
 import {
   indexSearch,
+  wikiReadPage,
   worldviewRead,
 } from "../tools/index.js";
 
+import { selectDrilldownPages } from "./page-drilldown.js";
 import {
   gatherSystemHealth as defaultGatherSystemHealth,
   type GatherSystemHealthArgs,
@@ -69,6 +71,12 @@ export interface RunHeartbeatArgs {
   readonly gatherSystemHealth?: (
     args: GatherSystemHealthArgs,
   ) => Promise<SystemHealth>;
+  /** Optional cap on how many worldview-referenced wiki pages
+   *  to drill into via `wiki.read_page` and spotlight into the
+   *  prompt. Defaults to HEARTBEAT_DRILLDOWN_DEFAULT (3); the
+   *  hard ceiling is HEARTBEAT_DRILLDOWN_HARD_CEILING (5). Pass
+   *  0 to disable drill-down entirely (legacy/test parity). */
+  readonly maxDrilldownPages?: number;
 }
 
 export async function runHeartbeat(
@@ -104,11 +112,42 @@ export async function runHeartbeat(
     worldviewRead(args.mcp, { domainSlug: args.domainSlug }),
   );
 
-  // Tool call 2: enumerate the domain's page index. Heartbeat
-  // doesn't read every page — the LLM uses the path list to
-  // pick what to mention; PR 20.5 Chat agent reads on demand.
+  // Tool call 2: enumerate the domain's page index. The
+  // heartbeat doesn't blanket-read every page; it uses the
+  // index to (a) hand the LLM a list of cite-able paths and
+  // (b) verify which worldview-referenced paths actually exist
+  // before drilling into them in the next step.
   const pagePaths = await ctx.callTool("index.search", () =>
     indexSearch(args.mcp, { domainSlug: args.domainSlug }),
+  );
+
+  // Tool call 3..N: drill into up to `maxDrilldownPages`
+  // worldview-referenced pages (PR-Y10). The selector parses
+  // wiki-path tokens from the worldview body and intersects
+  // with the page index — so the heartbeat only fetches pages
+  // that (a) the worldview referred to AND (b) exist in this
+  // domain's scope (the index is itself domain-scoped by the
+  // wiki adapter, and the domain was already cross-checked
+  // against `ctx.instance.scopeDomainIds` at the top of this
+  // function). Reading off-scope is structurally impossible
+  // here.
+  const drilldownPaths = selectDrilldownPages({
+    worldviewBody,
+    pageIndex: pagePaths,
+    ...(args.maxDrilldownPages !== undefined
+      ? { maxPages: args.maxDrilldownPages }
+      : {}),
+  });
+  const drilldownBodies: ReadonlyArray<{
+    readonly path: string;
+    readonly body: string;
+  }> = await Promise.all(
+    drilldownPaths.map(async (path) => {
+      const body = await ctx.callTool("wiki.read_page", () =>
+        wikiReadPage(args.mcp, { domainSlug: args.domainSlug, path }),
+      );
+      return { path, body };
+    }),
   );
 
   // PR-W6 (phase-a appendix #14) — pre-fetch operational-
@@ -183,7 +222,24 @@ export async function runHeartbeat(
       ? ""
       : `\n\n# Prior briefings (your memory)\n${ctx.spotlightedMemory.join("\n\n")}`;
 
-  const fullPrompt = `${prompt.body}\n\n# Domain worldview\n${worldviewEnvelope}\n\n# Available wiki pages\n${indexEnvelope}\n\n# Operational system health\n${systemHealthEnvelope}${memoryBlock}`;
+  // Drilled pages — each wrapped in its own spotlight envelope
+  // so the per-page `<source_content source="wiki://..">` shape
+  // gives the LLM a clear handle for citing the path.
+  const drilldownBlock =
+    drilldownBodies.length === 0
+      ? ""
+      : "\n\n# Drilled wiki pages\n" +
+        drilldownBodies
+          .map(({ path, body }) =>
+            spotlight({
+              content: body,
+              source: `wiki://${args.domainSlug}/${path}`,
+              fetchedAt,
+            }),
+          )
+          .join("\n\n");
+
+  const fullPrompt = `${prompt.body}\n\n# Domain worldview\n${worldviewEnvelope}\n\n# Available wiki pages\n${indexEnvelope}${drilldownBlock}\n\n# Operational system health\n${systemHealthEnvelope}${memoryBlock}`;
 
   const result = await ctx.router.generateObject({
     domainId,

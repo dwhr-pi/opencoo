@@ -20,7 +20,15 @@ export const HEARTBEAT_DEFINITION: AgentDefinition = {
   // Read-only tool surface. The automation_drift Lint detector
   // (plan #97 Q6) flags any past tool_calls[].name not in this
   // set — evidence of a tool slipped in without being declared.
-  toolNames: ["worldview.read", "index.search"],
+  //
+  // `wiki.read_page` (added in PR-Y10) is used by the runner to
+  // drill into worldview-referenced pages (≤5 per run, gated by
+  // page-index intersection — see `page-drilldown.ts`). The
+  // runner picks the paths deterministically; the LLM doesn't
+  // get a tool-use loop. The drill-down stays domain-scoped
+  // because the page index is domain-scoped by the wiki adapter
+  // and the domain was scope-checked at the top of the run.
+  toolNames: ["worldview.read", "index.search", "wiki.read_page"],
   // Weekday mornings, 8am UTC. The PoC heartbeat fires at the
   // start of the operator's working day; the OSS spec carries
   // that cadence forward (architecture.md §9.4). PR-M2.

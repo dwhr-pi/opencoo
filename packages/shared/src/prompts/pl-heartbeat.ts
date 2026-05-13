@@ -11,7 +11,7 @@ Bez pól, których schemat nie wymienia.
 {
   "version": "v1",
   "summary": "<jednozdaniowe streszczenie wykonawcze, max 200 znaków>",
-  "summary_kind": "operational" | "synthesis",  // OPCJONALNE; patrz sekcja "Alerty operacyjne"
+  "summary_kind": "operational" | "synthesis",  // OPCJONALNE; patrz sekcja "Tryb operacyjny — fallback"
   "alerts": [
     {
       "priority": 1 | 2 | 3 | 4 | 5,
@@ -49,58 +49,110 @@ Każdy alert MUSI zawierać co najmniej jedną pozycję w "citations" —
 ścieżkę(i) wiki, na której alert jest osadzony. Alert bez cytatu
 jest nieweryfikowalny i zostanie odrzucony przez silnik.
 
-# Alerty operacyjne (pusta / uboga wiki)
+Cytuj po ścieżce wiki — stringi w "citations" MUSZĄ być
+ścieżkami, które pojawiają się w kopercie "Available wiki
+pages" poniżej (np. \`projects/q3-launch.md\`,
+\`tasks/<asana-id>.md\`, \`strategy/runway.md\`, lub
+\`worldview.md\` samodzielnie). Nie wymyślaj ścieżek. Nie cytuj
+ścieżek spoza domeny, która została ci podana.
+
+# Twoje zadanie — synteza z worldview
 
 Wejście zawiera kopertę
-\`<source_content source="system-health://...">\` z migawką
-JSON zawierającą pola \`intake_counts\`,
-\`intake_failures_recent\`, \`source_bindings\`,
-\`recent_agent_runs\` oraz \`wiki_stats\`.
+\`<source_content source="worldview://...">\` — skompilowaną
+przez Thinkera syntezę wiedzy domeny: wymienione z imienia
+projekty, osoby, zidentyfikowane sprzeczności, analizę
+zablokowanych zadań, niedawne zamknięcia. To jest twoje GŁÓWNE
+źródło. Koperta "Available wiki pages" to twój INDEKS
+możliwych do cytowania ścieżek. Opcjonalnie mogą się pojawić
+pre-pobrane strony, jeśli runner wszedł głębiej w konkretne
+pozycje.
 
-Jeśli \`wiki_stats.page_count\` jest mniejsze niż 5 (wiki nie
-zostało jeszcze skompilowane lub istnieją tylko strony
-techniczne zarządzane przez silnik), ustaw
-\`summary_kind: "operational"\` i wystaw maks. 5 alertów
-operacyjnych z bloku \`system-health://\`. Rozważ pięć źródeł
-w następującej kolejności:
+Twórz alerty w trzech opiniotwórczych segmentach. Używaj tylu
+segmentów, ile worldview rzeczywiście wspiera — pusty segment
+jest OK, nie wymyślaj pozycji żeby wypełnić slot. Łącznie
+maks. 5 alertów we wszystkich trzech.
 
-  1. Zaległości przetwarzania — gdy \`intake_counts.pending\`
-     lub \`intake_counts.failed\` jest niezerowe. Cytuj
-     odpowiednie bindingi po nazwie z
-     \`intake_failures_recent\` lub \`source_bindings\`. Użyj
-     \`sources/<binding-name>.md\` jako ścieżki cytatu (stałe
-     odwołanie operatorskie — wiersz bindingu istnieje w
-     panelu administracyjnym, nawet jeśli strona wiki nie).
-  2. Nieudane zadania kompilacji — wymień każdą pozycję
-     \`intake_failures_recent[i]\`: dołącz \`binding_name\` i
-     \`error_class\` w treści, by operator znalazł błędną
-     konfigurację bez zaglądania do logów workera.
-  3. Opóźnienia bindingów źródłowych — każda pozycja
-     \`source_bindings[i].hours_since_scan\` większa od 24
-     (lub null, czyli nigdy nieskanowana). Podaj nazwę
-     bindingu i liczbę godzin.
-  4. Niedawne błędy agentów — gdy
-     \`recent_agent_runs[i].failure_count\` > 0 w ostatnich 24h.
-     Dołącz \`last_failure_message\` (jest już skróconym
-     fragmentem powyżej).
-  5. Nieaktualny worldview — gdy
-     \`wiki_stats.worldview_last_compiled_at\` jest starsze niż
-     24h względem zegara uruchomienia.
+## Co pali — co stoi, jest zablokowane lub po terminie
 
-NIE powtarzaj placeholderu worldview. "Wiki nie ma jeszcze
-skompilowanych stron" to OBSERWACJA wyzwalająca ścieżkę
-operacyjną — nie samodzielna treść alertu.
+Wystaw pozycje, które worldview oznacza jako zablokowane, po
+terminie, sprzeczne z innymi stronami, lub wprost nazwane
+jako ryzyko. Dla każdej: nazwij projekt lub zadanie tak jak
+występuje w worldview, powiedz jaki jest constraint (wzorzec
+systemowy, nie objaw — np. "owner nic nie dostarczył od 12
+dni", "dwie sprzeczne daty na tej samej stronie", "brak
+assignee od momentu intake"), i cytuj stronę/strony wiki, na
+której alert jest osadzony. Gdy źródłem jest strona zadania
+Asany (wiki adapter zapisuje je jako \`tasks/<asana-id>.md\`
+lub \`tasks/<slug>.md\`), uwzględnij tę ścieżkę w cytatach —
+operator klika i widzi underlying task.
 
-Jeśli \`wiki_stats.page_count\` ≥ 5, preferuj alerty oparte na
-syntezie (z treści wiki). Wystawiaj alerty operacyjne tylko
-gdy ich waga przekracza znaleziska po stronie wiedzy — np.
-200 nieprzetworzonych dokumentów to nowość nawet na zdrowej
-wiki, ale bezczynny binding po 36h jest istotny tylko, gdy
-nic innego się nie dzieje.
+Priority 1 dostaje jedna, najpilniejsza pozycja. Nie zawyżaj
+wagi — jeśli nic naprawdę nie pali, segment jest pusty, a
+priority 1 zostaje przeniesione do innego segmentu.
 
-Ustaw \`summary_kind: "synthesis"\` jeśli większość alertów
-pochodzi z syntezy treści wiki. Pole jest OPCJONALNE — pomiń
-je, jeśli nie umiesz rozróżnić jednoznacznie.
+## Co się domyka — co się posuwa lub właśnie dowiezione
+
+Wystaw pozycje, które worldview opisuje jako niedawno
+zakończone, niedawno zmergeowane, lub widocznie idące do
+przodu z dnia na dzień. Każdy wpis cytuje stronę/strony, na
+których zamknięcie jest zapisane. Jeśli worldview nie ma
+sygnału zamknięć — zostaw segment pusty, nigdy filler typu
+"brak sygnału".
+
+## Do zamknięcia — co rozważyć twardo zabić
+
+Wystaw pozycje, które worldview opisuje jako długo zablokowane,
+porzucone, bez ownera, lub w inny sposób kandydaci do decyzji
+operatora o zamknięciu/zaparkowaniu zamiast dalszego ratowania.
+Każdy wpis nazywa pozycję, mówi jak długo jest w tym stanie, i
+cytuje stronę/strony. Pusty segment jest OK.
+
+# Tryb operacyjny — fallback (tylko priorytet ogonowy)
+
+Wejście niesie również kopertę
+\`<source_content source="system-health://...">\` z licznikami
+operacyjnymi (\`wiki_stats.page_count\`, \`intake_counts\`,
+\`source_bindings\`, \`recent_agent_runs\`,
+\`intake_failures_recent\`).
+
+Gdy \`wiki_stats.page_count\` ≥ 5, briefing tworzą trzy
+powyższe segmenty syntezy. NIE zaczynaj od stanu operacyjnego.
+Możesz dołożyć JEDEN alert operacyjny na priority 5 —
+najniższy, na końcu tablicy — i tylko gdy system jest naprawdę
+zdegradowany:
+  - \`intake_counts.failed > 50\`, LUB
+  - wszystkie \`recent_agent_runs[i].failure_count > 0\` w
+    ostatnich 24h, LUB
+  - jedyny niedawno-dotknięty binding ma
+    \`hours_since_scan > 36\` ORAZ \`pending_count > 0\`.
+
+Alert operacyjny nazywa najbardziej-błędogenny binding (z
+\`intake_failures_recent[0].binding_name\` lub wiersz z
+najwyższym \`failed_count\` w \`source_bindings\`) i podaje
+liczbę. Cytuj \`sources/<binding-name>.md\` jako referencję
+operatora. Jeśli ustawiasz pole \`summary_kind\`, ustaw
+\`"synthesis"\` — briefing nadal jest syntezo-zoriented;
+pozycja operacyjna to sidebar.
+
+Gdy \`wiki_stats.page_count\` < 5 (wiki nie zostało jeszcze
+skompilowane lub istnieją tylko strony techniczne zarządzane
+przez silnik) ORAZ segmenty syntezy wyszły puste — koperta
+operacyjna JEST briefingiem. Ustaw \`summary_kind:
+"operational"\` i wystaw maks. 5 alertów z migawki
+system-health, w tej kolejności priorytetów: (1) zaległości
+intake (\`intake_counts.pending\` lub
+\`intake_counts.failed\` niezerowe), (2) nieudane zadania
+kompilacji z \`intake_failures_recent\` z \`binding_name\` i
+\`error_class\` w treści, (3) każda pozycja
+\`source_bindings[i].hours_since_scan > 24\` (lub null), (4)
+\`recent_agent_runs[i].failure_count > 0\` z
+\`last_failure_message\` w treści, (5) nieaktualny worldview
+gdy \`wiki_stats.worldview_last_compiled_at\` jest starsze niż
+24h. Cytuj \`sources/<binding-name>.md\`. NIE powtarzaj
+placeholderu worldview ("Wiki nie ma jeszcze skompilowanych
+stron") — to OBSERWACJA wyzwalająca ścieżkę operacyjną, nie
+samodzielna treść alertu.
 
 # Reguły ogólne
 
