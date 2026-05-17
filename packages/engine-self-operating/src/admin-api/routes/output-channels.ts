@@ -194,6 +194,20 @@ const patchChannelSchema = z.union([
   patchCredentialsSchema,
 ]);
 
+/** PR-W6 (phase-a appendix #15) — bulk-delete body. The 50-id
+ *  cap is the DB-lock-storm guard: a runaway client can't pin
+ *  the output_channels table by sending an unbounded array.
+ *  Per-id UUID validation is done in the handler (not via the
+ *  schema's `z.string().uuid()`) so the route can surface the
+ *  FIRST bad id by value in the 422 response — Zod's issue path
+ *  already names the index, but the bad id itself is the
+ *  operationally-useful diagnostic. */
+const bulkDeleteSchema = z
+  .object({
+    ids: z.array(z.string()).min(1).max(50),
+  })
+  .strict();
+
 // ─── Row shape returned to the UI ───────────────────────────────
 
 export interface OutputChannelRow {
@@ -262,6 +276,12 @@ export async function registerOutputChannelsRoutes(
     );
     args.app.delete(
       "/api/admin/output-channels/:id",
+      { preHandler: requireCsrf },
+      async (_req, reply) =>
+        reply.code(500).send({ error: "output_channels_registry_unavailable" }),
+    );
+    args.app.post(
+      "/api/admin/output-channels/bulk-delete",
       { preHandler: requireCsrf },
       async (_req, reply) =>
         reply.code(500).send({ error: "output_channels_registry_unavailable" }),
@@ -679,6 +699,154 @@ export async function registerOutputChannelsRoutes(
       });
 
       return reply.code(200).send({ ok: true });
+    },
+  );
+
+  // POST /bulk-delete — multi-id delete from the Outputs tab's
+  // multi-select pattern (PR-W6, phase-a appendix #15).
+  //
+  // Audit invariant: ONE `output_channel.delete` row PER id, written
+  // AFTER the row's DELETE succeeds. This matches the single-DELETE
+  // handler at line ~635 of this file — that handler explicitly
+  // audits after the row drops "so a database failure leaves no
+  // false-positive audit record." The verb `output_channel.delete`
+  // reads as completion, not intent, so the audit trail must mirror
+  // the actual state. A partial batch (e.g. a transient db failure
+  // mid-loop) returns 500 with `{deleted, skipped}` reflecting the
+  // rows that DID land, never claiming completion for a row that
+  // failed.
+  //
+  // The 50-id cap (Zod schema) is the DB-lock-storm guard. Ids are
+  // de-duped before the loop so `[X, X]` reports a single deletion
+  // rather than `{deleted: 1, skipped: 1}` (Copilot review on PR-W6
+  // — a caller asking for one logical deletion sees one logical
+  // result).
+  //
+  // Credential rows are best-effort cleaned up after the channel
+  // row deletes, mirroring the single-DELETE handler's policy:
+  // a failure here logs but doesn't block the response; v0.2's
+  // scheduled cleanup sweeps orphans.
+  //
+  // Idempotent on missing ids: the response shape is
+  // `{deleted, skipped}` so the UI can surface "3 deleted, 2
+  // already gone" without re-querying. Skipped ids never write
+  // an audit row — nothing actually changed for them.
+  args.app.post(
+    "/api/admin/output-channels/bulk-delete",
+    { preHandler: requireCsrf },
+    async (req, reply) => {
+      const ctx = requireAdminContext(req);
+      const parsed = bulkDeleteSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(422).send({
+          error: "validation_failed",
+          issues: parsed.error.issues,
+        });
+      }
+      // Per-id UUID validation — surface the first bad id by value
+      // so the UI can highlight it (vs. just saying "some id was
+      // malformed"). Runs BEFORE any side effect.
+      const uuidSchema = z.string().uuid();
+      for (const id of parsed.data.ids) {
+        if (!uuidSchema.safeParse(id).success) {
+          return reply.code(422).send({
+            error: "invalid_id",
+            bad_id: id,
+          });
+        }
+      }
+      // Dedupe so `[X, X]` is treated as one logical deletion. Without
+      // this the operator sees `{deleted: 1, skipped: 1}` for a single
+      // id submitted twice — misleading. The Set preserves insertion
+      // order in modern JS engines so the audit row order still
+      // reflects the order the operator selected.
+      const uniqueIds = Array.from(new Set(parsed.data.ids));
+
+      let deleted = 0;
+      let skipped = 0;
+      for (const id of uniqueIds) {
+        const existing = (await args.db.execute(sql`
+          SELECT id::text AS id,
+                 adapter_slug,
+                 name,
+                 credentials_id::text AS credentials_id
+          FROM output_channels
+          WHERE id = ${id}::uuid
+          LIMIT 1
+        `)) as unknown as {
+          rows: Array<{
+            id: string;
+            adapter_slug: string;
+            name: string;
+            credentials_id: string | null;
+          }>;
+        };
+        const row = existing.rows[0];
+        if (row === undefined) {
+          skipped += 1;
+          continue;
+        }
+
+        try {
+          await args.db.execute(sql`
+            DELETE FROM output_channels WHERE id = ${id}::uuid
+          `);
+        } catch (err) {
+          req.log?.warn({
+            msg: "output_channel.bulk_delete_row_failed",
+            channel_id: id,
+            err: err instanceof Error ? err.message : String(err),
+          });
+          // Response shape mirrors success — UI consumers don't need
+          // a separate type for the partial-failure path. The 500
+          // status code + `error` discriminator carry the failure
+          // signal; `deleted`/`skipped` reflect the rows that DID
+          // settle before the row that raised.
+          return reply.code(500).send({
+            error: "delete_failed",
+            channel_id: id,
+            deleted,
+            skipped,
+          });
+        }
+        deleted += 1;
+
+        // Audit AFTER the DELETE — same ordering as the single-DELETE
+        // handler in this file. A db failure on the DELETE returns
+        // BEFORE this write, so the audit trail never claims a row
+        // was deleted when it wasn't.
+        await writeAuditLog(args.db, {
+          action: "output_channel.delete",
+          userId: ctx.userId,
+          metadata: {
+            channel_id: row.id,
+            adapter_slug: row.adapter_slug,
+            name: row.name,
+            caller_username: ctx.username,
+            bulk: true,
+          },
+          sourceIp: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+
+        // Best-effort credential cleanup — failure logs but doesn't
+        // block the next id.
+        if (row.credentials_id !== null && args.credentialStore !== undefined) {
+          try {
+            await args.credentialStore.delete(
+              row.credentials_id as CredentialId,
+            );
+          } catch (err) {
+            req.log?.warn({
+              msg: "output_channel.bulk_delete_credentials_cleanup_failed",
+              channel_id: id,
+              err: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      }
+
+      return reply.code(200).send({ deleted, skipped });
     },
   );
 }

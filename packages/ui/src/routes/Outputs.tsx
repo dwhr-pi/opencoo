@@ -1,6 +1,7 @@
 /**
  * Outputs tab — list of `output_channels` rows (PR-Z4, phase-a
- * appendix #12 G5).
+ * appendix #12 G5; multi-select bulk-delete in PR-W6, phase-a
+ * appendix #15).
  *
  * Mirrors `Sources.tsx`'s shape: list + `+ New output channel`
  * modal + per-row drill-down. The list pulls from
@@ -8,28 +9,115 @@
  * descriptor map from `/api/admin/adapters` (the same endpoint
  * the source-bindings modal uses, extended with `outputAdapters[]`).
  *
+ * Multi-select (PR-W6):
+ *   - Left-most checkbox column on every row.
+ *   - Header checkbox selects/deselects all currently-listed rows.
+ *   - When one or more rows are selected, a `Delete N` button
+ *     reveals; clicking opens a destructive-confirm modal with
+ *     the checkbox-gated pattern from DomainDetail.
+ *   - On confirm: POST `/api/admin/output-channels/bulk-delete`
+ *     with the selected id array; the list refreshes on success.
+ *
  * Hard-nos honored: no gradients, no emoji, lowercase opencoo,
  * `--alert` reserved for destructive surfaces, design-system
  * tokens only.
  */
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import { Btn } from "../components/Btn.js";
 import { Card } from "../components/Card.js";
+import { Modal } from "../components/Modal.js";
 import { NewOutputChannelModal } from "../components/NewOutputChannelModal.js";
 import { OutputChannelDetail } from "../components/OutputChannelDetail.js";
-import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
+import {
+  fetchAdmin,
+  fetchOptsFor,
+  ApiAuthError,
+  ApiTransientError,
+} from "../lib/api.js";
 import type { OutputChannel } from "../types.js";
 
 interface OutputsResponse {
   readonly rows: readonly OutputChannel[];
 }
 
+interface BulkDeleteResponse {
+  readonly deleted: number;
+  readonly skipped: number;
+}
+
 export interface OutputsProps {
   /** @internal Test seam. */
   readonly fetchImpl?: typeof fetch;
 }
+
+const CHECKBOX_CELL_STYLE: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  padding: "4px 0",
+};
+
+const SECTION_STYLE: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--space-3)",
+};
+
+const CONFIRM_BODY_STYLE: CSSProperties = {
+  fontFamily: "var(--font-sans)",
+  fontSize: "var(--fs-body)",
+  lineHeight: "var(--lh-body)",
+  color: "var(--fg-2)",
+  margin: 0,
+};
+
+const CHECKBOX_ROW_STYLE: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  fontFamily: "var(--font-sans)",
+  fontSize: "var(--fs-small)",
+  color: "var(--fg-2)",
+};
+
+const CONFIRM_FOOTER_STYLE: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: "var(--space-3)",
+};
+
+const DESTRUCTIVE_CONFIRM_BTN_STYLE: CSSProperties = {
+  background: "var(--alert)",
+  color: "var(--paper)",
+  border: "1px solid var(--alert)",
+  borderRadius: "var(--radius-m)",
+  padding: "var(--space-3) var(--space-5)",
+  fontFamily: "var(--font-sans)",
+  fontWeight: 500,
+  fontSize: "var(--fs-body)",
+  cursor: "pointer",
+};
+
+const ERROR_TEXT_STYLE: CSSProperties = {
+  fontFamily: "var(--font-sans)",
+  fontSize: "var(--fs-small)",
+  color: "var(--alert)",
+  margin: 0,
+};
+
+const TOAST_STYLE: CSSProperties = {
+  fontFamily: "var(--font-sans)",
+  fontSize: "var(--fs-small)",
+  color: "var(--healthy)",
+  margin: 0,
+};
 
 export function Outputs(props: OutputsProps = {}): JSX.Element {
   const { t } = useTranslation();
@@ -38,6 +126,27 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<OutputChannel | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const [bulkStage, setBulkStage] = useState<"idle" | "confirm">("idle");
+  const [bulkAck, setBulkAck] = useState(false);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkActionError, setBulkActionError] = useState<string | null>(null);
+  const [bulkToast, setBulkToast] = useState<string | null>(null);
+  // Track the success-toast timer so unmount + back-to-back deletes
+  // can cancel the prior auto-clear before it fires (Copilot review
+  // on PR-142). Without this, navigating away during the 3s window
+  // would attempt to setState on an unmounted component.
+  const toastTimerRef = useRef<number | null>(null);
+  useEffect((): (() => void) => {
+    return (): void => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+    };
+  }, []);
   const opts = fetchOptsFor(props.fetchImpl);
 
   useEffect((): void => {
@@ -54,6 +163,110 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
     })();
   }, [refreshNonce]);
 
+  // Prune selectedIds to the currently-listed rows so a refresh that
+  // dropped a row clears its checkbox from state.
+  useEffect((): void => {
+    if (rows === null) return;
+    const visible = new Set(rows.map((r) => r.id));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (visible.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [rows]);
+
+  const allSelected = useMemo((): boolean => {
+    if (rows === null || rows.length === 0) return false;
+    return rows.every((r) => selectedIds.has(r.id));
+  }, [rows, selectedIds]);
+
+  const toggleOne = (id: string): void => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleAll = (): void => {
+    if (rows === null) return;
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(rows.map((r) => r.id)));
+    }
+  };
+
+  const openBulkConfirm = (): void => {
+    setBulkAck(false);
+    setBulkActionError(null);
+    setBulkStage("confirm");
+  };
+
+  const closeBulkConfirm = (): void => {
+    if (bulkSubmitting) return;
+    setBulkStage("idle");
+    setBulkAck(false);
+    setBulkActionError(null);
+  };
+
+  const submitBulkDelete = async (): Promise<void> => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkActionError(null);
+    setBulkSubmitting(true);
+    try {
+      const r = await fetchAdmin<BulkDeleteResponse>(
+        "/api/admin/output-channels/bulk-delete",
+        {
+          method: "POST",
+          body: { ids },
+          ...fetchOptsFor(props.fetchImpl),
+        },
+      );
+      setBulkStage("idle");
+      setBulkAck(false);
+      setSelectedIds(new Set());
+      setBulkToast(
+        t("outputs.bulkDelete.successToast", {
+          deleted: r.deleted,
+          skipped: r.skipped,
+        }),
+      );
+      setRefreshNonce((n) => n + 1);
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+      toastTimerRef.current = window.setTimeout((): void => {
+        setBulkToast(null);
+        toastTimerRef.current = null;
+      }, 3000);
+    } catch (err) {
+      if (err instanceof ApiAuthError) {
+        setBulkActionError(t("outputs.bulkDelete.errors.auth"));
+      } else if (err instanceof ApiTransientError) {
+        setBulkActionError(t("outputs.bulkDelete.errors.transient"));
+      } else {
+        setBulkActionError(t("outputs.bulkDelete.errors.generic"));
+      }
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
+
+  const selectedCount = selectedIds.size;
+
   return (
     <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
       <div
@@ -68,10 +281,27 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
           <h1 style={{ margin: 0 }}>{t("outputs.title")}</h1>
           <p style={{ margin: "4px 0 0", color: "var(--ink-3)" }}>{t("outputs.subtitle")}</p>
         </div>
-        <Btn variant="primary" onClick={(): void => setCreateOpen(true)}>
-          {t("outputs.newChannel")}
-        </Btn>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          {selectedCount > 0 ? (
+            <button
+              type="button"
+              onClick={openBulkConfirm}
+              style={DESTRUCTIVE_CONFIRM_BTN_STYLE}
+              data-testid="outputs-bulk-delete-btn"
+            >
+              {t("outputs.bulkDelete.button", { count: selectedCount })}
+            </button>
+          ) : null}
+          <Btn variant="primary" onClick={(): void => setCreateOpen(true)}>
+            {t("outputs.newChannel")}
+          </Btn>
+        </div>
       </div>
+      {bulkToast !== null ? (
+        <p style={TOAST_STYLE} role="status">
+          {bulkToast}
+        </p>
+      ) : null}
       <Card>
         {error !== null ? (
           <div
@@ -91,10 +321,19 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1.4fr 1fr 1fr 1.2fr",
+              gridTemplateColumns: "auto 1.4fr 1fr 1fr 1.2fr",
               gap: 12,
             }}
           >
+            <div style={CHECKBOX_CELL_STYLE}>
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                aria-label={t("outputs.bulkDelete.selectAllAriaLabel")}
+                data-testid="outputs-select-all"
+              />
+            </div>
             <div className="t-micro">{t("outputs.columns.name")}</div>
             <div className="t-micro">{t("outputs.columns.adapter")}</div>
             <div className="t-micro">{t("outputs.columns.enabled")}</div>
@@ -107,7 +346,7 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
               // users. The grid uses `display: contents` so we can't
               // wrap cells in a single clickable element without
               // breaking the layout — per-cell handlers are the
-              // simplest path that preserves the 4-column grid.
+              // simplest path that preserves the grid.
               const onRowClick = (): void => setSelected(c);
               const onRowKey = (e: React.KeyboardEvent): void => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -126,12 +365,24 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
                 onKeyDown: onRowKey,
                 "aria-label": t("outputs.detail.openAriaLabel", { name: c.name }),
               } as const;
+              const isChecked = selectedIds.has(c.id);
               return (
                 <div
                   key={c.id}
                   style={{ display: "contents" }}
                   data-channel-id={c.id}
                 >
+                  <div style={CHECKBOX_CELL_STYLE}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(): void => toggleOne(c.id)}
+                      aria-label={t("outputs.bulkDelete.selectRowAriaLabel", {
+                        name: c.name,
+                      })}
+                      data-testid={`outputs-select-row-${c.id}`}
+                    />
+                  </div>
                   <div
                     style={{
                       ...cellStyle,
@@ -198,6 +449,62 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
             setRefreshNonce((n) => n + 1);
           }}
         />
+      ) : null}
+      {bulkStage === "confirm" ? (
+        <Modal
+          title={t("outputs.bulkDelete.confirmTitle", { count: selectedCount })}
+          onClose={closeBulkConfirm}
+          maxWidth={520}
+          actions={
+            <div style={CONFIRM_FOOTER_STYLE}>
+              <Btn
+                variant="ghost"
+                onClick={closeBulkConfirm}
+                disabled={bulkSubmitting}
+              >
+                {t("outputs.bulkDelete.cancel")}
+              </Btn>
+              <button
+                type="button"
+                disabled={!bulkAck || bulkSubmitting}
+                onClick={(): void => {
+                  void submitBulkDelete();
+                }}
+                style={{
+                  ...DESTRUCTIVE_CONFIRM_BTN_STYLE,
+                  opacity: bulkAck && !bulkSubmitting ? 1 : 0.55,
+                  cursor:
+                    bulkAck && !bulkSubmitting ? "pointer" : "not-allowed",
+                }}
+                data-testid="outputs-bulk-delete-confirm"
+              >
+                {bulkSubmitting
+                  ? t("outputs.bulkDelete.submitting")
+                  : t("outputs.bulkDelete.confirm", { count: selectedCount })}
+              </button>
+            </div>
+          }
+        >
+          <div style={SECTION_STYLE}>
+            <p style={CONFIRM_BODY_STYLE}>
+              {t("outputs.bulkDelete.confirmBody", { count: selectedCount })}
+            </p>
+            <label style={CHECKBOX_ROW_STYLE}>
+              <input
+                type="checkbox"
+                checked={bulkAck}
+                disabled={bulkSubmitting}
+                onChange={(e): void => setBulkAck(e.target.checked)}
+              />
+              {t("outputs.bulkDelete.confirmCheckboxLabel")}
+            </label>
+            {bulkActionError !== null ? (
+              <p style={ERROR_TEXT_STYLE} role="alert">
+                {bulkActionError}
+              </p>
+            ) : null}
+          </div>
+        </Modal>
       ) : null}
     </div>
   );

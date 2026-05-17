@@ -694,6 +694,25 @@
         "adapter": "adapter",
         "state": "state"
       }
+    },
+    "bulkDelete": {
+      "button": "Delete {{count}}",
+      "confirm": "Delete {{count}}",
+      "cancel": "Cancel",
+      "submitting": "deleting…",
+      "confirmTitle_one": "Delete {{count}} channel?",
+      "confirmTitle_other": "Delete {{count}} channels?",
+      "confirmBody_one": "Deleting {{count}} channel is irreversible. Agent instances still bound to it skip delivery on the next dispatch.",
+      "confirmBody_other": "Deleting {{count}} channels is irreversible. Agent instances still bound to a deleted channel skip delivery on the next dispatch.",
+      "confirmCheckboxLabel": "I understand this cannot be undone.",
+      "successToast": "{{deleted}} deleted, {{skipped}} skipped",
+      "selectAllAriaLabel": "Select all channels",
+      "selectRowAriaLabel": "Select channel {{name}}",
+      "errors": {
+        "auth": "Session expired. Sign in again to retry.",
+        "transient": "Transient error. Try again in a moment.",
+        "generic": "Could not delete the selected channels."
+      }
     }
   }
 }
