@@ -536,7 +536,15 @@
     "redaction": {
       "empty": "No redaction events yet.",
       "errorPrefix": "Could not load redaction events:",
-      "errorHelp": "Re-check that your PAT is still valid, then refresh."
+      "errorHelp": "Re-check that your PAT is still valid, then refresh.",
+      "columns": {
+        "category": "kategoria",
+        "pipeline": "pipeline",
+        "guard": "guard",
+        "matches": "trafienia",
+        "failMode": "tryb błędu",
+        "time": "czas"
+      }
     }
   },
   "debug": {
@@ -654,7 +662,9 @@
       "copyFailed": "Copy failed",
       "showFull": "Show full payload",
       "showLess": "Truncate",
-      "truncatedNote": "Payload truncated at {{kb}} KB."
+      "truncatedNote": "Payload truncated at {{kb}} KB.",
+      "ipPrefix": "ip:",
+      "uaPrefix": "ua:"
     },
     "pagination": {
       "prev": "Prev",

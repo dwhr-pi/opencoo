@@ -20,9 +20,10 @@
  *      the new `?groupBy=` parameter.
  *   7. Empty state when no usage rows have been recorded.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
+import i18n from "../../src/lib/i18n.js";
 import { Cost } from "../../src/routes/Cost.js";
 
 interface CostBucketFixture {
@@ -323,5 +324,59 @@ describe("Cost route — selectors", () => {
         within(screen.getByTestId("cost-bucket-table")).getByText("compiler"),
       ).toBeInTheDocument();
     });
+  });
+});
+
+describe("Cost route — locale-aware number formatting (PR-W9)", () => {
+  // Each test in this block swaps the active i18n locale; reset
+  // afterwards so unrelated tests still resolve under `en`.
+  afterEach(async () => {
+    await i18n.changeLanguage("en");
+  });
+
+  it("renders USD totals with en-US separators under en", async () => {
+    const { fn } = makeFetch(() => ({
+      ...EMPTY_BUDGET,
+      totalUsd: 12345.67,
+      byBucket: [
+        { key: "wiki-pilot", totalUsd: 12345.67, tokensIn: 76543, tokensOut: 321, runs: 4 },
+      ],
+      budgetState: [],
+    }));
+    render(<Cost fetchImpl={fn} />);
+    await waitFor(() => {
+      expect(screen.getByTestId("cost-total")).toHaveTextContent("$12,345.67");
+    });
+    // The bucket table renders both the USD total and the
+    // token count under the en locale's `1,234` grouping.
+    const table = screen.getByTestId("cost-bucket-table");
+    expect(within(table).getByText("$12,345.67")).toBeInTheDocument();
+    expect(within(table).getByText("76,543")).toBeInTheDocument();
+  });
+
+  it("renders USD totals with pl-PL separators under pl", async () => {
+    await i18n.changeLanguage("pl");
+    const { fn } = makeFetch(() => ({
+      ...EMPTY_BUDGET,
+      totalUsd: 12345.67,
+      byBucket: [
+        { key: "wiki-pilot", totalUsd: 12345.67, tokensIn: 76543, tokensOut: 321, runs: 4 },
+      ],
+      budgetState: [],
+    }));
+    render(<Cost fetchImpl={fn} />);
+    // Currency stays USD per the formatUsd contract; only the
+    // separator / grouping conventions switch to pl-PL (NBSP for
+    // thousands, comma for decimals). The en-US comma-grouping
+    // must NOT show up in the rendered total.
+    await waitFor(() => {
+      const total = screen.getByTestId("cost-total").textContent ?? "";
+      expect(total).toMatch(/^\$12[\s ]345,67$/);
+      expect(total).not.toContain("12,345.67");
+    });
+    const table = screen.getByTestId("cost-bucket-table");
+    // Token count likewise follows the pl-PL grouping convention.
+    expect(within(table).queryByText("76,543")).not.toBeInTheDocument();
+    expect(within(table).getByText(/^76[\s ]543$/)).toBeInTheDocument();
   });
 });

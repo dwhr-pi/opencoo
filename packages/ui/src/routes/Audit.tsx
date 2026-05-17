@@ -25,7 +25,6 @@
  *     footgun.
  */
 import {
-  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -37,6 +36,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
+import { Table, type TableColumn } from "../components/Table.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
 
 const PAGE_LIMIT = 50;
@@ -172,6 +172,50 @@ function formatIsoUtc(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
+}
+
+// ─── Column definitions for the shared Table primitive ──────────────────────
+
+/** Build the audit-table column descriptor list. `t` is threaded
+ *  through so labels resolve under the current i18n locale; the
+ *  cell renderers cover the four open-coded columns the page had
+ *  before PR-W9. */
+function auditColumns(
+  t: (key: string) => string,
+): ReadonlyArray<TableColumn<AuditLogRow>> {
+  return [
+    {
+      key: "time",
+      label: t("audit.columns.time"),
+      mono: true,
+      cellStyle: { fontSize: 11, color: "var(--ink-3)", whiteSpace: "nowrap" },
+      render: (row) => formatIsoUtc(row.createdAt),
+    },
+    {
+      key: "action",
+      label: t("audit.columns.action"),
+      // action stays in font-sans (not mono) so it visually
+      // distinguishes the noun from the surrounding mono cells.
+      cellStyle: (row) => ({ color: actionColor(row.action) }),
+      render: (row) => row.action,
+    },
+    {
+      key: "actor",
+      label: t("audit.columns.actor"),
+      mono: true,
+      render: (row) => actorLabel(row),
+    },
+    {
+      key: "resource",
+      label: t("audit.columns.resource"),
+      mono: true,
+      cellStyle: (row) => ({
+        color:
+          resourceSummary(row.metadata) !== null ? "var(--ink)" : "var(--ink-3)",
+      }),
+      render: (row) => resourceSummary(row.metadata) ?? "—",
+    },
+  ];
 }
 
 // ─── Filter state ─────────────────────────────────────────────────────────────
@@ -646,8 +690,12 @@ function RowDetail(props: RowDetailProps): JSX.Element {
             color: "var(--ink-3)",
           }}
         >
-          {props.row.sourceIp !== null && <span>ip: {props.row.sourceIp}</span>}
-          {props.row.userAgent !== null && <span>ua: {props.row.userAgent}</span>}
+          {props.row.sourceIp !== null && (
+            <span>{t("audit.row.ipPrefix")} {props.row.sourceIp}</span>
+          )}
+          {props.row.userAgent !== null && (
+            <span>{t("audit.row.uaPrefix")} {props.row.userAgent}</span>
+          )}
         </div>
       )}
     </div>
@@ -781,128 +829,60 @@ export function Audit(props: AuditProps = {}): JSX.Element {
           <NoticeRow tone="muted">{t("audit.empty")}</NoticeRow>
         )}
         {error === null && rows !== null && filtered.length > 0 && (
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
+          <Table
+            columns={auditColumns(t)}
+            rows={filtered}
+            rowKey={(row) => row.id}
+            rowAttrs={(row) => {
+              const isOpen = expanded.has(row.id);
+              const detailRowId = `audit-row-${row.id}-detail`;
+              const onKeyDown = (
+                e: ReactKeyboardEvent<HTMLTableRowElement>,
+              ): void => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  toggleExpand(row.id);
+                }
+              };
+              return {
+                "data-testid": `audit-row-${row.id}`,
+                role: "button",
+                tabIndex: 0,
+                "aria-expanded": isOpen,
+                "aria-controls": detailRowId,
+                onClick: (): void => toggleExpand(row.id),
+                onKeyDown,
+                style: {
+                  // Row a11y: the <tr> is the click target so it
+                  // also needs role=button + tabIndex + keyboard
+                  // handler + aria-expanded/-controls. Mirrors the
+                  // per-cell pattern used in Sources.tsx (PR-R1
+                  // fix-up), adapted to <tr> since we control the
+                  // table layout here. The detail row below carries
+                  // its own --rule so this one drops it when open
+                  // to avoid a double-rule artefact.
+                  borderBottom: isOpen ? "none" : "1px solid var(--rule)",
+                  cursor: "pointer",
+                  background: isOpen ? "var(--paper-2)" : "transparent",
+                },
+              };
             }}
-          >
-            <thead>
-              <tr style={{ borderBottom: "1px solid var(--rule)" }}>
-                {(["time", "action", "actor", "resource"] as const).map((col) => (
-                  <th
-                    key={col}
-                    style={{
-                      textAlign: "left",
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      letterSpacing: "0.08em",
-                      textTransform: "uppercase",
-                      color: "var(--ink-3)",
-                      padding: "6px 8px",
-                    }}
-                  >
-                    {t(`audit.columns.${col}`)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((row) => {
-                const isOpen = expanded.has(row.id);
-                const summary = resourceSummary(row.metadata);
-                const detailRowId = `audit-row-${row.id}-detail`;
-                const onRowKey = (e: ReactKeyboardEvent): void => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleExpand(row.id);
-                  }
-                };
-                return (
-                  <Fragment key={row.id}>
-                    {/* Row a11y: the <tr> is the click target so it
-                     *  also needs role=button + tabIndex + keyboard
-                     *  handler + aria-expanded/-controls. Mirrors the
-                     *  per-cell pattern used in Sources.tsx (PR-R1
-                     *  fix-up), adapted to <tr> since we control the
-                     *  table layout here. */}
-                    <tr
-                      data-testid={`audit-row-${row.id}`}
-                      role="button"
-                      tabIndex={0}
-                      aria-expanded={isOpen}
-                      aria-controls={detailRowId}
-                      onClick={(): void => toggleExpand(row.id)}
-                      onKeyDown={onRowKey}
-                      style={{
-                        borderBottom: isOpen
-                          ? "none"
-                          : "1px solid var(--rule)",
-                        cursor: "pointer",
-                        background: isOpen ? "var(--paper-2)" : "transparent",
-                      }}
-                    >
-                      <td
-                        style={{
-                          padding: "8px 8px",
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 11,
-                          color: "var(--ink-3)",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {formatIsoUtc(row.createdAt)}
-                      </td>
-                      <td
-                        style={{
-                          padding: "8px 8px",
-                          fontFamily: "var(--font-sans)",
-                          fontSize: 12,
-                          color: actionColor(row.action),
-                        }}
-                      >
-                        {row.action}
-                      </td>
-                      <td
-                        style={{
-                          padding: "8px 8px",
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          color: "var(--ink-2)",
-                        }}
-                      >
-                        {actorLabel(row)}
-                      </td>
-                      <td
-                        style={{
-                          padding: "8px 8px",
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          color:
-                            summary !== null ? "var(--ink)" : "var(--ink-3)",
-                        }}
-                      >
-                        {summary ?? "—"}
-                      </td>
-                    </tr>
-                    {isOpen && (
-                      <tr
-                        id={detailRowId}
-                        role="region"
-                        style={{ borderBottom: "1px solid var(--rule)" }}
-                      >
-                        <td colSpan={4} style={{ padding: 0 }}>
-                          <RowDetail row={row} />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+            renderAfterRow={(row) => {
+              if (!expanded.has(row.id)) return null;
+              const detailRowId = `audit-row-${row.id}-detail`;
+              return (
+                <tr
+                  id={detailRowId}
+                  role="region"
+                  style={{ borderBottom: "1px solid var(--rule)" }}
+                >
+                  <td colSpan={4} style={{ padding: 0 }}>
+                    <RowDetail row={row} />
+                  </td>
+                </tr>
+              );
+            }}
+          />
         )}
       </div>
 

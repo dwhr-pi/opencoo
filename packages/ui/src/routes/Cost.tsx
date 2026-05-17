@@ -39,6 +39,7 @@ import { useTranslation } from "react-i18next";
 
 import { Card } from "../components/Card.js";
 import { GlyphRingWithDot } from "../components/Glyph.js";
+import { Table, type TableColumn } from "../components/Table.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -108,27 +109,6 @@ const CHIP_STYLE_ACTIVE: CSSProperties = {
   color: "var(--ink)",
 };
 
-// Bucket-table cell styles. The four numeric cells share the same
-// shape (right-aligned mono), only the `key` cell is left-aligned.
-// The `totalUsd` cell uses `--ink` to anchor the eye on the cost
-// column; the rest use `--ink-2`.
-const TABLE_CELL_BASE: CSSProperties = {
-  padding: "8px 8px",
-  fontFamily: "var(--font-mono)",
-  fontSize: 12,
-};
-const TABLE_CELL_KEY: CSSProperties = { ...TABLE_CELL_BASE, color: "var(--ink)" };
-const TABLE_CELL_TOTAL: CSSProperties = {
-  ...TABLE_CELL_BASE,
-  color: "var(--ink)",
-  textAlign: "right",
-};
-const TABLE_CELL_NUMERIC: CSSProperties = {
-  ...TABLE_CELL_BASE,
-  color: "var(--ink-2)",
-  textAlign: "right",
-};
-
 // Background for each tier-split segment. Order matches the
 // canonical thinker → worker → light render order. Distinguishing
 // segments by paper-shift (no gradients per CLAUDE.md hard-no).
@@ -139,21 +119,31 @@ const MAX_BUCKETS = 100;
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Format a USD amount with two decimals + thousands separators.
- *  JetBrains Mono in render so columns align in the bottom table. */
-function formatUsd(amount: number): string {
+ *  JetBrains Mono in render so columns align in the bottom table.
+ *  The number formatting follows the operator's UI locale (en →
+ *  `1,234.56`, pl → `1 234,56`) so it lines up with the rest of
+ *  the chrome; currency stays USD because the engine bills in USD
+ *  and the dashboard's semantics are always USD. */
+function formatUsd(amount: number, locale: string): string {
   const sign = amount < 0 ? "-" : "";
   const abs = Math.abs(amount);
-  // Intl handles separators; we prepend "$" so the rendered string
-  // is monospace-aligned regardless of locale (operator may be in
-  // a non-en locale but the dashboard semantics are always USD).
-  return `${sign}$${abs.toLocaleString("en-US", {
+  return `${sign}$${abs.toLocaleString(intlLocale(locale), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
 }
 
-function formatTokens(n: number): string {
-  return n.toLocaleString("en-US");
+function formatTokens(n: number, locale: string): string {
+  return n.toLocaleString(intlLocale(locale));
+}
+
+/** Map i18next's locale codes (`en`, `pl`) onto Intl BCP-47 tags
+ *  with grouping conventions the operator expects. Unknown locales
+ *  fall back to en-US so a missing translation never produces
+ *  malformed numbers. */
+function intlLocale(language: string): string {
+  if (language.toLowerCase().startsWith("pl")) return "pl-PL";
+  return "en-US";
 }
 
 /** Burn-down threshold tone. The strict ranges from PR-R5 spec:
@@ -232,7 +222,8 @@ interface HeaderCardProps {
 }
 
 function HeaderCard(props: HeaderCardProps): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language;
   const totalUsd = props.summary?.totalUsd ?? 0;
   // Summed projection + cap across every domain. The header card's
   // "projected month-end" is the global aggregate; per-domain
@@ -288,7 +279,7 @@ function HeaderCard(props: HeaderCardProps): JSX.Element {
               marginTop: 4,
             }}
           >
-            {formatUsd(totalUsd)}
+            {formatUsd(totalUsd, locale)}
           </div>
           <div
             style={{
@@ -316,11 +307,11 @@ function HeaderCard(props: HeaderCardProps): JSX.Element {
               color: "var(--ink-2)",
             }}
           >
-            {formatUsd(projectedEom)}
+            {formatUsd(projectedEom, locale)}
           </span>
           <span style={MICRO_LABEL_STYLE}>
             {anyCap
-              ? `${t("cost.header.vsCap")} ${formatUsd(summedCap)}`
+              ? `${t("cost.header.vsCap")} ${formatUsd(summedCap, locale)}`
               : t("cost.header.noCap")}
           </span>
         </div>
@@ -334,7 +325,8 @@ interface BurnDownCardProps {
 }
 
 function BurnDownCard(props: BurnDownCardProps): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language;
   const entries = props.summary?.budgetState ?? [];
   return (
     <Card
@@ -422,9 +414,9 @@ function BurnDownCard(props: BurnDownCardProps): JSX.Element {
                         color: "var(--ink-2)",
                       }}
                     >
-                      {formatUsd(entry.usedUsd)}
+                      {formatUsd(entry.usedUsd, locale)}
                       {entry.capUsd !== null
-                        ? ` / ${formatUsd(entry.capUsd)}`
+                        ? ` / ${formatUsd(entry.capUsd, locale)}`
                         : ""}
                     </span>
                   </span>
@@ -461,7 +453,7 @@ function BurnDownCard(props: BurnDownCardProps): JSX.Element {
                     marginTop: 4,
                   }}
                 >
-                  {t("cost.header.projectedEom")}: {formatUsd(entry.projectedEomUsd)}
+                  {t("cost.header.projectedEom")}: {formatUsd(entry.projectedEomUsd, locale)}
                 </div>
               </div>
             );
@@ -477,7 +469,8 @@ interface TierSplitCardProps {
 }
 
 function TierSplitCard(props: TierSplitCardProps): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language;
   const buckets = props.tierBuckets;
   // Render order is canonical (thinker → worker → light) regardless
   // of input order. Missing tiers render zero-width segments so
@@ -526,7 +519,7 @@ function TierSplitCard(props: TierSplitCardProps): JSX.Element {
                 <div
                   key={seg.key}
                   data-testid={`cost-tier-segment-${seg.key}`}
-                  title={`${seg.key}: ${formatUsd(seg.usd)} (${pct.toFixed(1)}%)`}
+                  title={`${seg.key}: ${formatUsd(seg.usd, locale)} (${pct.toFixed(1)}%)`}
                   style={{
                     width: `${pct}%`,
                     height: "100%",
@@ -561,7 +554,7 @@ function TierSplitCard(props: TierSplitCardProps): JSX.Element {
                 <span style={MICRO_LABEL_STYLE}>
                   {t(`cost.tierSplit.${seg.key}`)}
                 </span>
-                <span>{formatUsd(seg.usd)}</span>
+                <span>{formatUsd(seg.usd, locale)}</span>
               </span>
             ))}
           </div>
@@ -577,65 +570,66 @@ interface BucketTableProps {
 }
 
 function BucketTable(props: BucketTableProps): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language;
   // Rows are sorted DESC by totalUsd server-side; that's the
   // operator's expected default. Column-header click sorting is
   // deferred to v0.2 — the columns render plain `<th>` here.
   const truncated = props.buckets.length >= MAX_BUCKETS;
+
+  // `data-groupby` carries the active grouping for tests + future
+  // per-grouping styling (e.g. a `groupBy === "agent"` branch may
+  // want to render `domain.slug × agent.slug` composite rows). It
+  // also keeps `groupBy` in the public contract of `BucketTable`
+  // without an extra hidden node.
+  const columns: ReadonlyArray<TableColumn<CostBucket>> = [
+    {
+      key: "key",
+      label: t("cost.table.key"),
+      mono: true,
+      cellStyle: { color: "var(--ink)" },
+      render: (bucket) => bucket.key,
+    },
+    {
+      key: "totalUsd",
+      label: t("cost.table.totalUsd"),
+      mono: true,
+      align: "right",
+      cellStyle: { color: "var(--ink)" },
+      render: (bucket) => formatUsd(bucket.totalUsd, locale),
+    },
+    {
+      key: "tokensIn",
+      label: t("cost.table.tokensIn"),
+      mono: true,
+      align: "right",
+      render: (bucket) => formatTokens(bucket.tokensIn, locale),
+    },
+    {
+      key: "tokensOut",
+      label: t("cost.table.tokensOut"),
+      mono: true,
+      align: "right",
+      render: (bucket) => formatTokens(bucket.tokensOut, locale),
+    },
+    {
+      key: "runs",
+      label: t("cost.table.runs"),
+      mono: true,
+      align: "right",
+      render: (bucket) => bucket.runs,
+    },
+  ];
+
   return (
     <Card title={t("cost.table.title")}>
-      {/* `data-groupby` carries the active grouping for tests +
-       *  future per-grouping styling (e.g. a `groupBy === "agent"`
-       *  branch may want to render `domain.slug × agent.slug`
-       *  composite rows). It also keeps `groupBy` in the public
-       *  contract of `BucketTable` without an extra hidden node. */}
-      <table
-        data-testid="cost-bucket-table"
-        data-groupby={props.groupBy}
-        style={{
-          width: "100%",
-          borderCollapse: "collapse",
-          fontFamily: "var(--font-sans)",
-          fontSize: 13,
-        }}
-      >
-        <thead>
-          <tr style={{ borderBottom: "1px solid var(--rule)" }}>
-            {(["key", "totalUsd", "tokensIn", "tokensOut", "runs"] as const).map(
-              (col) => (
-                <th
-                  key={col}
-                  style={{
-                    textAlign: col === "key" ? "left" : "right",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                    color: "var(--ink-3)",
-                    padding: "6px 8px",
-                  }}
-                >
-                  {t(`cost.table.${col}`)}
-                </th>
-              ),
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {props.buckets.map((bucket) => (
-            <tr
-              key={bucket.key}
-              style={{ borderBottom: "1px solid var(--rule)" }}
-            >
-              <td style={TABLE_CELL_KEY}>{bucket.key}</td>
-              <td style={TABLE_CELL_TOTAL}>{formatUsd(bucket.totalUsd)}</td>
-              <td style={TABLE_CELL_NUMERIC}>{formatTokens(bucket.tokensIn)}</td>
-              <td style={TABLE_CELL_NUMERIC}>{formatTokens(bucket.tokensOut)}</td>
-              <td style={TABLE_CELL_NUMERIC}>{bucket.runs}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <Table
+        columns={columns}
+        rows={props.buckets}
+        rowKey={(bucket) => bucket.key}
+        testId="cost-bucket-table"
+        dataAttrs={{ "data-groupby": props.groupBy }}
+      />
       {truncated ? (
         <div style={{ ...MICRO_LABEL_STYLE, marginTop: 8 }}>
           {t("cost.table.truncated", { n: MAX_BUCKETS })}

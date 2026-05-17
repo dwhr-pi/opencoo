@@ -22,6 +22,7 @@ import { useTranslation } from "react-i18next";
 import { AgentsRunNowButton } from "../components/AgentsRunNowButton.js";
 import { Btn } from "../components/Btn.js";
 import { GlyphOpenArc, GlyphRingWithDot } from "../components/Glyph.js";
+import { Table, type TableColumn } from "../components/Table.js";
 import {
   createAgentRunsSubscription,
   type SubscribeToAgentRuns,
@@ -675,106 +676,62 @@ function RedactionEventsView(props: { fetchImpl?: typeof fetch }): JSX.Element {
     );
   }
 
+  const columns: ReadonlyArray<TableColumn<RedactionEvent>> = [
+    {
+      key: "category",
+      label: t("reports.redaction.columns.category"),
+      mono: true,
+      cellStyle: { fontSize: 12, color: "var(--alert)" },
+      render: (event) => event.category,
+    },
+    {
+      key: "pipeline",
+      label: t("reports.redaction.columns.pipeline"),
+      mono: true,
+      cellStyle: { fontSize: 11 },
+      render: (event) => event.pipeline,
+    },
+    {
+      key: "guard",
+      label: t("reports.redaction.columns.guard"),
+      mono: true,
+      cellStyle: { fontSize: 11 },
+      render: (event) => event.guardSlug,
+    },
+    {
+      key: "matches",
+      label: t("reports.redaction.columns.matches"),
+      mono: true,
+      align: "right",
+      cellStyle: { fontSize: 11, color: "var(--ink)" },
+      // matchedByteRangesCount — count only, never the ranges.
+      render: (event) => event.matchedByteRangesCount,
+    },
+    {
+      key: "failMode",
+      label: t("reports.redaction.columns.failMode"),
+      mono: true,
+      cellStyle: { fontSize: 11, color: "var(--ink-3)" },
+      render: (event) => event.failMode,
+    },
+    {
+      key: "time",
+      label: t("reports.redaction.columns.time"),
+      mono: true,
+      cellStyle: { fontSize: 11, color: "var(--ink-3)" },
+      render: (event) =>
+        event.createdAt !== null
+          ? new Date(event.createdAt).toLocaleTimeString()
+          : "—",
+    },
+  ];
+
   return (
-    <table
-      style={{
-        width: "100%",
-        borderCollapse: "collapse",
-        fontFamily: "var(--font-sans)",
-        fontSize: 13,
-      }}
-    >
-      <thead>
-        <tr style={{ borderBottom: "1px solid var(--rule)" }}>
-          {["category", "pipeline", "guard", "matches", "fail mode", "time"].map((col) => (
-            <th
-              key={col}
-              style={{
-                textAlign: "left",
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--ink-3)",
-                padding: "6px 8px",
-              }}
-            >
-              {col}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {events.map((event) => (
-          <tr key={event.id} style={{ borderBottom: "1px solid var(--rule)" }}>
-            <td
-              style={{
-                padding: "8px 8px",
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                color: "var(--alert)",
-              }}
-            >
-              {event.category}
-            </td>
-            <td
-              style={{
-                padding: "8px 8px",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--ink-2)",
-              }}
-            >
-              {event.pipeline}
-            </td>
-            <td
-              style={{
-                padding: "8px 8px",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--ink-2)",
-              }}
-            >
-              {event.guardSlug}
-            </td>
-            <td
-              style={{
-                padding: "8px 8px",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--ink)",
-                textAlign: "right",
-              }}
-            >
-              {/* matchedByteRangesCount — count only, never the ranges */}
-              {event.matchedByteRangesCount}
-            </td>
-            <td
-              style={{
-                padding: "8px 8px",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--ink-3)",
-              }}
-            >
-              {event.failMode}
-            </td>
-            <td
-              style={{
-                padding: "8px 8px",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--ink-3)",
-              }}
-            >
-              {event.createdAt !== null
-                ? new Date(event.createdAt).toLocaleTimeString()
-                : "—"}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <Table
+      columns={columns}
+      rows={events}
+      rowKey={(event) => event.id}
+    />
   );
 }
 
