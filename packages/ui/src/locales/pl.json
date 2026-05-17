@@ -116,6 +116,7 @@
         "disable": "Disable",
         "delete": "Delete permanently",
         "recompileWorldview": "Recompile worldview",
+        "openPrompts": "Edytuj prompty dla tej domeny",
         "confirmDisableTitle": "Disable this domain?",
         "confirmDisableBody": "Soft-disables the domain. The Gitea repo is kept, but the domain is hidden from listings and ingestion stops dispatching to it. Re-enable is not in v0.1 — to recover you create a fresh domain.",
         "confirmDisable": "Confirm disable",
@@ -338,18 +339,58 @@
     }
   },
   "prompts": {
-    "title": "Prompts",
-    "subtitle": "Versioned prompts shipped with this build.",
+    "title": "Prompty",
+    "subtitle": "Wersjonowane prompty wbudowane w tę kompilację.",
+    "subtitleEditor": "Edytor nadpisań per-domena. Wybierz prompt, aby sforkować go z domyślnej wersji.",
     "columns": {
-      "name": "name",
-      "locale": "locale",
-      "version": "version"
+      "name": "nazwa",
+      "locale": "lokalizacja",
+      "version": "wersja"
     },
-    "empty": "No prompts loaded.",
+    "empty": "Brak załadowanych promptów.",
+    "groups": {
+      "knowledge": "wiedza",
+      "operate": "operacje"
+    },
     "diffBanner": {
-      "title_one": "prompt has a new default available",
-      "title_other": "prompts have new defaults available",
-      "acknowledge": "acknowledge diff"
+      "title_one": "prompt ma dostępną nową wersję domyślną",
+      "title_other": "prompty mają dostępne nowe wersje domyślne",
+      "acknowledge": "potwierdź różnicę"
+    },
+    "editor": {
+      "empty": "Wybierz prompt z lewej, aby zobaczyć lub nadpisać jego treść.",
+      "domain": "domena",
+      "locale": "lokalizacja",
+      "baseline": "domyślna",
+      "save": "Zapisz",
+      "revert": "Wróć do domyślnej",
+      "refork": "Sforkuj ponownie z nowej domyślnej",
+      "openDebugDrawer": "Co zostało faktycznie wysłane",
+      "staleBadge": "Nadpisanie oparte o nieaktualną domyślną v{{baseline}}",
+      "source": {
+        "baseline": "domyślna wersja",
+        "override": "nadpisanie"
+      },
+      "driftBanner": "Domyślna wersja zmieniła się między podglądem a zapisem: v{{preview}} → v{{current}}. Sforkuj ponownie, aby kontynuować.",
+      "appliedToast": "Nadpisanie zastosowane. Nowa treść jest aktywna dla pipeline'ów tej domeny.",
+      "revertedToast": "Nadpisanie usunięte. Domena używa teraz domyślnej wersji.",
+      "revertConfirmTitle": "Usuń nadpisanie",
+      "revertConfirmBody": "To usunie nadpisanie {{name}} dla tej domeny + lokalizacji. Domyślna wersja zaczyna obowiązywać natychmiast. Audit log zapisuje usunięcie; poprzednia treść nie podlega odzyskaniu.",
+      "revertAck": "Rozumiem, że treść nadpisania jest nieodwracalnie tracona",
+      "revertConfirm": "Usuń nadpisanie",
+      "errors": {
+        "payloadMismatch": "Treść zmieniła się między podglądem a zapisem. Wyświetl podgląd ponownie, aby kontynuować.",
+        "expired": "Token suwerenności wygasł. Wyświetl podgląd ponownie.",
+        "signatureMismatch": "Token suwerenności został zmodyfikowany. Wyświetl podgląd ponownie.",
+        "driftFallback": "Domyślna wersja zmieniła się; kliknij Sforkuj ponownie."
+      }
+    },
+    "debug": {
+      "title": "Co zostało faktycznie wysłane",
+      "expand": "rozwiń",
+      "collapse": "zwiń",
+      "disabledBanner": "LLM_DEBUG_LOG=1 nie jest ustawione na tym wdrożeniu. Ustaw zmienną środowiskową i zrestartuj, aby zapisywać treści przygotowywane przez router LLM.",
+      "emptyBanner": "Brak zapisanych uruchomień dla tego promptu × domeny."
     }
   },
   "common": {

@@ -39,6 +39,18 @@ export function App(): JSX.Element {
   const [authError, setAuthError] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [debugActive, setDebugActive] = useState<boolean>(false);
+  // PR-W7a — when the operator clicks the "Prompts" affordance
+  // in DomainDetail, we pre-select the domain in the Prompts
+  // tab. The state is cleared once the Prompts route honors it
+  // so subsequent manual selections persist.
+  const [promptsInitialDomainId, setPromptsInitialDomainId] = useState<
+    string | null
+  >(null);
+
+  const onNavigateToPrompts = (domainId: string): void => {
+    setPromptsInitialDomainId(domainId);
+    setTab("prompts");
+  };
 
   useEffect((): void => {
     if (!authed) return;
@@ -107,12 +119,18 @@ export function App(): JSX.Element {
   }
 
   const tabs: Record<Tab, JSX.Element> = {
-    domains: <Domains />,
+    domains: <Domains onNavigateToPrompts={onNavigateToPrompts} />,
     sources: <Sources />,
     agents: <Agents />,
     outputs: <Outputs />,
     llmPolicy: <LlmPolicy />,
-    prompts: <Prompts />,
+    prompts: (
+      <Prompts
+        {...(promptsInitialDomainId !== null
+          ? { initialDomainId: promptsInitialDomainId }
+          : {})}
+      />
+    ),
     activity: <Activity onAuthFailed={onSseAuthFailed} />,
     review: <Review />,
     reports: <Reports onNavigate={setTab} />,

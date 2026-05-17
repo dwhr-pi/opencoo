@@ -48,6 +48,11 @@ export interface DomainDetailProps {
    *  mutation so the table re-fetches and the row picks up the new
    *  state. */
   readonly onChanged: () => void;
+  /** PR-W7a — opens the Prompts tab pre-selected to this domain.
+   *  When undefined the "Prompts" affordance is hidden (matches
+   *  the existing "what's wired in production" pattern of the
+   *  modal's other optional callbacks). */
+  readonly onNavigateToPrompts?: (domainId: string) => void;
   /** @internal Test seam — defaults to globalThis.fetch via fetchAdmin. */
   readonly fetchImpl?: typeof fetch;
 }
@@ -716,6 +721,24 @@ export function DomainDetail(props: DomainDetailProps): JSX.Element {
           <span style={LABEL_STYLE}>{t("domains.detail.labels.bindings")}</span>
           <span style={MONO_VALUE_STYLE}>{bindingCount}</span>
         </div>
+
+        {/* PR-W7a — Prompts affordance. Hidden when the parent
+         *  didn't wire the navigation callback (kept null-safe for
+         *  the standalone-test render path that mounts the modal
+         *  without an App.tsx parent). */}
+        {props.onNavigateToPrompts !== undefined ? (
+          <div>
+            <Btn
+              variant="subtle"
+              onClick={(): void => {
+                props.onNavigateToPrompts?.(props.domain.id);
+              }}
+              disabled={submitting}
+            >
+              {t("domains.detail.actions.openPrompts")}
+            </Btn>
+          </div>
+        ) : null}
 
         {/* Editable fields. */}
         <div style={FORM_FIELD_STYLE}>

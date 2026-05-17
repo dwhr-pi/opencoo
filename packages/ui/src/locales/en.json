@@ -114,6 +114,7 @@
         "disable": "Disable",
         "delete": "Delete permanently",
         "recompileWorldview": "Recompile worldview",
+        "openPrompts": "Edit prompts for this domain",
         "confirmDisableTitle": "Disable this domain?",
         "confirmDisableBody": "Soft-disables the domain. The Gitea repo is kept, but the domain is hidden from listings and ingestion stops dispatching to it. Re-enable is not in v0.1 — to recover you create a fresh domain.",
         "confirmDisable": "Confirm disable",
@@ -339,16 +340,56 @@
   "prompts": {
     "title": "Prompts",
     "subtitle": "Versioned prompts shipped with this build.",
+    "subtitleEditor": "Per-domain override editor. Pick a prompt to fork from the shipped baseline.",
     "columns": {
       "name": "name",
       "locale": "locale",
       "version": "version"
     },
     "empty": "No prompts loaded.",
+    "groups": {
+      "knowledge": "knowledge",
+      "operate": "operate"
+    },
     "diffBanner": {
       "title_one": "prompt has a new default available",
       "title_other": "prompts have new defaults available",
       "acknowledge": "acknowledge diff"
+    },
+    "editor": {
+      "empty": "Pick a prompt on the left to view or override its body.",
+      "domain": "domain",
+      "locale": "locale",
+      "baseline": "baseline",
+      "save": "Save",
+      "revert": "Revert to baseline",
+      "refork": "Re-fork from new baseline",
+      "openDebugDrawer": "What was actually sent",
+      "staleBadge": "Override based on outdated baseline v{{baseline}}",
+      "source": {
+        "baseline": "shipped baseline",
+        "override": "override"
+      },
+      "driftBanner": "Shipped baseline changed since preview: v{{preview}} → v{{current}}. Re-fork from the new baseline to continue.",
+      "appliedToast": "Override applied. New body is live for this domain's pipeline runs.",
+      "revertedToast": "Override removed. The domain now uses the shipped baseline.",
+      "revertConfirmTitle": "Remove override",
+      "revertConfirmBody": "This deletes the override for {{name}} on this domain + locale. The shipped baseline takes effect immediately. The audit log records the deletion; the prior body is not recoverable.",
+      "revertAck": "I understand the override body is unrecoverable",
+      "revertConfirm": "Remove override",
+      "errors": {
+        "payloadMismatch": "The body changed between preview and apply. Re-preview to continue.",
+        "expired": "Sovereignty token expired. Re-preview to continue.",
+        "signatureMismatch": "Sovereignty token tampered. Re-preview to continue.",
+        "driftFallback": "Shipped baseline drifted; click Re-fork from new baseline."
+      }
+    },
+    "debug": {
+      "title": "What was actually sent",
+      "expand": "expand",
+      "collapse": "collapse",
+      "disabledBanner": "LLM_DEBUG_LOG=1 is not set on this deployment. Set the env var and restart to record the bodies that the LLM router assembles.",
+      "emptyBanner": "No runs recorded yet for this prompt × domain."
     }
   },
   "common": {

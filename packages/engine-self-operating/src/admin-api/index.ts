@@ -55,6 +55,7 @@ import { registerEventsRoute } from "./routes/events.js";
 import { registerHeartbeatRoutes } from "./routes/heartbeat.js";
 import { registerLintFindingsRoutes } from "./routes/lint-findings.js";
 import { registerLlmModelsRoute } from "./routes/llm-models.js";
+import { registerLlmUsageDebugRoutes } from "./routes/llm-usage-debug.js";
 import { registerLogoutRoute } from "./routes/logout.js";
 import { registerMarketplaceUpdatesRoutes } from "./routes/marketplace-updates.js";
 import {
@@ -349,6 +350,16 @@ export async function registerAdminApi(
   // PR-Q13 (phase-a appendix #9) — read-only model catalog
   // for the per-tier model dropdown in the LLM-policy editor.
   registerLlmModelsRoute({ app: guardedApp });
+  // PR-W7a (phase-a appendix #15) — read-only "what was actually
+  // sent" surface for the Prompts UI debug drawer. Gated behind
+  // `LLM_DEBUG_LOG=1` env so it returns an empty payload + hint
+  // when debug logging is off, letting the UI render an "off"
+  // banner instead of a 404.
+  registerLlmUsageDebugRoutes({
+    app: guardedApp,
+    db: args.db,
+    llmDebugLog: args.llmDebugLog,
+  });
   registerLogoutRoute({ app: guardedApp, db: args.db });
 
   // Phase-a appendix #4 PR-B — Activity tab routes.

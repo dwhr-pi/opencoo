@@ -35,7 +35,11 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { SovereigntyDiffPreview } from "../types.js";
+import type {
+  LineDiffEntry,
+  PromptOverridePreview,
+  SovereigntyDiffPreview,
+} from "../types.js";
 
 const SUB_30S_THRESHOLD = 30;
 
@@ -193,12 +197,26 @@ const ERROR_TEXT_STYLE: CSSProperties = {
 };
 
 export interface DiffPreviewDialogProps {
-  readonly preview: SovereigntyDiffPreview;
+  /** Either the key-level diff (LLM-policy) or the line-level
+   *  diff (prompt-override, PR-W7a). The dialog branches on
+   *  the entry shape at render time so it stays drop-in for
+   *  both call sites. */
+  readonly preview: SovereigntyDiffPreview | PromptOverridePreview;
   readonly onApply: () => Promise<void>;
   readonly onCancel: () => void;
   readonly errorMessage?: string | null;
+  /** Optional sub-title override — defaults to the LLM-policy
+   *  copy ("current → proposed"). Prompt-override callers
+   *  pass the prompt-name + locale for at-a-glance context. */
+  readonly subtitle?: string;
   /** @internal Test seam — defaults to `Date.now()`. */
   readonly now?: () => number;
+}
+
+function isLineDiff(
+  entry: SovereigntyDiffPreview["diff"][number] | LineDiffEntry,
+): entry is LineDiffEntry {
+  return typeof (entry as LineDiffEntry).op === "string";
 }
 
 /** Format a value for display inside a diff line — JSON-stringify
@@ -309,7 +327,9 @@ export function DiffPreviewDialog(
             <h2 id="diff-dialog-title" style={TITLE_STYLE}>
               {t("llmPolicy.diffTitle")}
             </h2>
-            <div style={SUBTITLE_STYLE}>{t("llmPolicy.diffSubtitle")}</div>
+            <div style={SUBTITLE_STYLE}>
+              {props.subtitle ?? t("llmPolicy.diffSubtitle")}
+            </div>
           </div>
           <div style={TIMER_BAR_STYLE} data-testid="diff-timer-bar">
             <span style={TIMER_LABEL_STYLE}>
@@ -343,15 +363,41 @@ export function DiffPreviewDialog(
                 {t("llmPolicy.noChanges")}
               </div>
             ) : (
-              props.preview.diff.map((entry, idx) => (
-                <div key={`cur-${entry.path}-${idx}`}>
-                  <div style={DIFF_PATH_STYLE}>{entry.path}</div>
-                  <div style={delLineStyle}>
-                    <span style={{ color: "var(--alert)" }}>{"- "}</span>
-                    <span>{formatValue(entry.before)}</span>
+              props.preview.diff.map((entry, idx) => {
+                if (isLineDiff(entry)) {
+                  // Line-level diff: render only `same`/`del`
+                  // rows in the current panel. `add` lines
+                  // don't exist in `before` so they're
+                  // omitted here.
+                  if (entry.op === "add") return null;
+                  const lineStyle =
+                    entry.op === "del"
+                      ? delLineStyle
+                      : DIFF_LINE_BASE_STYLE;
+                  const marker = entry.op === "del" ? "- " : "  ";
+                  const markerColor =
+                    entry.op === "del" ? "var(--alert)" : "var(--fg-3)";
+                  return (
+                    <div
+                      key={`cur-${entry.op}-${idx}`}
+                      data-testid={`line-cur-${entry.op}-${idx}`}
+                      style={lineStyle}
+                    >
+                      <span style={{ color: markerColor }}>{marker}</span>
+                      <span>{entry.line}</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={`cur-${entry.path}-${idx}`}>
+                    <div style={DIFF_PATH_STYLE}>{entry.path}</div>
+                    <div style={delLineStyle}>
+                      <span style={{ color: "var(--alert)" }}>{"- "}</span>
+                      <span>{formatValue(entry.before)}</span>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
           <div style={PANEL_STYLE}>
@@ -367,15 +413,37 @@ export function DiffPreviewDialog(
                 {t("llmPolicy.noChanges")}
               </div>
             ) : (
-              props.preview.diff.map((entry, idx) => (
-                <div key={`pro-${entry.path}-${idx}`}>
-                  <div style={DIFF_PATH_STYLE}>{entry.path}</div>
-                  <div style={addLineStyle}>
-                    <span style={{ color: "var(--wiki)" }}>{"+ "}</span>
-                    <span>{formatValue(entry.after)}</span>
+              props.preview.diff.map((entry, idx) => {
+                if (isLineDiff(entry)) {
+                  if (entry.op === "del") return null;
+                  const lineStyle =
+                    entry.op === "add"
+                      ? addLineStyle
+                      : DIFF_LINE_BASE_STYLE;
+                  const marker = entry.op === "add" ? "+ " : "  ";
+                  const markerColor =
+                    entry.op === "add" ? "var(--wiki)" : "var(--fg-3)";
+                  return (
+                    <div
+                      key={`pro-${entry.op}-${idx}`}
+                      data-testid={`line-pro-${entry.op}-${idx}`}
+                      style={lineStyle}
+                    >
+                      <span style={{ color: markerColor }}>{marker}</span>
+                      <span>{entry.line}</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={`pro-${entry.path}-${idx}`}>
+                    <div style={DIFF_PATH_STYLE}>{entry.path}</div>
+                    <div style={addLineStyle}>
+                      <span style={{ color: "var(--wiki)" }}>{"+ "}</span>
+                      <span>{formatValue(entry.after)}</span>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

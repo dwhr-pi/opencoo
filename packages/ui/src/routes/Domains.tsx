@@ -28,6 +28,10 @@ export interface DomainsProps {
    *  Threaded through fetchAdmin so the page's calls are
    *  driven by the same mock the modal uses. */
   readonly fetchImpl?: typeof fetch;
+  /** PR-W7a — opens the Prompts tab pre-selected to the given
+   *  domain. Threaded down to DomainDetail's "Prompts"
+   *  affordance. */
+  readonly onNavigateToPrompts?: (domainId: string) => void;
 }
 
 const TOGGLE_ROW_STYLE: CSSProperties = {
@@ -242,6 +246,14 @@ export function Domains(props: DomainsProps = {}): JSX.Element {
           {...fetchOpts}
           onClose={(): void => setSelected(null)}
           onChanged={(): void => setRefreshNonce((n) => n + 1)}
+          {...(props.onNavigateToPrompts !== undefined
+            ? {
+                onNavigateToPrompts: (id: string): void => {
+                  setSelected(null);
+                  props.onNavigateToPrompts?.(id);
+                },
+              }
+            : {})}
         />
       ) : null}
     </div>

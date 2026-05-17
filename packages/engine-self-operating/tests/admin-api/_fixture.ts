@@ -358,6 +358,22 @@ const TABLES_DDL = `
   CREATE INDEX IF NOT EXISTS llm_usage_timestamp_idx ON llm_usage ("timestamp");
   CREATE INDEX IF NOT EXISTS llm_usage_pipeline_or_agent_timestamp_idx
     ON llm_usage (pipeline_or_agent, "timestamp");
+
+  -- PR-W7a (phase-a appendix #15): llm_usage_debug — sibling to
+  -- llm_usage carrying the raw prompt + response text, gated on
+  -- LLM_DEBUG_LOG=1. The Prompts UI's debug drawer reads this
+  -- through GET /api/admin/llm-usage-debug. Mirror of the
+  -- production schema from packages/shared/src/db/schema/
+  -- llm-usage-debug.ts.
+  CREATE TABLE IF NOT EXISTS llm_usage_debug (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    usage_id uuid NOT NULL REFERENCES llm_usage(id) ON DELETE CASCADE,
+    prompt_text text NOT NULL,
+    response_text text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS llm_usage_debug_created_at_idx
+    ON llm_usage_debug (created_at);
 `;
 
 export class MockGiteaClient implements GiteaClient {
