@@ -32,6 +32,7 @@ import { useTranslation } from "react-i18next";
 import { AgentsRunNowButton } from "../components/AgentsRunNowButton.js";
 import { Btn } from "../components/Btn.js";
 import { SR_ONLY_STYLE } from "../components/Chrome.js";
+import { Display } from "../components/Display.js";
 import { GlyphOpenArc, GlyphRingWithDot } from "../components/Glyph.js";
 import { Table, type TableColumn } from "../components/Table.js";
 import {
@@ -171,28 +172,52 @@ function HeartbeatView(props: {
   const subscribeToAgentRuns: SubscribeToAgentRuns =
     injectedSubscribe ?? subscription!.subscribe;
 
+  // Editorial lede — PR-C4 (wave-16). Scoped to the heartbeat
+  // sub-view only (NOT visible on the redaction-events tab, whose
+  // copy describes a different surface). Wraps every internal
+  // branch (loading / error / empty diagnostics / populated cards)
+  // so the lede reads as the heartbeat tab's top-line summary.
+  const lede = (
+    <div style={{ padding: "20px 0 4px" }}>
+      <Display level={2}>{t("routes.reports.lede")}</Display>
+    </div>
+  );
+
   if (error !== null) {
     return (
-      <NoticeRow tone="alert">
-        <div>
-          <strong>{t("reports.heartbeat.errorPrefix")}</strong> {error}
-        </div>
-        <div style={{ marginTop: 4, color: "var(--ink-3)" }}>
-          {t("reports.heartbeat.errorHelp")}
-        </div>
-      </NoticeRow>
+      <>
+        {lede}
+        <NoticeRow tone="alert">
+          <div>
+            <strong>{t("reports.heartbeat.errorPrefix")}</strong> {error}
+          </div>
+          <div style={{ marginTop: 4, color: "var(--ink-3)" }}>
+            {t("reports.heartbeat.errorHelp")}
+          </div>
+        </NoticeRow>
+      </>
     );
   }
-  if (reports === null) return <NoticeRow tone="muted">{t("common.loading")}</NoticeRow>;
+  if (reports === null) {
+    return (
+      <>
+        {lede}
+        <NoticeRow tone="muted">{t("common.loading")}</NoticeRow>
+      </>
+    );
+  }
   if (reports.length === 0) {
     // PR-W8 — drill down the precondition chain so the operator
     // sees WHY the list is empty (no instance / disabled / no
     // channels / no runs / output IS NULL / failed status).
     return (
-      <HeartbeatDiagnosticsPanel
-        {...(props.fetchImpl !== undefined ? { fetchImpl: props.fetchImpl } : {})}
-        {...(props.onNavigate !== undefined ? { onNavigate: props.onNavigate } : {})}
-      />
+      <>
+        {lede}
+        <HeartbeatDiagnosticsPanel
+          {...(props.fetchImpl !== undefined ? { fetchImpl: props.fetchImpl } : {})}
+          {...(props.onNavigate !== undefined ? { onNavigate: props.onNavigate } : {})}
+        />
+      </>
     );
   }
 
@@ -205,6 +230,7 @@ function HeartbeatView(props: {
         padding: "16px 0",
       }}
     >
+      {lede}
       {reports.map((report) => (
         <HeartbeatCard
           key={report.runId}
@@ -775,6 +801,10 @@ export function Reports(props: ReportsProps = {}): JSX.Element {
       <h1 id="opencoo-page-h1" style={SR_ONLY_STYLE}>
         {t("routes.reports.h1")}
       </h1>
+      {/* Editorial lede — PR-C4 (wave-16). The lede itself is
+          rendered INSIDE HeartbeatView so it's scoped to the
+          heartbeat sub-tab and not visible on Redaction (Copilot
+          triage on initial review). */}
       {/* Sub-tab navigation */}
       <div
         style={{

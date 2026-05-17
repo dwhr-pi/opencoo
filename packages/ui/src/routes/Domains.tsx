@@ -18,6 +18,7 @@ import { useTranslation } from "react-i18next";
 
 import { Btn } from "../components/Btn.js";
 import { Card } from "../components/Card.js";
+import { Display } from "../components/Display.js";
 import { DomainDetail } from "../components/DomainDetail.js";
 import { NewDomainModal } from "../components/NewDomainModal.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
@@ -135,9 +136,14 @@ export function Domains(props: DomainsProps = {}): JSX.Element {
       >
         <div>
           <h1 id="opencoo-page-h1" style={{ margin: 0 }}>{t("domains.title")}</h1>
-          <p style={{ margin: "4px 0 0", color: "var(--ink-3)" }}>
-            {t("domains.subtitle")}
-          </p>
+          {/* Editorial lede — PR-C4 (wave-16). Replaces the muted-
+              gray <p> subtitle with the Instrument Serif italic
+              lede; the existing `domains.subtitle` key is left in
+              the locale file for now in case a future copy-pass
+              wants it back. */}
+          <Display level={2} as="p">
+            {t("routes.domains.lede")}
+          </Display>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <label style={TOGGLE_ROW_STYLE}>

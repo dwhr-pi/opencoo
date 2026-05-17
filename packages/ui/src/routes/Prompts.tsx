@@ -34,6 +34,7 @@ import { useTranslation } from "react-i18next";
 
 import { Card } from "../components/Card.js";
 import { DiffPreviewDialog } from "../components/DiffPreviewDialog.js";
+import { Display } from "../components/Display.js";
 import { PromptDebugDrawer } from "../components/PromptDebugDrawer.js";
 import { PromptEditor } from "../components/PromptEditor.js";
 import { PromptsDiffBanner } from "../components/PromptsDiffBanner.js";
@@ -554,8 +555,19 @@ export function Prompts(props: PromptsProps = {}): JSX.Element {
         </Card>
         <Card>
           {selectedPrompt === null ? (
-            <div style={{ color: "var(--ink-3)" }}>
-              {t("prompts.editor.empty")}
+            // Empty-pane lede — PR-C4 (wave-16). The serif italic
+            // family wraps the existing explainer when no prompt is
+            // picked. `as="p"` keeps the heading outline clean (the
+            // route already carries an h1 above) while the C4
+            // ESLint rule + cross-route snapshot test pin this as
+            // one of three legal placements.
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <Display level={2} as="p">
+                {t("routes.prompts.lede")}
+              </Display>
+              <div style={{ color: "var(--ink-3)" }}>
+                {t("prompts.editor.empty")}
+              </div>
             </div>
           ) : paneLoading ? (
             <div style={{ color: "var(--ink-3)" }}>{t("common.loading")}</div>

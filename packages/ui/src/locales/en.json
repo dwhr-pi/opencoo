@@ -25,11 +25,6 @@
       "diagnostics": "diagnostics"
     }
   },
-  "routes": {
-    "activity": { "h1": "Activity" },
-    "reports": { "h1": "Reports" },
-    "review": { "h1": "Review" }
-  },
   "commandPalette": {
     "placeholder": "Type to search domains, bindings, agents, prompts…",
     "empty": "No results.",
@@ -976,6 +971,20 @@
         "transient": "Transient error. Try again in a moment.",
         "generic": "Could not delete the selected channels."
       }
+    }
+  },
+  "routes": {
+    "activity": { "h1": "Activity" },
+    "review": { "h1": "Review" },
+    "reports": {
+      "h1": "Reports",
+      "lede": "Today's signals from the agents you've configured."
+    },
+    "prompts": {
+      "lede": "The instructions your agents follow. Adapt them per domain or per instance."
+    },
+    "domains": {
+      "lede": "Each domain is its own wiki, its own LLM policy, its own access. Where your data lives."
     }
   }
 }

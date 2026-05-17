@@ -9,6 +9,10 @@
 import tseslint from "typescript-eslint";
 import importX from "eslint-plugin-import-x";
 import opencoo from "@opencoo/eslint-plugin";
+// Local UI-package rule (PR-C4, wave-16): pin Instrument Serif
+// references to Display.tsx. Plain-JS plugin — no build step needed;
+// scoped to packages/ui/src/** by the rule's own filename check.
+import uiLocal from "./packages/ui/eslint.local.js";
 
 const opencooScope = [
   "packages/engine-ingestion/**/*.{ts,tsx}",
@@ -75,6 +79,19 @@ export default tseslint.config(
     rules: {
       ...boundaryRules,
       "import-x/no-cycle": ["error", { maxDepth: 10, ignoreExternal: true }],
+    },
+  },
+
+  // 3b. UI-local rule (PR-C4, wave-16): pin Instrument Serif italic
+  //     references to Display.tsx. The rule itself filters down to
+  //     packages/ui/src/** at runtime by checking `context.filename`;
+  //     the files glob below keeps the plugin attached only to UI
+  //     source so other packages' lints don't pay the visitor cost.
+  {
+    files: ["packages/ui/**/*.{ts,tsx}"],
+    plugins: { "ui-local": uiLocal },
+    rules: {
+      "ui-local/instrument-serif-scoped-to-display": "error",
     },
   },
 
