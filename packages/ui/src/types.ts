@@ -132,6 +132,32 @@ export interface Domain {
    *  the Hard-delete button when bindings would block it.
    *  Optional for backward-compat. */
   readonly bindingCount?: number;
+  /** PR-W3 (phase-a appendix #15) — operational config the
+   *  DomainDetail "Configuration" section edits. Surfaced by GET
+   *  so the modal can pre-fill the controls without a second
+   *  round-trip. All five are optional for back-compat with
+   *  pre-W3 fixtures + the LLM-policy-picker payload.
+   *
+   *  `retentionDays`: integer 1–365 or `null` (no retention
+   *  policy on this domain — falls back to engine default).
+   *  `governanceCadence`: enum literal — pinned in sync with
+   *  `governance_cadence` in `enums.ts`.
+   *  `reviewRole`: free-form operator-facing label or `null`.
+   *  `worldviewEnabled`: at-rest gate. `false` stops the trigger
+   *  pipeline from enqueueing further compile jobs.
+   *  `llmBudgetMonthlyCapUsd`: stringified numeric(10,2) or
+   *  `null` (no cap). Preserved as a string to avoid binary-
+   *  fp round-trip drift. */
+  readonly retentionDays?: number | null;
+  readonly governanceCadence?:
+    | "continuous"
+    | "nightly"
+    | "weekly"
+    | "quarterly"
+    | "adhoc";
+  readonly reviewRole?: string | null;
+  readonly worldviewEnabled?: boolean;
+  readonly llmBudgetMonthlyCapUsd?: string | null;
 }
 
 export interface SourceBinding {

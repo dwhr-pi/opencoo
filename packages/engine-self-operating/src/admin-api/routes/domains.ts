@@ -66,6 +66,18 @@ const SLUG_REGEX = /^[a-z][a-z0-9-]{1,62}$/;
 
 const DOMAIN_CLASSES = ["knowledge", "catalog-workflows", "catalog-skills"] as const;
 
+/** PR-W3 (phase-a appendix #15) — governance-cadence enum literals.
+ *  Pinned in sync with `packages/shared/src/db/schema/enums.ts` —
+ *  the Zod parser surfaces a 422 on unknown values before the SQL
+ *  ENUM cast would otherwise produce a generic PG error. */
+const GOVERNANCE_CADENCES = [
+  "continuous",
+  "nightly",
+  "weekly",
+  "quarterly",
+  "adhoc",
+] as const;
+
 const createDomainSchema = z
   .object({
     slug: z.string().regex(SLUG_REGEX),
@@ -81,12 +93,42 @@ const createDomainSchema = z
  *  `{display_name: "x", slug: "y"}` cannot smuggle a slug change
  *  through the audit row. Slug rename = re-create the domain
  *  (downstream Gitea repo path is keyed off the slug); class is
- *  structural. */
+ *  structural.
+ *
+ *  PR-W3 (phase-a appendix #15) — extended with five operational
+ *  config fields:
+ *    - `retention_days` (1–365, nullable) — clears with `null`.
+ *    - `governance_cadence` (enum) — NOT NULL on the column; the
+ *      Zod enum mirrors `governance_cadence` from `enums.ts`.
+ *    - `review_role` (1–64 chars, nullable) — operator-facing label
+ *      for the role gating review. Free-form; NEVER recorded as a
+ *      VALUE in the audit metadata (changedFields lists names only).
+ *    - `worldview_enabled` (boolean) — at-rest gate. The trigger
+ *      pipeline already filters `WHERE worldview_enabled = true`
+ *      (see `composition/worldview-bundle.ts`), so flipping to
+ *      `false` stops future enqueues. In-flight queue jobs are NOT
+ *      cancelled by this PR (see TODO in the handler) — operator
+ *      visibility is the lever for v0.1; programmatic cancel is a
+ *      v0.2 enhancement once BullMQ surfaces a typed cancel API
+ *      that doesn't race the worker's domain re-read.
+ *    - `llm_budget_monthly_cap_usd` (≥0, ≤100_000, nullable) —
+ *      numeric(10,2). Returned to the client as a string to preserve
+ *      precision (cost-summary.ts already does this). */
 const updateDomainSchema = z
   .object({
     display_name: z.string().min(1).max(120).optional(),
     locale: z.enum(["en", "pl", "auto"]).optional(),
     is_aggregator: z.boolean().optional(),
+    retention_days: z.number().int().min(1).max(365).nullable().optional(),
+    governance_cadence: z.enum(GOVERNANCE_CADENCES).optional(),
+    review_role: z.string().min(1).max(64).nullable().optional(),
+    worldview_enabled: z.boolean().optional(),
+    llm_budget_monthly_cap_usd: z
+      .number()
+      .min(0)
+      .max(100_000)
+      .nullable()
+      .optional(),
   })
   .strict();
 
@@ -188,6 +230,11 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
         is_aggregator: boolean;
         disabled_at: Date | string | null;
         binding_count: number;
+        retention_days: number | null;
+        governance_cadence: string;
+        review_role: string | null;
+        worldview_enabled: boolean;
+        llm_budget_monthly_cap_usd: string | null;
       }>;
     };
     try {
@@ -200,6 +247,11 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
                d.llm_policy,
                d.is_aggregator,
                d.disabled_at,
+               d.retention_days,
+               d.governance_cadence::text AS governance_cadence,
+               d.review_role,
+               d.worldview_enabled,
+               d.llm_budget_monthly_cap_usd::text AS llm_budget_monthly_cap_usd,
                (
                  SELECT COUNT(*)::int
                  FROM sources_bindings sb
@@ -227,6 +279,11 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
         isAggregator: r.is_aggregator,
         disabledAt: toIsoOrNull(r.disabled_at),
         bindingCount: r.binding_count,
+        retentionDays: r.retention_days,
+        governanceCadence: r.governance_cadence,
+        reviewRole: r.review_role,
+        worldviewEnabled: r.worldview_enabled,
+        llmBudgetMonthlyCapUsd: r.llm_budget_monthly_cap_usd,
       })),
     };
   });
@@ -426,17 +483,48 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
           issues: parsed.error.issues,
         });
       }
-      const { display_name, locale, is_aggregator } = parsed.data;
+      const {
+        display_name,
+        locale,
+        is_aggregator,
+        retention_days,
+        governance_cadence,
+        review_role,
+        worldview_enabled,
+        llm_budget_monthly_cap_usd,
+      } = parsed.data;
+      // PR-W3 — `Object.hasOwn` (not `!== undefined`) so a body that
+      // EXPLICITLY sends `null` (clear-the-column) still counts as
+      // "present in body". The nullable fields rely on this to
+      // distinguish "field not in body" (skip) from "field is null"
+      // (clear).
+      const body = parsed.data as Record<string, unknown>;
       const bodyKeys: string[] = [];
-      if (display_name !== undefined) bodyKeys.push("display_name");
-      if (locale !== undefined) bodyKeys.push("locale");
-      if (is_aggregator !== undefined) bodyKeys.push("is_aggregator");
+      if (Object.hasOwn(body, "display_name")) bodyKeys.push("display_name");
+      if (Object.hasOwn(body, "locale")) bodyKeys.push("locale");
+      if (Object.hasOwn(body, "is_aggregator")) bodyKeys.push("is_aggregator");
+      if (Object.hasOwn(body, "retention_days")) bodyKeys.push("retention_days");
+      if (Object.hasOwn(body, "governance_cadence")) {
+        bodyKeys.push("governance_cadence");
+      }
+      if (Object.hasOwn(body, "review_role")) bodyKeys.push("review_role");
+      if (Object.hasOwn(body, "worldview_enabled")) {
+        bodyKeys.push("worldview_enabled");
+      }
+      if (Object.hasOwn(body, "llm_budget_monthly_cap_usd")) {
+        bodyKeys.push("llm_budget_monthly_cap_usd");
+      }
       if (bodyKeys.length === 0) {
         // Empty body — nothing to do. Surface as 422 so the operator
         // notices, rather than writing a no-op audit row.
         return reply.code(422).send({
           error: "validation_failed",
-          issues: [{ message: "at least one of display_name / locale / is_aggregator is required" }],
+          issues: [
+            {
+              message:
+                "at least one editable field is required (display_name, locale, is_aggregator, retention_days, governance_cadence, review_role, worldview_enabled, llm_budget_monthly_cap_usd)",
+            },
+          ],
         });
       }
 
@@ -485,6 +573,12 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
       // audit row claiming "display_name changed" — `changedFields`
       // must list values that actually moved. If nothing moved, the
       // route returns 200 + noOp:true and writes no audit row.
+      //
+      // PR-W3 (phase-a appendix #15) — extended with the five new
+      // editable columns. `llm_budget_monthly_cap_usd` is cast to text
+      // so the numeric round-trip survives JSON encoding; the
+      // comparison below stringifies the incoming number to the same
+      // canonical 2-decimal form Postgres emits.
       let currentRow: {
         rows: Array<{
           id: string;
@@ -494,6 +588,11 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
           locale: string;
           llm_policy: Record<string, unknown>;
           is_aggregator: boolean;
+          retention_days: number | null;
+          governance_cadence: string;
+          review_role: string | null;
+          worldview_enabled: boolean;
+          llm_budget_monthly_cap_usd: string | null;
         }>;
       };
       try {
@@ -504,7 +603,12 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
                  class::text AS class,
                  locale,
                  llm_policy,
-                 is_aggregator
+                 is_aggregator,
+                 retention_days,
+                 governance_cadence::text AS governance_cadence,
+                 review_role,
+                 worldview_enabled,
+                 llm_budget_monthly_cap_usd::text AS llm_budget_monthly_cap_usd
           FROM domains
           WHERE id = ${id}::uuid
           LIMIT 1
@@ -535,6 +639,45 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
       ) {
         changedFields.push("is_aggregator");
       }
+      if (
+        Object.hasOwn(body, "retention_days") &&
+        (retention_days ?? null) !== current.retention_days
+      ) {
+        changedFields.push("retention_days");
+      }
+      if (
+        governance_cadence !== undefined &&
+        governance_cadence !== current.governance_cadence
+      ) {
+        changedFields.push("governance_cadence");
+      }
+      if (
+        Object.hasOwn(body, "review_role") &&
+        (review_role ?? null) !== current.review_role
+      ) {
+        changedFields.push("review_role");
+      }
+      if (
+        worldview_enabled !== undefined &&
+        worldview_enabled !== current.worldview_enabled
+      ) {
+        changedFields.push("worldview_enabled");
+      }
+      if (Object.hasOwn(body, "llm_budget_monthly_cap_usd")) {
+        // Postgres returns numeric(10,2) as a string already in the
+        // canonical "X.YY" form. The incoming number is normalised to
+        // the same shape so a PATCH that resends 75 doesn't compare
+        // against "75.00" and falsely register a change.
+        const currentCap = current.llm_budget_monthly_cap_usd;
+        const proposedCap =
+          llm_budget_monthly_cap_usd === null ||
+          llm_budget_monthly_cap_usd === undefined
+            ? null
+            : Number(llm_budget_monthly_cap_usd).toFixed(2);
+        if (proposedCap !== currentCap) {
+          changedFields.push("llm_budget_monthly_cap_usd");
+        }
+      }
 
       if (changedFields.length === 0) {
         // No-op: the operator (or a hand-crafted client) submitted a
@@ -549,19 +692,36 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
           locale: current.locale,
           llmPolicy: current.llm_policy,
           isAggregator: current.is_aggregator,
+          retentionDays: current.retention_days,
+          governanceCadence: current.governance_cadence,
+          reviewRole: current.review_role,
+          worldviewEnabled: current.worldview_enabled,
+          llmBudgetMonthlyCapUsd: current.llm_budget_monthly_cap_usd,
           noOp: true,
         });
       }
 
-      // UPDATE with COALESCE on each optional field — only the
-      // fields the operator submitted are touched. RETURNING the
-      // full row shape so the response mirrors GET. The trailing
-      // `updated_at = NOW()` is implicit (`$onUpdate` on the
-      // schema) — repeating it here keeps the SQL side honest.
+      // UPDATE: only the columns the operator submitted are touched.
+      // For the original three fields the COALESCE shape still works
+      // (none are nullable in a way that the operator can clear). The
+      // PR-W3 additions include nullable columns: `retention_days`,
+      // `review_role`, `llm_budget_monthly_cap_usd` can be CLEARED by
+      // explicit `null`, so they use a `CASE WHEN <flag> THEN <value>
+      // ELSE <col> END` shape driven by an "in body" boolean. The
+      // composition keeps the SQL declarative (no string-concat) and
+      // makes the clear path explicit at the call site.
       //
       // Wrapped in try/catch (mirrors DELETE) so a connectivity
       // blip can't leak `err.message` through Fastify's default
       // error handler.
+      const setRetention = Object.hasOwn(body, "retention_days");
+      const setReviewRole = Object.hasOwn(body, "review_role");
+      const setCap = Object.hasOwn(body, "llm_budget_monthly_cap_usd");
+      const capForDb =
+        llm_budget_monthly_cap_usd === null ||
+        llm_budget_monthly_cap_usd === undefined
+          ? null
+          : Number(llm_budget_monthly_cap_usd).toFixed(2);
       let updated: {
         rows: Array<{
           id: string;
@@ -571,14 +731,29 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
           locale: string;
           llm_policy: Record<string, unknown>;
           is_aggregator: boolean;
+          retention_days: number | null;
+          governance_cadence: string;
+          review_role: string | null;
+          worldview_enabled: boolean;
+          llm_budget_monthly_cap_usd: string | null;
         }>;
       };
       try {
+        // Defensive `::boolean` casts on the `CASE WHEN <flag>` predicates:
+        // Drizzle binds JS booleans as Postgres `bool` parameters and the
+        // CASE WHEN reads them correctly today, but pinning the cast
+        // documents intent and protects against a future driver/Postgres
+        // upgrade where a bound parameter might land as text.
         updated = (await args.db.execute(sql`
           UPDATE domains
           SET name = COALESCE(${display_name ?? null}, name),
               locale = COALESCE(${locale ?? null}, locale),
               is_aggregator = COALESCE(${is_aggregator ?? null}, is_aggregator),
+              retention_days = CASE WHEN ${setRetention}::boolean THEN ${retention_days ?? null}::int ELSE retention_days END,
+              governance_cadence = COALESCE(${governance_cadence ?? null}::governance_cadence, governance_cadence),
+              review_role = CASE WHEN ${setReviewRole}::boolean THEN ${review_role ?? null}::text ELSE review_role END,
+              worldview_enabled = COALESCE(${worldview_enabled ?? null}, worldview_enabled),
+              llm_budget_monthly_cap_usd = CASE WHEN ${setCap}::boolean THEN ${capForDb}::numeric ELSE llm_budget_monthly_cap_usd END,
               updated_at = NOW()
           WHERE id = ${id}::uuid
           RETURNING id::text AS id,
@@ -587,7 +762,12 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
                     class::text AS class,
                     locale,
                     llm_policy,
-                    is_aggregator
+                    is_aggregator,
+                    retention_days,
+                    governance_cadence::text AS governance_cadence,
+                    review_role,
+                    worldview_enabled,
+                    llm_budget_monthly_cap_usd::text AS llm_budget_monthly_cap_usd
         `)) as unknown as typeof updated;
       } catch (err) {
         req.log?.warn({
@@ -601,6 +781,19 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
       if (row === undefined) {
         return reply.code(404).send({ error: "not_found", id });
       }
+
+      // PR-W3 — when `worldview_enabled` flipped to `false`, the trigger
+      // pipeline at `composition/worldview-bundle.ts` already filters
+      // `WHERE worldview_enabled = true`, so no NEW recompile jobs will
+      // be enqueued for this domain. Jobs already in-flight on the
+      // BullMQ queue (or actively running in a worker) will run to
+      // completion — they re-read the domain row before writing, so a
+      // race-window edit during a compile is observable but bounded.
+      // TODO(v0.2): programmatic cancel of in-flight `worldview.compile`
+      // jobs. BullMQ's `Queue.remove(jobId)` would close the lane, but
+      // the route doesn't have the active jobIds in scope; a typed
+      // cancel API would require either a queue scan or a sidecar
+      // table. Deferred until customer evidence shows it's load-bearing.
 
       // Audit row — slug + id + caller + the field NAMES that
       // changed. Field VALUES are NEVER recorded (display_name is
@@ -628,6 +821,11 @@ export function registerDomainsRoutes(args: RegisterDomainsRoutesArgs): void {
         locale: row.locale,
         llmPolicy: row.llm_policy,
         isAggregator: row.is_aggregator,
+        retentionDays: row.retention_days,
+        governanceCadence: row.governance_cadence,
+        reviewRole: row.review_role,
+        worldviewEnabled: row.worldview_enabled,
+        llmBudgetMonthlyCapUsd: row.llm_budget_monthly_cap_usd,
       });
     },
   );

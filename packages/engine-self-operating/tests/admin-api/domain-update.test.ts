@@ -39,17 +39,35 @@ async function setupAdmin(
 async function seedDomain(
   raw: Awaited<ReturnType<typeof makeAdminFixture>>["raw"],
   slug: string,
-  overrides: { name?: string; locale?: string; is_aggregator?: boolean } = {},
+  overrides: {
+    name?: string;
+    locale?: string;
+    is_aggregator?: boolean;
+    retention_days?: number | null;
+    governance_cadence?: string;
+    review_role?: string | null;
+    worldview_enabled?: boolean;
+    llm_budget_monthly_cap_usd?: string | null;
+  } = {},
 ): Promise<{ readonly id: string }> {
   const r = await raw.query<{ id: string }>(
-    `INSERT INTO domains (slug, name, locale, is_aggregator)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO domains (
+       slug, name, locale, is_aggregator,
+       retention_days, governance_cadence, review_role,
+       worldview_enabled, llm_budget_monthly_cap_usd
+     )
+     VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'continuous')::governance_cadence, $7, COALESCE($8, true), $9)
      RETURNING id`,
     [
       slug,
       overrides.name ?? "Display Name",
       overrides.locale ?? "en",
       overrides.is_aggregator ?? false,
+      overrides.retention_days ?? null,
+      overrides.governance_cadence ?? null,
+      overrides.review_role ?? null,
+      overrides.worldview_enabled ?? null,
+      overrides.llm_budget_monthly_cap_usd ?? null,
     ],
   );
   return { id: r.rows[0]!.id };
@@ -387,5 +405,466 @@ describe("admin-api PATCH /api/admin/domains/:id (PR-R1)", () => {
       payload: { display_name: "X" },
     });
     expect(res.statusCode).toBe(403);
+  });
+});
+
+/**
+ * PR-W3 (phase-a appendix #15) — five additional editable fields:
+ *   retention_days, governance_cadence, review_role, worldview_enabled,
+ *   llm_budget_monthly_cap_usd. Each test pins the wire shape, the DB
+ *   round-trip, and the audit-row `changedFields` listing.
+ *
+ * `null` clears the nullable fields (`retention_days`, `review_role`,
+ * `llm_budget_monthly_cap_usd`). `governance_cadence` is an enum (NOT
+ * NULL). `worldview_enabled` is a boolean (NOT NULL).
+ */
+describe("admin-api PATCH /api/admin/domains/:id (PR-W3 — phase-a appendix #15)", () => {
+  let cleanup: (() => Promise<void>) | null = null;
+  afterEach(async () => {
+    if (cleanup !== null) {
+      await cleanup();
+      cleanup = null;
+    }
+  });
+
+  it("200 happy: retention_days set persists; audit row lists changed field name", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec");
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { retention_days: 30 },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { retentionDays: number | null };
+    expect(body.retentionDays).toBe(30);
+
+    const dbRow = await f.raw.query<{ retention_days: number | null }>(
+      `SELECT retention_days FROM domains WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(dbRow.rows[0]?.retention_days).toBe(30);
+
+    const audit = await f.raw.query<{ metadata: Record<string, unknown> }>(
+      `SELECT metadata FROM admin_audit_log WHERE action = 'domain.update'`,
+    );
+    expect(audit.rows.length).toBe(1);
+    expect(audit.rows[0]!.metadata["changedFields"]).toEqual(["retention_days"]);
+  });
+
+  it("200 happy: retention_days: null clears a previously-set retention window", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec", { retention_days: 30 });
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { retention_days: null },
+    });
+    expect(res.statusCode).toBe(200);
+    const dbRow = await f.raw.query<{ retention_days: number | null }>(
+      `SELECT retention_days FROM domains WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(dbRow.rows[0]?.retention_days).toBeNull();
+  });
+
+  it("422 retention_days out-of-range (0 / 366)", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec");
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    for (const days of [0, 366]) {
+      const res = await f.app.inject({
+        method: "PATCH",
+        url: `/api/admin/domains/${id}`,
+        headers: {
+          authorization: `Bearer ${ADMIN_PAT}`,
+          "x-csrf-token": csrfToken,
+          cookie: `opencoo_csrf=${cookie}`,
+          "content-type": "application/json",
+        },
+        payload: { retention_days: days },
+      });
+      expect(res.statusCode).toBe(422);
+    }
+  });
+
+  it("200 happy: governance_cadence change persists", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec");
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { governance_cadence: "weekly" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { governanceCadence: string };
+    expect(body.governanceCadence).toBe("weekly");
+
+    const dbRow = await f.raw.query<{ governance_cadence: string }>(
+      `SELECT governance_cadence::text AS governance_cadence FROM domains WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(dbRow.rows[0]?.governance_cadence).toBe("weekly");
+  });
+
+  it("422 governance_cadence with an unknown enum value", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec");
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { governance_cadence: "never" },
+    });
+    expect(res.statusCode).toBe(422);
+  });
+
+  it("200 happy: review_role set and then cleared", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec");
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const setRes = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { review_role: "head-of-ops" },
+    });
+    expect(setRes.statusCode).toBe(200);
+    const setRow = await f.raw.query<{ review_role: string | null }>(
+      `SELECT review_role FROM domains WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(setRow.rows[0]?.review_role).toBe("head-of-ops");
+
+    const clearRes = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { review_role: null },
+    });
+    expect(clearRes.statusCode).toBe(200);
+    const clearRow = await f.raw.query<{ review_role: string | null }>(
+      `SELECT review_role FROM domains WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(clearRow.rows[0]?.review_role).toBeNull();
+  });
+
+  it("422 review_role over 64 chars", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec");
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { review_role: "x".repeat(65) },
+    });
+    expect(res.statusCode).toBe(422);
+  });
+
+  it("200 happy: worldview_enabled: false persists; audit lists worldview_enabled", async () => {
+    // `worldview_enabled = false` gates the trigger pipeline at-rest
+    // (composition/worldview-bundle.ts already filters `WHERE
+    // worldview_enabled = true`). In-flight jobs already on the queue
+    // are NOT cancelled by this PR — see TODO inline in the handler.
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec", { worldview_enabled: true });
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { worldview_enabled: false },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { worldviewEnabled: boolean };
+    expect(body.worldviewEnabled).toBe(false);
+
+    const dbRow = await f.raw.query<{ worldview_enabled: boolean }>(
+      `SELECT worldview_enabled FROM domains WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(dbRow.rows[0]?.worldview_enabled).toBe(false);
+
+    const audit = await f.raw.query<{ metadata: Record<string, unknown> }>(
+      `SELECT metadata FROM admin_audit_log WHERE action = 'domain.update'`,
+    );
+    expect(audit.rows.length).toBe(1);
+    expect(audit.rows[0]!.metadata["changedFields"]).toEqual([
+      "worldview_enabled",
+    ]);
+  });
+
+  it("200 happy: llm_budget_monthly_cap_usd set, then cleared with null", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec");
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const setRes = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { llm_budget_monthly_cap_usd: 250.5 },
+    });
+    expect(setRes.statusCode).toBe(200);
+    const setBody = JSON.parse(setRes.body) as {
+      llmBudgetMonthlyCapUsd: string | null;
+    };
+    // Numeric round-trip — Postgres returns numeric(10, 2) as a
+    // string. The route surfaces the same string the GET handler
+    // returns (cost-summary.ts already follows this pattern).
+    expect(setBody.llmBudgetMonthlyCapUsd).toBe("250.50");
+
+    const clearRes = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { llm_budget_monthly_cap_usd: null },
+    });
+    expect(clearRes.statusCode).toBe(200);
+    const clearBody = JSON.parse(clearRes.body) as {
+      llmBudgetMonthlyCapUsd: string | null;
+    };
+    expect(clearBody.llmBudgetMonthlyCapUsd).toBeNull();
+  });
+
+  it("422 llm_budget_monthly_cap_usd out-of-range (negative / >100_000)", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec");
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    for (const cap of [-1, 100_001]) {
+      const res = await f.app.inject({
+        method: "PATCH",
+        url: `/api/admin/domains/${id}`,
+        headers: {
+          authorization: `Bearer ${ADMIN_PAT}`,
+          "x-csrf-token": csrfToken,
+          cookie: `opencoo_csrf=${cookie}`,
+          "content-type": "application/json",
+        },
+        payload: { llm_budget_monthly_cap_usd: cap },
+      });
+      expect(res.statusCode).toBe(422);
+    }
+  });
+
+  it("200 noOp when all five new fields are resent at their current values — no audit row", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec", {
+      retention_days: 90,
+      governance_cadence: "quarterly",
+      review_role: "ops-lead",
+      worldview_enabled: false,
+      llm_budget_monthly_cap_usd: "75.00",
+    });
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        retention_days: 90,
+        governance_cadence: "quarterly",
+        review_role: "ops-lead",
+        worldview_enabled: false,
+        llm_budget_monthly_cap_usd: 75,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { noOp?: boolean };
+    expect(body.noOp).toBe(true);
+
+    const audit = await f.raw.query(
+      `SELECT id FROM admin_audit_log WHERE action = 'domain.update'`,
+    );
+    expect(audit.rows.length).toBe(0);
+  });
+
+  it("200: PATCH with one new-field absent leaves the nullable columns unchanged (CASE WHEN <flag> takes the ELSE branch)", async () => {
+    // Pins the "field absent → DB unchanged" SQL path for the three
+    // nullable W3 columns (`retention_days`, `review_role`,
+    // `llm_budget_monthly_cap_usd`). The handler uses
+    // `CASE WHEN <inBody>::boolean THEN <value> ELSE <col> END` — this
+    // test exercises ELSE explicitly: a PATCH that mutates only
+    // `display_name` must NOT clobber the seeded retention / role / cap
+    // back to null.
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec", {
+      retention_days: 42,
+      review_role: "ops-lead",
+      llm_budget_monthly_cap_usd: "75.00",
+    });
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { display_name: "Renamed" },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const dbRow = await f.raw.query<{
+      retention_days: number | null;
+      review_role: string | null;
+      llm_budget_monthly_cap_usd: string | null;
+    }>(
+      `SELECT retention_days,
+              review_role,
+              llm_budget_monthly_cap_usd::text AS llm_budget_monthly_cap_usd
+       FROM domains WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(dbRow.rows[0]?.retention_days).toBe(42);
+    expect(dbRow.rows[0]?.review_role).toBe("ops-lead");
+    expect(dbRow.rows[0]?.llm_budget_monthly_cap_usd).toBe("75.00");
+  });
+
+  it("200 multi-field change: audit changedFields lists every changed name (alphabetised against current row)", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { id } = await seedDomain(f.raw, "exec");
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/domains/${id}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        retention_days: 14,
+        governance_cadence: "nightly",
+        review_role: "head-of-ops",
+        worldview_enabled: false,
+        llm_budget_monthly_cap_usd: 500,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const audit = await f.raw.query<{ metadata: Record<string, unknown> }>(
+      `SELECT metadata FROM admin_audit_log WHERE action = 'domain.update'`,
+    );
+    expect(audit.rows.length).toBe(1);
+    const changed = audit.rows[0]!.metadata["changedFields"] as string[];
+    expect(changed).toEqual(
+      expect.arrayContaining([
+        "retention_days",
+        "governance_cadence",
+        "review_role",
+        "worldview_enabled",
+        "llm_budget_monthly_cap_usd",
+      ]),
+    );
+    // Audit metadata MUST NOT contain operator-supplied free-form bytes
+    // (review_role is operator-controlled). The handler records names
+    // only — match the existing PR-R1 invariant.
+    expect(JSON.stringify(audit.rows[0]!.metadata)).not.toContain("head-of-ops");
   });
 });

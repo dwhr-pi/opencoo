@@ -194,6 +194,67 @@ function isLocale(v: string): v is LocaleOption {
   return v === "en" || v === "pl" || v === "auto";
 }
 
+/** PR-W3 (phase-a appendix #15) — governance-cadence enum mirrored
+ *  from `packages/shared/src/db/schema/enums.ts`. The select widget
+ *  pins these literally; the server's Zod parser is the source of
+ *  truth and will 422 if a future addition lands here first. */
+const GOVERNANCE_CADENCES = [
+  "continuous",
+  "nightly",
+  "weekly",
+  "quarterly",
+  "adhoc",
+] as const;
+
+type GovernanceCadenceOption = (typeof GOVERNANCE_CADENCES)[number];
+
+function isGovernanceCadence(v: string): v is GovernanceCadenceOption {
+  return (GOVERNANCE_CADENCES as readonly string[]).includes(v);
+}
+
+/** PR-W3 — Configuration-section parsing helpers.
+ *
+ *  Empty-string ↔ null on nullable numeric/text inputs is the
+ *  contract between the React control and the PATCH body shape:
+ *  an empty input is a "clear-the-column" intent, not a "leave-
+ *  alone" intent. The diff against `props.domain` decides whether
+ *  to include the key in the body at all (a never-touched field
+ *  whose current value is null stays out of the body).
+ */
+function parseNullableInt(raw: string): number | null | "invalid" {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return "invalid";
+  return n;
+}
+
+function parseNullableMoney(raw: string): number | null | "invalid" {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return "invalid";
+  return n;
+}
+
+function nullableStringValue(v: string | null | undefined): string {
+  return v ?? "";
+}
+
+function nullableMoneyValue(v: string | null | undefined): string {
+  // Numeric(10,2) round-trips as a string. Trim trailing zero cents
+  // (`75.00` → `75`) so the operator-facing widget mirrors what they
+  // typed; the server canonicalises back to 2dp on save.
+  if (v === null || v === undefined) return "";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return v;
+  return String(n);
+}
+
+function nullableIntValue(v: number | null | undefined): string {
+  return v === null || v === undefined ? "" : String(v);
+}
+
 export function DomainDetail(props: DomainDetailProps): JSX.Element {
   const { t } = useTranslation();
   const [stage, setStage] = useState<Stage>("idle");
@@ -207,6 +268,31 @@ export function DomainDetail(props: DomainDetailProps): JSX.Element {
     isLocale(props.domain.locale) ? props.domain.locale : "en",
   );
   const [isAggregator, setIsAggregator] = useState(props.domain.isAggregator);
+
+  // PR-W3 (phase-a appendix #15) — Configuration section state.
+  // Numeric + nullable text fields use STRING state so the empty
+  // string ↔ null mapping is unambiguous; the submit-time parsers
+  // coerce. Booleans + enum stay strongly-typed.
+  const [retentionDays, setRetentionDays] = useState<string>(
+    nullableIntValue(props.domain.retentionDays),
+  );
+  const [governanceCadence, setGovernanceCadence] =
+    useState<GovernanceCadenceOption>(
+      props.domain.governanceCadence !== undefined &&
+        isGovernanceCadence(props.domain.governanceCadence)
+        ? props.domain.governanceCadence
+        : "continuous",
+    );
+  const [reviewRole, setReviewRole] = useState<string>(
+    nullableStringValue(props.domain.reviewRole),
+  );
+  const [worldviewEnabled, setWorldviewEnabled] = useState<boolean>(
+    props.domain.worldviewEnabled ?? true,
+  );
+  const [llmBudgetMonthlyCapUsd, setLlmBudgetMonthlyCapUsd] = useState<string>(
+    nullableMoneyValue(props.domain.llmBudgetMonthlyCapUsd),
+  );
+  const [configFieldError, setConfigFieldError] = useState<string | null>(null);
 
   // Hard-delete confirmation gate — checkbox MUST be ticked before
   // the destructive button is enabled (design-system rule for
@@ -246,6 +332,7 @@ export function DomainDetail(props: DomainDetailProps): JSX.Element {
 
   const submitSave = async (): Promise<void> => {
     setActionError(null);
+    setConfigFieldError(null);
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {};
@@ -254,6 +341,71 @@ export function DomainDetail(props: DomainDetailProps): JSX.Element {
       if (isAggregator !== props.domain.isAggregator) {
         body["is_aggregator"] = isAggregator;
       }
+
+      // PR-W3 — Configuration section diffs. Each field maps the React
+      // control's value into the wire shape (number | null | enum |
+      // boolean) and compares against the prop snapshot. A pure null↔
+      // null comparison short-circuits to "not in body" so the no-op
+      // path still works end-to-end.
+      const parsedRetention = parseNullableInt(retentionDays);
+      if (parsedRetention === "invalid") {
+        setConfigFieldError(t("domains.detail.errors.retentionInvalid"));
+        return;
+      }
+      if (parsedRetention !== null) {
+        if (parsedRetention < 1 || parsedRetention > 365) {
+          setConfigFieldError(t("domains.detail.errors.retentionRange"));
+          return;
+        }
+      }
+      const currentRetention = props.domain.retentionDays ?? null;
+      if (parsedRetention !== currentRetention) {
+        body["retention_days"] = parsedRetention;
+      }
+
+      const currentCadence = props.domain.governanceCadence ?? "continuous";
+      if (governanceCadence !== currentCadence) {
+        body["governance_cadence"] = governanceCadence;
+      }
+
+      const trimmedReviewRole = reviewRole.trim();
+      const reviewRoleValue: string | null =
+        trimmedReviewRole.length === 0 ? null : trimmedReviewRole;
+      if (reviewRoleValue !== null && reviewRoleValue.length > 64) {
+        setConfigFieldError(t("domains.detail.errors.reviewRoleTooLong"));
+        return;
+      }
+      const currentReviewRole = props.domain.reviewRole ?? null;
+      if (reviewRoleValue !== currentReviewRole) {
+        body["review_role"] = reviewRoleValue;
+      }
+
+      const currentWorldviewEnabled = props.domain.worldviewEnabled ?? true;
+      if (worldviewEnabled !== currentWorldviewEnabled) {
+        body["worldview_enabled"] = worldviewEnabled;
+      }
+
+      const parsedCap = parseNullableMoney(llmBudgetMonthlyCapUsd);
+      if (parsedCap === "invalid") {
+        setConfigFieldError(t("domains.detail.errors.llmBudgetInvalid"));
+        return;
+      }
+      if (parsedCap !== null && (parsedCap < 0 || parsedCap > 100_000)) {
+        setConfigFieldError(t("domains.detail.errors.llmBudgetRange"));
+        return;
+      }
+      // The server returns numeric(10,2) as a canonical "X.YY" string;
+      // compare the operator's input against that canonical form so
+      // re-saving "75" against a stored "75.00" is a no-op.
+      const currentCap =
+        props.domain.llmBudgetMonthlyCapUsd === null ||
+        props.domain.llmBudgetMonthlyCapUsd === undefined
+          ? null
+          : Number(props.domain.llmBudgetMonthlyCapUsd);
+      if (parsedCap !== currentCap) {
+        body["llm_budget_monthly_cap_usd"] = parsedCap;
+      }
+
       // No-op submit (operator clicked Save without editing) — bail
       // without a round-trip rather than producing a 422 from the
       // server.
@@ -613,6 +765,159 @@ export function DomainDetail(props: DomainDetailProps): JSX.Element {
           />
           {t("domains.detail.fields.aggregator")}
         </label>
+
+        {/* PR-W3 (phase-a appendix #15) — Configuration section. Five
+         *  operator-controlled fields the existing PATCH handler now
+         *  accepts. Reuses the form-field style + the real-diff submit
+         *  pattern so a resend-of-current-values short-circuits to
+         *  closeModal-without-PATCH. */}
+        <fieldset
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--space-3)",
+            border: "1px solid var(--rule)",
+            borderRadius: "var(--radius-m)",
+            padding: "var(--space-3) var(--space-4)",
+            margin: 0,
+          }}
+        >
+          <legend
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--fs-micro)",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--fg-3)",
+              padding: "0 var(--space-2)",
+            }}
+          >
+            {t("domains.detail.config.legend")}
+          </legend>
+
+          <div style={FORM_FIELD_STYLE}>
+            <label
+              htmlFor="domain-detail-retention-days"
+              style={LABEL_STYLE}
+            >
+              {t("domains.detail.fields.retentionDays")}
+            </label>
+            <input
+              id="domain-detail-retention-days"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={365}
+              step={1}
+              value={retentionDays}
+              disabled={submitting}
+              onChange={(e): void => setRetentionDays(e.target.value)}
+              placeholder={t("domains.detail.fields.retentionDaysPlaceholder")}
+              style={INPUT_STYLE}
+            />
+            <p style={HELPER_TEXT_STYLE}>
+              {t("domains.detail.help.retentionDays")}
+            </p>
+          </div>
+
+          <div style={FORM_FIELD_STYLE}>
+            <label
+              htmlFor="domain-detail-governance-cadence"
+              style={LABEL_STYLE}
+            >
+              {t("domains.detail.fields.governanceCadence")}
+            </label>
+            <select
+              id="domain-detail-governance-cadence"
+              value={governanceCadence}
+              disabled={submitting}
+              onChange={(e): void => {
+                const v = e.target.value;
+                if (isGovernanceCadence(v)) setGovernanceCadence(v);
+              }}
+              style={INPUT_STYLE}
+            >
+              {GOVERNANCE_CADENCES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <p style={HELPER_TEXT_STYLE}>
+              {t("domains.detail.help.governanceCadence")}
+            </p>
+          </div>
+
+          <div style={FORM_FIELD_STYLE}>
+            <label
+              htmlFor="domain-detail-review-role"
+              style={LABEL_STYLE}
+            >
+              {t("domains.detail.fields.reviewRole")}
+            </label>
+            <input
+              id="domain-detail-review-role"
+              type="text"
+              value={reviewRole}
+              disabled={submitting}
+              onChange={(e): void => setReviewRole(e.target.value)}
+              maxLength={64}
+              placeholder={t("domains.detail.fields.reviewRolePlaceholder")}
+              style={INPUT_STYLE}
+            />
+            <p style={HELPER_TEXT_STYLE}>
+              {t("domains.detail.help.reviewRole")}
+            </p>
+          </div>
+
+          <label style={CHECKBOX_ROW_STYLE}>
+            <input
+              type="checkbox"
+              checked={worldviewEnabled}
+              disabled={submitting}
+              onChange={(e): void => setWorldviewEnabled(e.target.checked)}
+            />
+            {t("domains.detail.fields.worldviewEnabled")}
+          </label>
+          <p style={HELPER_TEXT_STYLE}>
+            {t("domains.detail.help.worldviewEnabled")}
+          </p>
+
+          <div style={FORM_FIELD_STYLE}>
+            <label
+              htmlFor="domain-detail-llm-budget"
+              style={LABEL_STYLE}
+            >
+              {t("domains.detail.fields.llmBudgetMonthlyCapUsd")}
+            </label>
+            <input
+              id="domain-detail-llm-budget"
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={100_000}
+              step="0.01"
+              value={llmBudgetMonthlyCapUsd}
+              disabled={submitting}
+              onChange={(e): void =>
+                setLlmBudgetMonthlyCapUsd(e.target.value)
+              }
+              placeholder={t(
+                "domains.detail.fields.llmBudgetMonthlyCapUsdPlaceholder",
+              )}
+              style={INPUT_STYLE}
+            />
+            <p style={HELPER_TEXT_STYLE}>
+              {t("domains.detail.help.llmBudgetMonthlyCapUsd")}
+            </p>
+          </div>
+
+          {configFieldError !== null ? (
+            <p style={ERROR_TEXT_STYLE} role="alert">
+              {configFieldError}
+            </p>
+          ) : null}
+        </fieldset>
 
         {props.domain.disabledAt !== null &&
         props.domain.disabledAt !== undefined ? (

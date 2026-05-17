@@ -86,7 +86,25 @@
       "fields": {
         "displayName": "display name",
         "locale": "locale",
-        "aggregator": "aggregator"
+        "aggregator": "aggregator",
+        "retentionDays": "retention (days)",
+        "retentionDaysPlaceholder": "blank = engine default",
+        "governanceCadence": "governance cadence",
+        "reviewRole": "review role",
+        "reviewRolePlaceholder": "blank = no role gating",
+        "worldviewEnabled": "worldview compilation enabled",
+        "llmBudgetMonthlyCapUsd": "monthly llm budget cap (USD)",
+        "llmBudgetMonthlyCapUsdPlaceholder": "blank = no cap"
+      },
+      "config": {
+        "legend": "Configuration"
+      },
+      "help": {
+        "retentionDays": "How long to keep this domain's intake + LLM-debug rows before cleanup prunes them. 1–365 days, or blank to fall back to the engine default.",
+        "governanceCadence": "How often a human reviewer is expected to walk this domain's compiled pages — drives the heartbeat agent's surfacing cadence.",
+        "reviewRole": "Free-form label naming the role that signs off on this domain's reviews. Surfaced in the heartbeat and audit log; never used as an authz check.",
+        "worldviewEnabled": "When on, the trigger pipeline enqueues worldview.md recompiles for this domain. Turning off stops future recompiles; in-flight queue jobs run to completion.",
+        "llmBudgetMonthlyCapUsd": "Soft monthly USD cap on LLM spend for this domain. Reports flag overshoots; blank = no cap."
       },
       "actions": {
         "save": "Save changes",
@@ -115,6 +133,11 @@
         "deleteFailed": "Could not delete domain (server rejected the request).",
         "deleteFkRestricted": "This domain has source bindings. Migrate or delete those first.",
         "recompileWorldviewFailed": "Could not queue a worldview recompile. Try again or check the audit log.",
+        "retentionInvalid": "Retention must be a whole number of days, or blank to clear.",
+        "retentionRange": "Retention must be between 1 and 365 days.",
+        "reviewRoleTooLong": "Review role must be 64 characters or fewer.",
+        "llmBudgetInvalid": "LLM budget cap must be a number, or blank to clear.",
+        "llmBudgetRange": "LLM budget cap must be between 0 and 100,000 USD.",
         "auth": "Sign-in expired or insufficient permissions — re-paste your PAT.",
         "transient": "Server is unreachable or returned an error. Try again."
       }

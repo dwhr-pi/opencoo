@@ -327,3 +327,176 @@ describe("DomainDetail", () => {
     expect(alert.textContent).toMatch(/already the aggregator/i);
   });
 });
+
+/**
+ * PR-W3 (phase-a appendix #15) — Configuration section in DomainDetail
+ * exposes the five new editable fields:
+ *   - retention_days (number, nullable, 1–365)
+ *   - governance_cadence (enum)
+ *   - review_role (text, nullable, max 64)
+ *   - worldview_enabled (checkbox)
+ *   - llm_budget_monthly_cap_usd (number, nullable, 0–100_000)
+ *
+ * PATCH body sends ONLY the fields the operator changed (reusing the
+ * existing real-diff pattern so a resend-of-current-values short-
+ * circuits to closeModal-without-PATCH).
+ */
+describe("DomainDetail — Configuration section (PR-W3, phase-a appendix #15)", () => {
+  it("renders Configuration section with the five new fields populated from props", () => {
+    render(
+      <DomainDetail
+        domain={makeDomain({
+          retentionDays: 30,
+          governanceCadence: "weekly",
+          reviewRole: "ops-lead",
+          worldviewEnabled: false,
+          llmBudgetMonthlyCapUsd: "250.00",
+        })}
+        onClose={() => undefined}
+        onChanged={() => undefined}
+        fetchImpl={vi.fn() as unknown as typeof fetch}
+      />,
+    );
+    expect(screen.getByLabelText(/retention/i)).toHaveValue(30);
+    expect(screen.getByLabelText(/governance cadence/i)).toHaveValue("weekly");
+    expect(screen.getByLabelText(/review role/i)).toHaveValue("ops-lead");
+    expect(screen.getByLabelText(/worldview compilation/i)).not.toBeChecked();
+    expect(screen.getByLabelText(/monthly llm budget/i)).toHaveValue(250);
+  });
+
+  it("PATCH body sends only the changed Configuration fields (numeric + boolean + enum)", async () => {
+    const user = userEvent.setup();
+    const fetchImpl = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (
+        url === `/api/admin/domains/${DOMAIN_ID}` &&
+        init?.method === "PATCH"
+      ) {
+        return new Response(
+          JSON.stringify({
+            id: DOMAIN_ID,
+            slug: "wiki-test",
+            name: "Test wiki",
+            class: "knowledge",
+            locale: "en",
+            llmPolicy: {},
+            isAggregator: false,
+            retentionDays: 14,
+            governanceCadence: "nightly",
+            reviewRole: null,
+            worldviewEnabled: false,
+            llmBudgetMonthlyCapUsd: null,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const onChanged = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <DomainDetail
+        domain={makeDomain({
+          retentionDays: null,
+          governanceCadence: "continuous",
+          reviewRole: null,
+          worldviewEnabled: true,
+          llmBudgetMonthlyCapUsd: null,
+        })}
+        onClose={onClose}
+        onChanged={onChanged}
+        fetchImpl={fetchImpl as unknown as typeof fetch}
+      />,
+    );
+
+    // Retention: 0 → 14 (set from cleared).
+    const retention = screen.getByLabelText(/retention/i) as HTMLInputElement;
+    await user.clear(retention);
+    await user.type(retention, "14");
+    // Governance cadence: continuous → nightly.
+    await user.selectOptions(
+      screen.getByLabelText(/governance cadence/i),
+      "nightly",
+    );
+    // Worldview enabled: true → false.
+    await user.click(screen.getByLabelText(/worldview compilation/i));
+    // review_role + llm_budget left alone — must NOT be in the body.
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(
+        fetchImpl.mock.calls.some(
+          (c) =>
+            String(c[0]) === `/api/admin/domains/${DOMAIN_ID}` &&
+            (c[1] as RequestInit | undefined)?.method === "PATCH",
+        ),
+      ).toBe(true),
+    );
+    const patchCall = fetchImpl.mock.calls.find(
+      (c) =>
+        String(c[0]) === `/api/admin/domains/${DOMAIN_ID}` &&
+        (c[1] as RequestInit | undefined)?.method === "PATCH",
+    )!;
+    const body = JSON.parse(String((patchCall[1] as RequestInit).body));
+    expect(body).toEqual({
+      retention_days: 14,
+      governance_cadence: "nightly",
+      worldview_enabled: false,
+    });
+    expect(onChanged).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("PATCH body sends `null` to clear retention / review_role / llm_budget when emptied by the operator", async () => {
+    const user = userEvent.setup();
+    const fetchImpl = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+      void input;
+      void init;
+      return new Response(JSON.stringify({ id: DOMAIN_ID }), { status: 200 });
+    });
+    render(
+      <DomainDetail
+        domain={makeDomain({
+          retentionDays: 90,
+          governanceCadence: "continuous",
+          reviewRole: "ops-lead",
+          worldviewEnabled: true,
+          llmBudgetMonthlyCapUsd: "75.00",
+        })}
+        onClose={() => undefined}
+        onChanged={() => undefined}
+        fetchImpl={fetchImpl as unknown as typeof fetch}
+      />,
+    );
+    // Clear retention.
+    await user.clear(screen.getByLabelText(/retention/i));
+    // Clear review role.
+    await user.clear(screen.getByLabelText(/review role/i));
+    // Clear LLM budget.
+    await user.clear(screen.getByLabelText(/monthly llm budget/i));
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(
+        fetchImpl.mock.calls.some(
+          (c) =>
+            String(c[0]) === `/api/admin/domains/${DOMAIN_ID}` &&
+            (c[1] as RequestInit | undefined)?.method === "PATCH",
+        ),
+      ).toBe(true),
+    );
+    const patchCall = fetchImpl.mock.calls.find(
+      (c) =>
+        String(c[0]) === `/api/admin/domains/${DOMAIN_ID}` &&
+        (c[1] as RequestInit | undefined)?.method === "PATCH",
+    )!;
+    const body = JSON.parse(String((patchCall[1] as RequestInit).body));
+    expect(body).toEqual({
+      retention_days: null,
+      review_role: null,
+      llm_budget_monthly_cap_usd: null,
+    });
+  });
+});

@@ -87,7 +87,25 @@
       "fields": {
         "displayName": "display name",
         "locale": "locale",
-        "aggregator": "aggregator"
+        "aggregator": "aggregator",
+        "retentionDays": "retencja (dni)",
+        "retentionDaysPlaceholder": "puste = wartość domyślna silnika",
+        "governanceCadence": "kadencja governance",
+        "reviewRole": "rola review",
+        "reviewRolePlaceholder": "puste = brak roli",
+        "worldviewEnabled": "kompilacja worldview włączona",
+        "llmBudgetMonthlyCapUsd": "miesięczny limit budżetu LLM (USD)",
+        "llmBudgetMonthlyCapUsdPlaceholder": "puste = brak limitu"
+      },
+      "config": {
+        "legend": "Konfiguracja"
+      },
+      "help": {
+        "retentionDays": "Jak długo zachowywać wiersze intake i logów LLM dla tej domeny, zanim cleanup je usunie. 1–365 dni lub puste, aby użyć domyślnej wartości silnika.",
+        "governanceCadence": "Jak często człowiek-reviewer ma przeglądać skompilowane strony domeny — steruje częstotliwością agenta heartbeat.",
+        "reviewRole": "Etykieta opisująca rolę zatwierdzającą review w tej domenie. Pokazywana w heartbeat i audit log; nie służy do autoryzacji.",
+        "worldviewEnabled": "Gdy włączone, pipeline trigger kolejkuje rekompilacje worldview.md. Wyłączenie zatrzymuje przyszłe rekompilacje; zadania już w kolejce dokończą się.",
+        "llmBudgetMonthlyCapUsd": "Miękki miesięczny limit USD wydatków LLM dla tej domeny. Reports flaguje przekroczenia; puste = brak limitu."
       },
       "actions": {
         "save": "Save changes",
@@ -116,6 +134,11 @@
         "deleteFailed": "Could not delete domain (server rejected the request).",
         "deleteFkRestricted": "This domain has source bindings. Migrate or delete those first.",
         "recompileWorldviewFailed": "Could not queue a worldview recompile. Try again or check the audit log.",
+        "retentionInvalid": "Retencja musi być liczbą całkowitą dni lub puste, aby wyczyścić.",
+        "retentionRange": "Retencja musi być w zakresie 1–365 dni.",
+        "reviewRoleTooLong": "Rola review musi mieć maks. 64 znaków.",
+        "llmBudgetInvalid": "Limit budżetu LLM musi być liczbą lub puste, aby wyczyścić.",
+        "llmBudgetRange": "Limit budżetu LLM musi być w zakresie 0–100 000 USD.",
         "auth": "Sign-in expired or insufficient permissions — re-paste your PAT.",
         "transient": "Server is unreachable or returned an error. Try again."
       }
