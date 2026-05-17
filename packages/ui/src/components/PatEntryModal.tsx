@@ -1,7 +1,10 @@
 /**
  * PatEntryModal — first-load admin auth modal (PR 29 / plan
  * #131; UX token-binding spec; collapsed onto the shared `Modal`
- * shell in PR-A1 / phase-a appendix #16).
+ * shell in PR-A1 / phase-a appendix #16; PAT input collapsed
+ * onto the shared `Field` primitive in PR-A3 / wave-16 so the
+ * SR-only aria-described/errormessage chain is inherited by a
+ * keyboard-only operator on a screen reader).
  *
  * Operator pastes a Gitea PAT into a single password-masked
  * field; PAT lives in sessionStorage and clears on tab close.
@@ -15,11 +18,22 @@
  * font-inherit fix for free. The Modal's backdrop-click + Esc
  * handlers route into the no-op `onClose` (auth or nothing).
  *
+ * Wave-16 (PR-A3) note: the PAT input now goes through `Field`
+ * with `secret` + `mono`. Field gives us the
+ * `aria-describedby`/`aria-errormessage`/`aria-invalid` chain
+ * and `role="alert"` on the error span for free; the
+ * storage-note rides the `helper` slot, the auth error rides
+ * the `error` slot. We lose the (cosmetic) focused-state
+ * border, which the design system never spec'd anyway — the
+ * border + paper-on-overlay is the elevation contract.
+ *
  * Design-system bindings (every visual references a CSS var
  * from `colors_and_type.css`; no literals):
  *   - modal shell: inherited from `Modal.tsx` (paper / ink /
  *     radius-xl). Padding handled by the shell's regions.
- *   - input: var(--font-mono) — PAT is an ID
+ *   - input: inherited from `Field` (secret + mono → password
+ *     input rendered in JetBrains Mono per
+ *     `design_system/colors_and_type.css`).
  *   - primary-btn: bg var(--ink), fg var(--paper)
  *
  * Hard-nos honored:
@@ -36,6 +50,7 @@
 import { useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
+import { Field } from "./Field.js";
 import { Modal } from "./Modal.js";
 
 const INSTRUCTION_STYLE: CSSProperties = {
@@ -44,42 +59,6 @@ const INSTRUCTION_STYLE: CSSProperties = {
   fontSize: "var(--fs-body)",
   lineHeight: "var(--lh-body)",
   color: "var(--fg-2)",
-  margin: 0,
-};
-
-const FIELD_LABEL_STYLE: CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontWeight: 600,
-  fontSize: "var(--fs-micro)",
-  letterSpacing: "0.08em",
-  textTransform: "uppercase",
-  color: "var(--fg-3)",
-};
-
-const INPUT_BASE_STYLE: CSSProperties = {
-  background: "var(--paper)",
-  border: "1px solid var(--rule)",
-  borderRadius: "var(--radius-m)",
-  padding: "var(--space-3) var(--space-4)",
-  fontFamily: "var(--font-mono)",
-  fontSize: "var(--fs-mono)",
-  lineHeight: "var(--lh-mono)",
-  color: "var(--fg-1)",
-};
-
-const STORAGE_NOTE_STYLE: CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: "var(--fs-micro)",
-  letterSpacing: "0.04em",
-  color: "var(--fg-3)",
-  margin: 0,
-};
-
-const ERROR_TEXT_STYLE: CSSProperties = {
-  fontFamily: "var(--font-sans)",
-  fontSize: "var(--fs-small)",
-  lineHeight: "var(--lh-small)",
-  color: "var(--alert)",
   margin: 0,
 };
 
@@ -106,7 +85,6 @@ export function PatEntryModal(props: PatEntryModalProps): JSX.Element {
   const [pat, setPat] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [focused, setFocused] = useState(false);
 
   const submit = async (): Promise<void> => {
     if (pat.length === 0) {
@@ -123,12 +101,6 @@ export function PatEntryModal(props: PatEntryModalProps): JSX.Element {
   };
 
   const error = localError ?? props.error ?? null;
-
-  const inputStyle: CSSProperties = {
-    ...INPUT_BASE_STYLE,
-    ...(focused ? { borderColor: "var(--ink)" } : {}),
-    ...(error !== null ? { borderColor: "var(--alert)" } : {}),
-  };
 
   const btnStyle: CSSProperties = {
     ...PRIMARY_BTN_BASE_STYLE,
@@ -154,35 +126,19 @@ export function PatEntryModal(props: PatEntryModalProps): JSX.Element {
       maxWidth={420}
     >
       <p style={INSTRUCTION_STYLE}>{t("auth.patPrompt")}</p>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-2)",
-        }}
-      >
-        <label htmlFor="pat-input" style={FIELD_LABEL_STYLE}>
-          {t("auth.patFieldLabel")}
-        </label>
-        <input
-          id="pat-input"
-          name="pat"
-          type="password"
-          autoComplete="new-password"
-          value={pat}
-          onChange={(e): void => setPat(e.target.value)}
-          onFocus={(): void => setFocused(true)}
-          onBlur={(): void => setFocused(false)}
-          style={inputStyle}
-          data-secret="true"
-          // Spec: secret-field placeholder must NEVER look
-          // like a real value. Empty placeholder is the safe
-          // choice here.
-          placeholder=""
-        />
-        <p style={STORAGE_NOTE_STYLE}>{t("auth.storageNote")}</p>
-        {error !== null ? <p style={ERROR_TEXT_STYLE}>{error}</p> : null}
-      </div>
+      <Field
+        name="pat"
+        label={t("auth.patFieldLabel")}
+        value={pat}
+        onChange={(e): void => setPat(e.target.value)}
+        secret
+        mono
+        // Spec: secret-field placeholder must NEVER look like a
+        // real value. Empty placeholder is the safe choice here.
+        placeholder=""
+        helper={t("auth.storageNote")}
+        {...(error !== null ? { error } : {})}
+      />
       <button
         type="button"
         disabled={submitting}

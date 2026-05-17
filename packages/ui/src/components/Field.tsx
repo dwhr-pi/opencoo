@@ -32,6 +32,14 @@ interface FieldPropsBase {
    *  paths (CLAUDE.md "JetBrains Mono = paths, IDs, micro-labels"). */
   readonly mono?: boolean;
   readonly secret?: boolean;
+  /** Live-validation status slot — A3 ships the prop + the
+   *  `aria-busy` rendering when `'validating'`; B4 (live
+   *  validation hook) populates it with the real value. The
+   *  status drives an inline chip in B4; A3 only wires the SR
+   *  surface (busy → SR announces "busy" while async validator is
+   *  in flight). `'idle'|'valid'|'invalid'` are no-ops at the
+   *  aria layer — B4 will color-key the chip from these. */
+  readonly validationStatus?: "idle" | "validating" | "valid" | "invalid";
 }
 
 /**
@@ -75,6 +83,8 @@ export type FieldProps = ControlledFieldProps | UncontrolledFieldProps;
 
 export function Field(props: FieldProps): JSX.Element {
   const inputId = `field-${props.name}`;
+  const helperId = `${inputId}-helper`;
+  const errorId = `${inputId}-error`;
   // The discriminated union (see ControlledFieldProps /
   // UncontrolledFieldProps above) guarantees a caller cannot
   // half-pass — `value` and `onChange` are paired, as are
@@ -82,6 +92,19 @@ export function Field(props: FieldProps): JSX.Element {
   // presence of `value` so React doesn't warn about an input
   // flipping between controlled and uncontrolled at runtime.
   const controlled = props.value !== undefined;
+  // ARIA 1.2 chain. The helper text is always exposed via
+  // `aria-describedby`. The error gets its dedicated
+  // `aria-errormessage` slot, AND — when the helper is also
+  // present — the error id joins the describedby chain so SR
+  // clients that don't honor `aria-errormessage` still announce
+  // it. Error-only fields use ONLY `aria-errormessage` (no
+  // describedby) per ARIA 1.2.
+  const describedByIds: string[] = [];
+  if (props.helper !== undefined) {
+    describedByIds.push(helperId);
+    if (props.error !== undefined) describedByIds.push(errorId);
+  }
+  const describedBy = describedByIds.length > 0 ? describedByIds.join(" ") : undefined;
   return (
     <label
       htmlFor={inputId}
@@ -125,6 +148,9 @@ export function Field(props: FieldProps): JSX.Element {
         required={props.required}
         autoComplete={props.secret === true ? "new-password" : "off"}
         aria-invalid={props.error !== undefined ? true : undefined}
+        {...(describedBy !== undefined ? { "aria-describedby": describedBy } : {})}
+        {...(props.error !== undefined ? { "aria-errormessage": errorId } : {})}
+        {...(props.validationStatus === "validating" ? { "aria-busy": true } : {})}
         data-secret={props.secret === true ? "true" : undefined}
         style={{
           fontFamily: props.mono === true ? "var(--font-mono)" : "var(--font-sans)",
@@ -139,6 +165,7 @@ export function Field(props: FieldProps): JSX.Element {
       />
       {props.helper !== undefined ? (
         <span
+          id={helperId}
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: "var(--fs-micro)",
@@ -151,6 +178,8 @@ export function Field(props: FieldProps): JSX.Element {
       ) : null}
       {props.error !== undefined ? (
         <span
+          id={errorId}
+          role="alert"
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: "var(--fs-micro)",

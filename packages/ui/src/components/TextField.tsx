@@ -32,6 +32,10 @@ export interface TextFieldProps {
   readonly mono?: boolean;
   readonly secret?: boolean;
   readonly maxLength?: number;
+  /** Live-validation slot (PR-A3 ships the prop; PR-B4 populates
+   *  it). Forwards transparently to the underlying Field — see
+   *  Field.tsx for what each state renders. */
+  readonly validationStatus?: "idle" | "validating" | "valid" | "invalid";
 }
 
 export function TextField(props: TextFieldProps): JSX.Element {
@@ -59,6 +63,9 @@ export function TextField(props: TextFieldProps): JSX.Element {
       {...(props.error !== undefined ? { error: props.error } : {})}
       {...(props.mono !== undefined ? { mono: props.mono } : {})}
       {...(props.secret !== undefined ? { secret: props.secret } : {})}
+      {...(props.validationStatus !== undefined
+        ? { validationStatus: props.validationStatus }
+        : {})}
     />
   );
 }

@@ -2238,7 +2238,7 @@ function RetentionOverridePanel(
       <span id="retention-override-title" style={LABEL_STYLE}>
         {t("sourceBindingDetail.retentionOverride.title")}
       </span>
-      <p style={EDIT_FIELD_DESCRIPTION_STYLE}>
+      <p id="retention-override-helper" style={EDIT_FIELD_DESCRIPTION_STYLE}>
         {domainDefault === null
           ? t("sourceBindingDetail.retentionOverride.helperNoDomainDefault")
           : t("sourceBindingDetail.retentionOverride.helper", {
@@ -2256,6 +2256,19 @@ function RetentionOverridePanel(
           step={1}
           name="retention_days_override"
           aria-labelledby="retention-override-title"
+          // PR-A3: aria-describedby points at the helper; when an
+          // error is rendered the error id joins the chain, and
+          // `aria-errormessage` + `aria-invalid` flag the field
+          // for SR clients that honor the explicit slot.
+          aria-describedby={
+            error !== null
+              ? "retention-override-helper retention-override-error"
+              : "retention-override-helper"
+          }
+          aria-invalid={error !== null ? true : undefined}
+          {...(error !== null
+            ? { "aria-errormessage": "retention-override-error" }
+            : {})}
           data-testid="retention-override-input"
           value={draft}
           onChange={(e): void => {
@@ -2299,6 +2312,7 @@ function RetentionOverridePanel(
       </div>
       {error !== null ? (
         <p
+          id="retention-override-error"
           role="alert"
           data-testid="retention-override-error"
           style={{
@@ -2427,16 +2441,23 @@ function NotesPanel(props: NotesPanelProps): JSX.Element {
       <span id="notes-title" style={LABEL_STYLE}>
         {t("sourceBindingDetail.notes.title")}
       </span>
-      <p style={EDIT_FIELD_DESCRIPTION_STYLE}>
+      <p id="notes-helper" style={EDIT_FIELD_DESCRIPTION_STYLE}>
         {t("sourceBindingDetail.notes.helper")}
       </p>
       {/* TODO(wave-15-W9): migrate to <TextArea/> once the shared
        *  primitive lands. The inline styles below mirror
-       *  EDIT_FIELD_INPUT_STYLE shape adapted to a multi-line element. */}
+       *  EDIT_FIELD_INPUT_STYLE shape adapted to a multi-line element.
+       *  PR-A3 (wave-16): aria-describedby + aria-errormessage
+       *  chain wired to match the Field primitive's pattern. */}
       <textarea
         id="notes-textarea-el"
         name="notes"
         aria-labelledby="notes-title"
+        aria-describedby={
+          error !== null ? "notes-helper notes-error" : "notes-helper"
+        }
+        aria-invalid={error !== null ? true : undefined}
+        {...(error !== null ? { "aria-errormessage": "notes-error" } : {})}
         data-testid="notes-textarea"
         value={draft}
         onChange={(e): void => {
@@ -2491,6 +2512,7 @@ function NotesPanel(props: NotesPanelProps): JSX.Element {
       </div>
       {error !== null ? (
         <p
+          id="notes-error"
           role="alert"
           data-testid="notes-error"
           style={{

@@ -24,10 +24,16 @@ export interface TextAreaProps {
   readonly mono?: boolean;
   readonly rows?: number;
   readonly maxLength?: number;
+  /** Live-validation slot (PR-A3 ships the prop; PR-B4 populates
+   *  it). `'validating'` sets `aria-busy="true"` on the textarea
+   *  so SR users hear "busy" while an async validator runs. */
+  readonly validationStatus?: "idle" | "validating" | "valid" | "invalid";
 }
 
 export function TextArea(props: TextAreaProps): JSX.Element {
   const inputId = `field-${props.name}`;
+  const helperId = `${inputId}-helper`;
+  const errorId = `${inputId}-error`;
   const onChange = (event: ChangeEvent<HTMLTextAreaElement>): void => {
     const next =
       props.maxLength !== undefined && event.target.value.length > props.maxLength
@@ -35,6 +41,16 @@ export function TextArea(props: TextAreaProps): JSX.Element {
         : event.target.value;
     props.onChange(next);
   };
+  // ARIA 1.2 chain — see Field.tsx for rationale. Helper always
+  // goes into describedby; error joins describedby only when a
+  // helper is also present (fallback for SR clients that don't
+  // honor errormessage). Error-only fields rely on errormessage.
+  const describedByIds: string[] = [];
+  if (props.helper !== undefined) {
+    describedByIds.push(helperId);
+    if (props.error !== undefined) describedByIds.push(errorId);
+  }
+  const describedBy = describedByIds.length > 0 ? describedByIds.join(" ") : undefined;
 
   return (
     <label
@@ -74,6 +90,9 @@ export function TextArea(props: TextAreaProps): JSX.Element {
         placeholder={props.placeholder}
         required={props.required}
         aria-invalid={props.error !== undefined ? true : undefined}
+        {...(describedBy !== undefined ? { "aria-describedby": describedBy } : {})}
+        {...(props.error !== undefined ? { "aria-errormessage": errorId } : {})}
+        {...(props.validationStatus === "validating" ? { "aria-busy": true } : {})}
         style={{
           fontFamily: props.mono === true ? "var(--font-mono)" : "var(--font-sans)",
           fontSize: "var(--fs-body)",
@@ -89,6 +108,7 @@ export function TextArea(props: TextAreaProps): JSX.Element {
       />
       {props.helper !== undefined ? (
         <span
+          id={helperId}
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: "var(--fs-micro)",
@@ -101,6 +121,8 @@ export function TextArea(props: TextAreaProps): JSX.Element {
       ) : null}
       {props.error !== undefined ? (
         <span
+          id={errorId}
+          role="alert"
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: "var(--fs-micro)",
