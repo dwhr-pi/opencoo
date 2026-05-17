@@ -40,6 +40,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
+import { EmptyStatePanel } from "../components/EmptyStatePanel.js";
 import { Table, type TableColumn } from "../components/Table.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
 
@@ -836,9 +837,22 @@ export function Audit(props: AuditProps = {}): JSX.Element {
         {error === null && rows === null && (
           <NoticeRow tone="muted">{t("common.loading")}</NoticeRow>
         )}
-        {error === null && rows !== null && filtered.length === 0 && (
-          <NoticeRow tone="muted">{t("audit.empty")}</NoticeRow>
-        )}
+        {error === null &&
+          rows !== null &&
+          filtered.length === 0 &&
+          rows.length === 0 &&
+          offset === 0 && (
+            <EmptyStatePanel
+              title={t("audit.emptyState.title")}
+              body={t("audit.emptyState.body")}
+            />
+          )}
+        {error === null &&
+          rows !== null &&
+          filtered.length === 0 &&
+          (rows.length > 0 || offset > 0) && (
+            <NoticeRow tone="muted">{t("audit.empty")}</NoticeRow>
+          )}
         {error === null && rows !== null && filtered.length > 0 && (
           <Table
             columns={auditColumns(t)}

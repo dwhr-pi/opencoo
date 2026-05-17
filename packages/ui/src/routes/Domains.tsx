@@ -20,6 +20,7 @@ import { Btn } from "../components/Btn.js";
 import { Card } from "../components/Card.js";
 import { Display } from "../components/Display.js";
 import { DomainDetail } from "../components/DomainDetail.js";
+import { EmptyStatePanel } from "../components/EmptyStatePanel.js";
 import { NewDomainModal } from "../components/NewDomainModal.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
 import type { Domain } from "../types.js";
@@ -159,6 +160,16 @@ export function Domains(props: DomainsProps = {}): JSX.Element {
           </Btn>
         </div>
       </div>
+      {error === null && rows !== null && rows.length === 0 ? (
+        <EmptyStatePanel
+          title={t("domains.emptyState.title")}
+          body={t("domains.emptyState.body")}
+          cta={{
+            label: t("domains.emptyState.ctaLabel"),
+            onClick: (): void => setCreateOpen(true),
+          }}
+        />
+      ) : (
       <Card>
         {error !== null ? (
           <div
@@ -172,8 +183,6 @@ export function Domains(props: DomainsProps = {}): JSX.Element {
           </div>
         ) : rows === null ? (
           <div style={{ color: "var(--ink-3)" }}>{t("common.loading")}</div>
-        ) : rows.length === 0 ? (
-          <div style={{ color: "var(--ink-3)" }}>{t("domains.empty")}</div>
         ) : (
           <div
             style={{
@@ -281,6 +290,7 @@ export function Domains(props: DomainsProps = {}): JSX.Element {
           </div>
         )}
       </Card>
+      )}
       {createOpen ? (
         <NewDomainModal
           {...fetchOpts}

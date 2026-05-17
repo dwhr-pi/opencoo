@@ -36,6 +36,7 @@ import { useTranslation } from "react-i18next";
 
 import { Btn } from "../components/Btn.js";
 import { Card } from "../components/Card.js";
+import { EmptyStatePanel } from "../components/EmptyStatePanel.js";
 import { Modal } from "../components/Modal.js";
 import { NewOutputChannelModal } from "../components/NewOutputChannelModal.js";
 import { OutputChannelDetail } from "../components/OutputChannelDetail.js";
@@ -281,6 +282,16 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
           </Btn>
         </div>
       </div>
+      {error === null && rows !== null && rows.length === 0 ? (
+        <EmptyStatePanel
+          title={t("outputs.emptyState.title")}
+          body={t("outputs.emptyState.body")}
+          cta={{
+            label: t("outputs.emptyState.ctaLabel"),
+            onClick: (): void => setCreateOpen(true),
+          }}
+        />
+      ) : (
       <Card>
         {error !== null ? (
           <div
@@ -294,8 +305,6 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
           </div>
         ) : rows === null ? (
           <div style={{ color: "var(--ink-3)" }}>{t("common.loading")}</div>
-        ) : rows.length === 0 ? (
-          <div style={{ color: "var(--ink-3)" }}>{t("outputs.empty")}</div>
         ) : (
           <div
             style={{
@@ -404,6 +413,7 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
           </div>
         )}
       </Card>
+      )}
       {createOpen ? (
         <NewOutputChannelModal
           {...(props.fetchImpl !== undefined

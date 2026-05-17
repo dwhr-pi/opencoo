@@ -21,6 +21,7 @@ import { useTranslation } from "react-i18next";
 import { AgentInstanceDetail } from "../components/AgentInstanceDetail.js";
 import { Btn } from "../components/Btn.js";
 import { Card } from "../components/Card.js";
+import { EmptyStatePanel } from "../components/EmptyStatePanel.js";
 import { NewAgentInstanceModal } from "../components/NewAgentInstanceModal.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
 import type { AgentInstance } from "../types.js";
@@ -131,6 +132,16 @@ export function Agents(props: AgentsProps = {}): JSX.Element {
           {t("agents.newInstance")}
         </Btn>
       </div>
+      {error === null && rows !== null && rows.length === 0 ? (
+        <EmptyStatePanel
+          title={t("agents.emptyState.title")}
+          body={t("agents.emptyState.body")}
+          cta={{
+            label: t("agents.emptyState.ctaLabel"),
+            onClick: (): void => setCreating(true),
+          }}
+        />
+      ) : (
       <Card>
         {error !== null ? (
           <div
@@ -144,8 +155,6 @@ export function Agents(props: AgentsProps = {}): JSX.Element {
           </div>
         ) : rows === null ? (
           <div style={{ color: "var(--ink-3)" }}>{t("common.loading")}</div>
-        ) : rows.length === 0 ? (
-          <div style={{ color: "var(--ink-3)" }}>{t("agents.empty")}</div>
         ) : (
           <div
             style={{
@@ -251,6 +260,7 @@ export function Agents(props: AgentsProps = {}): JSX.Element {
           </div>
         )}
       </Card>
+      )}
       {selected !== null ? (
         <AgentInstanceDetail
           instance={selected}

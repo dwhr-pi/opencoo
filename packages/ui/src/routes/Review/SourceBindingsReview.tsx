@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Btn } from "../../components/Btn.js";
+import { EmptyStatePanel } from "../../components/EmptyStatePanel.js";
 import { NoticeRow } from "../../components/NoticeRow.js";
 import { StatusPill } from "../../components/StatusPill.js";
 import { fetchAdmin, fetchOptsFor } from "../../lib/api.js";
@@ -134,7 +135,17 @@ export function SourceBindingsReview(
   if (error !== null) return <NoticeRow tone="alert">{error}</NoticeRow>;
   if (rows === null) return <NoticeRow tone="muted">{t("common.loading")}</NoticeRow>;
   if (rows.length === 0) {
-    return <NoticeRow tone="muted">{t("review.sourceBindings.empty")}</NoticeRow>;
+    // PR-B3 (wave-16) — promote the route-level "review queue is
+    // empty" surface to the EmptyStatePanel shape. The sub-tab
+    // sentinel under `review.sourceBindings.empty` is retained for
+    // tests but the operator-facing copy is now the route-level
+    // `review.emptyState.*` block.
+    return (
+      <EmptyStatePanel
+        title={t("review.emptyState.title")}
+        body={t("review.emptyState.body")}
+      />
+    );
   }
 
   const handleApproveClick = (binding: ReviewSourceBinding): void => {

@@ -63,6 +63,11 @@
     "title": "Domains",
     "subtitle": "Knowledge surfaces compiled by opencoo.",
     "empty": "No domains yet — bind a source to get started.",
+    "emptyState": {
+      "title": "No domains yet",
+      "body": "Create your first knowledge domain. opencoo provisions a Gitea repo, seeds index/log/schema, and the domain becomes the target for source bindings and agent instances.",
+      "ctaLabel": "+ New domain"
+    },
     "columns": {
       "slug": "slug",
       "name": "name",
@@ -173,6 +178,11 @@
     "title": "Sources",
     "subtitle": "Bindings that ingest into a domain.",
     "empty": "No bindings yet.",
+    "emptyState": {
+      "title": "No source bindings yet",
+      "body": "Connect a Google Drive, Asana, or webhook source so opencoo has documents to ingest. Each binding ships into a domain you've already created.",
+      "ctaLabel": "+ New source binding"
+    },
     "columns": {
       "name": "name",
       "type": "type",
@@ -486,6 +496,10 @@
   },
   "activity": {
     "title": "Activity",
+    "emptyState": {
+      "title": "No activity yet",
+      "body": "Activity will stream here as agents run and sources fire. Once a heartbeat compiles or a binding scans, lifecycle events land in the feed below."
+    },
     "tabs": {
       "feed": "feed",
       "runs": "runs",
@@ -518,6 +532,10 @@
   },
   "review": {
     "title": "Review",
+    "emptyState": {
+      "title": "No review items pending",
+      "body": "Review queue is empty. As source bindings request approval, lint findings surface, or the Surfacer proposes automation candidates, items will appear in the sub-tabs below."
+    },
     "tabs": {
       "sourceBindings": "source bindings",
       "lintFindings": "lint findings",
@@ -711,6 +729,10 @@
     "title": "Audit log",
     "subtitle": "Append-only record of every state-changing admin action.",
     "scopeAside": "Records who changed what, when. Reads are also recorded so the trail can't be mined silently. Metadata is sanitised at write time — secret bytes never reach this view.",
+    "emptyState": {
+      "title": "No audit entries yet",
+      "body": "Audit history will populate as operators make changes. Every state-changing admin action is recorded here, sanitised at write time so secret bytes never reach this view."
+    },
     "filters": {
       "action": "action",
       "actorPlaceholder": "username substring or user UUID",
@@ -800,6 +822,11 @@
     "title": "Agents",
     "subtitle": "Schedule cadence, enable/disable, and bind output channels per agent instance.",
     "empty": "No agent instances yet — seed via the opencoo CLI.",
+    "emptyState": {
+      "title": "No agent instances yet",
+      "body": "Seed a heartbeat, lint, or chat agent for a domain. Instances carry the cadence, prompt overrides, and output channel bindings that decide what opencoo runs on your behalf.",
+      "ctaLabel": "+ New agent instance"
+    },
     "newInstanceStub": "+ New agent instance (CLI)",
     "newInstance": "+ New agent instance",
     "openAriaLabel": "Open agent instance {{name}}",
@@ -918,6 +945,11 @@
     "title": "Outputs",
     "subtitle": "Delivery channels agents send their JSON output to.",
     "empty": "No output channels yet — add one to enable agent deliveries.",
+    "emptyState": {
+      "title": "No output channels yet",
+      "body": "Set up an Asana or webhook delivery target. Agents send their compiled JSON to bound channels — without one, heartbeats compile silently and never reach an operator.",
+      "ctaLabel": "+ New output channel"
+    },
     "newChannel": "+ New output channel",
     "columns": {
       "name": "name",

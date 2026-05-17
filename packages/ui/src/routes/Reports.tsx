@@ -30,10 +30,12 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
 import { AgentsRunNowButton } from "../components/AgentsRunNowButton.js";
-import { Btn } from "../components/Btn.js";
 import { SR_ONLY_STYLE } from "../components/Chrome.js";
 import { Display } from "../components/Display.js";
-import { GlyphOpenArc, GlyphRingWithDot } from "../components/Glyph.js";
+import {
+  EmptyStatePanel,
+  type EmptyStateChainStatus,
+} from "../components/EmptyStatePanel.js";
 import { Table, type TableColumn } from "../components/Table.js";
 import {
   createAgentRunsSubscription,
@@ -539,6 +541,28 @@ function deriveDiagnosticRow(
   };
 }
 
+/** PR-B3 (wave-16) — translate the W8 row tone into the shared
+ *  EmptyStatePanel chain status. `alert` → fail (terminal miss),
+ *  `advisory` → pending (chain not yet satisfied), `healthy` → pass
+ *  (chain is wired; the visible window just has no rows yet). */
+function rowToneToChainStatus(
+  tone: "advisory" | "alert" | "healthy",
+): EmptyStateChainStatus {
+  switch (tone) {
+    case "alert":
+      return "fail";
+    case "advisory":
+      return "pending";
+    case "healthy":
+      return "pass";
+  }
+}
+
+/** PR-B3 (wave-16) — thin wrapper that builds an `EmptyStatePanel`
+ *  diagnosticsChain from the first miss the precondition walker
+ *  returns. The W8 invariant survives end-to-end: walk top-to-bottom,
+ *  surface the FIRST failing step with its inline CTA, and render
+ *  the heartbeat counters as the panel body. */
 function HeartbeatDiagnosticsPanel(props: {
   fetchImpl?: typeof fetch;
   onNavigate?: (tab: Tab) => void;
@@ -573,96 +597,58 @@ function HeartbeatDiagnosticsPanel(props: {
   }
 
   const row = deriveDiagnosticRow(pre, t);
-  const glyphColor =
-    row.tone === "alert"
-      ? "var(--alert)"
-      : row.tone === "healthy"
-        ? "var(--healthy)"
-        : "var(--advisory-ink)";
+  const navigate = props.onNavigate;
+  const cta =
+    row.cta !== undefined && navigate !== undefined
+      ? {
+          label: row.cta.label,
+          tone: (row.tone === "alert" ? "ghost" : "primary") as
+            | "ghost"
+            | "primary",
+          onClick: (): void => navigate(row.cta!.target),
+        }
+      : undefined;
 
-  return (
-    <div
+  // Pre-formatted stats line — mirrors the W8 footer band. Kept as
+  // mono micro-text so the operator can read "instances: 1 ·
+  // enabled: 1 · unbound: 0" without scanning columns.
+  const stats = (
+    <span
       style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-        padding: "20px 0",
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        color: "var(--ink-3)",
+        letterSpacing: "0.04em",
+        display: "inline-flex",
+        flexWrap: "wrap",
+        gap: 14,
       }}
     >
-      <div
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "var(--ink-3)",
-        }}
-      >
-        {t("reports.diagnostics.title")}
-      </div>
-      <div
-        style={{
-          border: "1px solid var(--rule)",
-          borderRadius: 6,
-          padding: "16px 20px",
-          background: "var(--paper-2)",
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-        }}
-      >
-        <span style={{ color: glyphColor, display: "inline-flex" }}>
-          {row.tone === "healthy" ? (
-            <GlyphRingWithDot size={20} />
-          ) : (
-            <GlyphOpenArc size={20} />
-          )}
+      <span>instances: {pre.heartbeatInstanceCount}</span>
+      <span>enabled: {pre.enabledHeartbeatInstanceCount}</span>
+      <span>unbound: {pre.instancesWithoutOutputChannels}</span>
+      {pre.mostRecentDispatchedAt !== null ? (
+        <span>
+          last dispatch:{" "}
+          {new Date(pre.mostRecentDispatchedAt).toLocaleString()}
         </span>
-        <div
-          style={{
-            flex: 1,
-            fontFamily: "var(--font-sans)",
-            fontSize: 13,
-            color: "var(--ink)",
-            lineHeight: 1.5,
-          }}
-        >
-          {row.label}
-        </div>
-        {row.cta !== undefined && props.onNavigate !== undefined ? (
-          (() => {
-            const navigate = props.onNavigate;
-            const target = row.cta.target;
-            return (
-              <Btn
-                variant={row.tone === "alert" ? "ghost" : "subtle"}
-                onClick={(): void => navigate(target)}
-              >
-                {row.cta.label}
-              </Btn>
-            );
-          })()
-        ) : null}
-      </div>
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--ink-3)",
-        }}
-      >
-        <span>instances: {pre.heartbeatInstanceCount}</span>
-        <span>enabled: {pre.enabledHeartbeatInstanceCount}</span>
-        <span>unbound: {pre.instancesWithoutOutputChannels}</span>
-        {pre.mostRecentDispatchedAt !== null ? (
-          <span>
-            last dispatch:{" "}
-            {new Date(pre.mostRecentDispatchedAt).toLocaleString()}
-          </span>
-        ) : null}
-      </div>
+      ) : null}
+    </span>
+  );
+
+  return (
+    <div style={{ padding: "20px 0" }}>
+      <EmptyStatePanel
+        title={t("reports.diagnostics.title")}
+        body={stats}
+        diagnosticsChain={[
+          {
+            label: row.label,
+            status: rowToneToChainStatus(row.tone),
+          },
+        ]}
+        {...(cta !== undefined ? { cta } : {})}
+      />
     </div>
   );
 }

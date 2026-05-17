@@ -18,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import { Badge, type BadgeTone } from "../components/Badge.js";
 import { Btn } from "../components/Btn.js";
 import { Card } from "../components/Card.js";
+import { EmptyStatePanel } from "../components/EmptyStatePanel.js";
 import { NewSourceBindingModal } from "../components/NewSourceBindingModal.js";
 import { SourceBindingDetail } from "../components/SourceBindingDetail.js";
 import { fetchAdmin } from "../lib/api.js";
@@ -137,6 +138,16 @@ export function Sources(props: SourcesProps = {}): JSX.Element {
           {t("sources.newBinding")}
         </Btn>
       </div>
+      {error === null && rows !== null && rows.length === 0 ? (
+        <EmptyStatePanel
+          title={t("sources.emptyState.title")}
+          body={t("sources.emptyState.body")}
+          cta={{
+            label: t("sources.emptyState.ctaLabel"),
+            onClick: (): void => setCreateOpen(true),
+          }}
+        />
+      ) : (
       <Card>
         {error !== null ? (
           <div style={{ color: "var(--alert)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)" }}>
@@ -144,8 +155,6 @@ export function Sources(props: SourcesProps = {}): JSX.Element {
           </div>
         ) : rows === null ? (
           <div style={{ color: "var(--ink-3)" }}>{t("common.loading")}</div>
-        ) : rows.length === 0 ? (
-          <div style={{ color: "var(--ink-3)" }}>{t("sources.empty")}</div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.2fr 1fr 1fr 1.2fr auto", gap: 12 }}>
             <div className="t-micro">{t("sources.columns.name")}</div>
@@ -203,6 +212,7 @@ export function Sources(props: SourcesProps = {}): JSX.Element {
           </div>
         )}
       </Card>
+      )}
       {createOpen ? (
         <NewSourceBindingModal
           {...(props.fetchImpl !== undefined

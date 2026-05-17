@@ -87,8 +87,15 @@ describe("Audit route — initial render", () => {
     const fetchImpl = makeFetch({ 0: [] });
     render(<Audit fetchImpl={fetchImpl} />);
 
+    // PR-B3 (wave-16) — the empty-deployment + no-filters case
+    // now renders the EmptyStatePanel ("No audit entries yet")
+    // rather than the muted "no rows match filters" notice. The
+    // legacy notice is still used when filters are active or the
+    // operator paginates past page 1.
     await waitFor(() => {
-      expect(screen.getByText(/no audit-log rows match/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/no audit entries yet/i),
+      ).toBeInTheDocument();
     });
   });
 });

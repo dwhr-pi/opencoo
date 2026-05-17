@@ -30,6 +30,7 @@ import { useTranslation } from "react-i18next";
 
 import { AgentsRunNowButton } from "../components/AgentsRunNowButton.js";
 import { SR_ONLY_STYLE } from "../components/Chrome.js";
+import { EmptyStatePanel } from "../components/EmptyStatePanel.js";
 import { SchedulerEditor } from "../components/SchedulerEditor.js";
 import { Skeleton } from "../components/Skeleton.js";
 import { StatusPill, type StatusTone } from "../components/StatusPill.js";
@@ -435,16 +436,11 @@ function FeedView(props: { onAuthFailed?: () => void }): JSX.Element {
           </button>
         </div>
       )}
-      {entries.length === 0 && (
-        <div
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 13,
-            color: "var(--ink-3)",
-          }}
-        >
-          {t("activity.feed.empty")}
-        </div>
+      {entries.length === 0 && !authExpired && (
+        <EmptyStatePanel
+          title={t("activity.emptyState.title")}
+          body={t("activity.emptyState.body")}
+        />
       )}
       {entries.map((e) => {
         // PR-W4 — dedicated render branch for `pipeline.intake_failed`

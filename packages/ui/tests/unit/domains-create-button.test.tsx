@@ -49,9 +49,15 @@ describe("Domains route — + New domain button", () => {
     const { fetchImpl } = makeFetchMock();
     render(<Domains fetchImpl={fetchImpl as unknown as typeof fetch} />);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
-    expect(
-      screen.getByRole("button", { name: /\+ New domain|New domain/i }),
-    ).toBeInTheDocument();
+    // PR-B3 (wave-16) — when no domains exist, EmptyStatePanel
+    // renders a second "+ New domain" CTA inside the empty body,
+    // so there are now two matching buttons. The header button is
+    // still present and clickable; assert the header copy survives
+    // by counting at least one match.
+    const buttons = screen.getAllByRole("button", {
+      name: /\+ New domain|New domain/i,
+    });
+    expect(buttons.length).toBeGreaterThanOrEqual(1);
   });
 
   it("opens the modal on click", async () => {
@@ -59,9 +65,10 @@ describe("Domains route — + New domain button", () => {
     const user = userEvent.setup();
     render(<Domains fetchImpl={fetchImpl as unknown as typeof fetch} />);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
-    await user.click(
-      screen.getByRole("button", { name: /\+ New domain|New domain/i }),
-    );
+    const buttons = screen.getAllByRole("button", {
+      name: /\+ New domain|New domain/i,
+    });
+    await user.click(buttons[0]!);
     await waitFor(() =>
       expect(screen.getByRole("dialog")).toBeInTheDocument(),
     );
@@ -73,9 +80,10 @@ describe("Domains route — + New domain button", () => {
     render(<Domains fetchImpl={fetchImpl as unknown as typeof fetch} />);
     await waitFor(() => expect(count()).toBeGreaterThan(0));
     const initial = count();
-    await user.click(
-      screen.getByRole("button", { name: /\+ New domain|New domain/i }),
-    );
+    const buttons = screen.getAllByRole("button", {
+      name: /\+ New domain|New domain/i,
+    });
+    await user.click(buttons[0]!);
     await waitFor(() =>
       expect(screen.getByRole("dialog")).toBeInTheDocument(),
     );

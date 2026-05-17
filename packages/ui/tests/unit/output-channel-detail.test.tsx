@@ -235,9 +235,14 @@ describe("Outputs route", () => {
     const stub = makeStubFetch({ rows: [], calls });
     renderOutputs(<Outputs fetchImpl={stub} />);
     await waitFor(() => {
-      expect(screen.getByText(/\+ New output channel/i)).toBeTruthy();
+      // PR-B3 (wave-16) — two "+ New output channel" surfaces now
+      // exist on the zero-rows page (header + EmptyStatePanel CTA);
+      // both wire the same modal so click either.
+      expect(
+        screen.getAllByText(/\+ New output channel/i).length,
+      ).toBeGreaterThanOrEqual(1);
     });
-    fireEvent.click(screen.getByText(/\+ New output channel/i));
+    fireEvent.click(screen.getAllByText(/\+ New output channel/i)[0]!);
     await waitFor(() => {
       expect(screen.getByLabelText(/^name$/i)).toBeTruthy();
     });
