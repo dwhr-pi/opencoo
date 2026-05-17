@@ -18,6 +18,7 @@ export * from "./miner-runs.js";
 export * from "./miner-suppressions.js";
 export * from "./output-channels.js";
 export * from "./page-citations.js";
+export * from "./prompt-overrides.js";
 export * from "./redaction-events.js";
 export * from "./sources-bindings.js";
 export * from "./users.js";

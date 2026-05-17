@@ -163,6 +163,7 @@ export async function compile(args: CompileArgs): Promise<CompileResult> {
     const existingBody = stripFrontmatter(existingFull);
     const merged = await mergePage({
       router: args.router,
+      db: args.db,
       domainId: args.domainId,
       sourceRef: args.sourceRef,
       sourceContent: args.sourceContent,

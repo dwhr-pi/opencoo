@@ -24,7 +24,7 @@ import {
 import { ClassifierPathError } from "../../src/classifier/path-guard.js";
 import { BindingConfigError } from "../../src/classifier/binding-guard.js";
 
-import { freshClassifierDb } from "./_pglite-fixture.js";
+import { freshClassifierDb, type ClassifierTestDb } from "./_pglite-fixture.js";
 
 function silentLogger(): ConsoleLogger {
   return new ConsoleLogger({
@@ -35,6 +35,7 @@ function silentLogger(): ConsoleLogger {
 interface FixtureBundle {
   router: LlmRouter;
   domainId: string;
+  db: ClassifierTestDb;
 }
 
 async function makeFixture(provider: LlmProvider): Promise<FixtureBundle> {
@@ -46,7 +47,16 @@ async function makeFixture(provider: LlmProvider): Promise<FixtureBundle> {
     pauser: { paused: () => false, pause: () => undefined, resume: () => undefined },
     provider,
   });
-  return { router, domainId };
+  return { router, domainId, db };
+}
+
+/** PR-W1 hand-off helper — narrow the pglite-flavoured db to
+ *  the resolver's structural type so `classify({ db })` calls
+ *  stay tidy. */
+function asResolverDb(
+  db: ClassifierTestDb,
+): Parameters<typeof classify>[0]["db"] {
+  return db as unknown as Parameters<typeof classify>[0]["db"];
 }
 
 const ALLOWED_PATHS = ["strategy/**", "executive/**"];
@@ -75,9 +85,10 @@ describe("classify — happy path", () => {
       },
     });
 
-    const { router, domainId } = await makeFixture(mock);
+    const { router, domainId, db } = await makeFixture(mock);
     const result = await classify({
       router,
+      db: asResolverDb(db),
       domainId: domainId as Parameters<typeof classify>[0]["domainId"],
       sourceRef: "drive:doc-1",
       content: SOURCE_CONTENT,
@@ -118,10 +129,11 @@ describe("classify — adversarial LLM defenses", () => {
       },
     });
 
-    const { router, domainId } = await makeFixture(mock);
+    const { router, domainId, db } = await makeFixture(mock);
     await expect(
       classify({
         router,
+        db: asResolverDb(db),
         domainId: domainId as Parameters<typeof classify>[0]["domainId"],
         sourceRef: "drive:doc-1",
         content: SOURCE_CONTENT,
@@ -155,10 +167,11 @@ describe("classify — adversarial LLM defenses", () => {
       },
     });
 
-    const { router, domainId } = await makeFixture(mock);
+    const { router, domainId, db } = await makeFixture(mock);
     await expect(
       classify({
         router,
+        db: asResolverDb(db),
         domainId: domainId as Parameters<typeof classify>[0]["domainId"],
         sourceRef: "drive:doc-1",
         content: SOURCE_CONTENT,
@@ -180,10 +193,11 @@ describe("classify — adversarial LLM defenses", () => {
       },
     });
 
-    const { router, domainId } = await makeFixture(mock);
+    const { router, domainId, db } = await makeFixture(mock);
     await expect(
       classify({
         router,
+        db: asResolverDb(db),
         domainId: domainId as Parameters<typeof classify>[0]["domainId"],
         sourceRef: "drive:doc-1",
         content: SOURCE_CONTENT,
@@ -218,10 +232,11 @@ describe("classify — adversarial LLM defenses", () => {
       },
     });
 
-    const { router, domainId } = await makeFixture(mock);
+    const { router, domainId, db } = await makeFixture(mock);
     await expect(
       classify({
         router,
+        db: asResolverDb(db),
         domainId: domainId as Parameters<typeof classify>[0]["domainId"],
         sourceRef: "drive:doc-1",
         content: SOURCE_CONTENT,
@@ -236,10 +251,11 @@ describe("classify — adversarial LLM defenses", () => {
     const mock = new MockLlmClient();
     // No registration needed — the binding-guard catches before
     // the LLM is invoked.
-    const { router, domainId } = await makeFixture(mock);
+    const { router, domainId, db } = await makeFixture(mock);
     await expect(
       classify({
         router,
+        db: asResolverDb(db),
         domainId: domainId as Parameters<typeof classify>[0]["domainId"],
         sourceRef: "drive:doc-1",
         content: SOURCE_CONTENT,
@@ -273,9 +289,10 @@ describe("classify — locale fallback (Q7)", () => {
       },
     };
 
-    const { router, domainId } = await makeFixture(recorder);
+    const { router, domainId, db } = await makeFixture(recorder);
     await classify({
       router,
+      db: asResolverDb(db),
       domainId: domainId as Parameters<typeof classify>[0]["domainId"],
       sourceRef: "drive:doc-1",
       content: SOURCE_CONTENT,
@@ -332,9 +349,10 @@ describe("classify — binding constraints injection (PR-Y9)", () => {
 
   it("injects allowedDomains values into the prompt as JSON-stringified strings", async () => {
     const { provider, getPrompt } = makeRecorder();
-    const { router, domainId } = await makeFixture(provider);
+    const { router, domainId, db } = await makeFixture(provider);
     await classify({
       router,
+      db: asResolverDb(db),
       domainId: domainId as Parameters<typeof classify>[0]["domainId"],
       sourceRef: "drive:doc-1",
       content: SOURCE_CONTENT,
@@ -357,9 +375,10 @@ describe("classify — binding constraints injection (PR-Y9)", () => {
 
   it("injects allowedPaths globs into the prompt", async () => {
     const { provider, getPrompt } = makeRecorder();
-    const { router, domainId } = await makeFixture(provider);
+    const { router, domainId, db } = await makeFixture(provider);
     await classify({
       router,
+      db: asResolverDb(db),
       domainId: domainId as Parameters<typeof classify>[0]["domainId"],
       sourceRef: "drive:doc-1",
       content: SOURCE_CONTENT,
@@ -381,9 +400,10 @@ describe("classify — binding constraints injection (PR-Y9)", () => {
     // ordering. If a refactor flips them, this regression test
     // catches it.
     const { provider, getPrompt } = makeRecorder();
-    const { router, domainId } = await makeFixture(provider);
+    const { router, domainId, db } = await makeFixture(provider);
     await classify({
       router,
+      db: asResolverDb(db),
       domainId: domainId as Parameters<typeof classify>[0]["domainId"],
       sourceRef: "drive:doc-1",
       content: SOURCE_CONTENT,
@@ -438,9 +458,10 @@ describe("classify — binding constraints injection (PR-Y9)", () => {
       },
     });
 
-    const { router, domainId } = await makeFixture(mock);
+    const { router, domainId, db } = await makeFixture(mock);
     const result = await classify({
       router,
+      db: asResolverDb(db),
       domainId: domainId as Parameters<typeof classify>[0]["domainId"],
       sourceRef: "drive:doc-1",
       content: SOURCE_CONTENT,

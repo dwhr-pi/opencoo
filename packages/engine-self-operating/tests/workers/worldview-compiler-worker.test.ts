@@ -128,6 +128,7 @@ describe("runWorldviewCompile — happy path", () => {
       wikiDeps: h.wikiDeps,
       author: h.author,
       logger: h.logger,
+      db: fixture.db as unknown as Parameters<typeof runWorldviewCompile>[0]["db"],
       resolveLocale: async () => "en",
       job,
     });
@@ -166,6 +167,7 @@ describe("runWorldviewCompile — happy path", () => {
       wikiDeps: h.wikiDeps,
       author: h.author,
       logger: h.logger,
+      db: fixture.db as unknown as Parameters<typeof runWorldviewCompile>[0]["db"],
       resolveLocale: async () => "en",
       job: {
         domainId: fixture.domainId,
@@ -221,6 +223,7 @@ describe("runWorldviewCompile — happy path", () => {
       wikiDeps: h.wikiDeps,
       author: h.author,
       logger: h.logger,
+      db: fixture.db as unknown as Parameters<typeof runWorldviewCompile>[0]["db"],
       resolveLocale: async () => "en",
       job: {
         domainId: fixture.domainId,
@@ -296,6 +299,7 @@ describe("runWorldviewCompile — WorldviewOverflowError DLQ path", () => {
       wikiDeps: h.wikiDeps,
       author: h.author,
       logger: h.logger,
+      db: fixture.db as unknown as Parameters<typeof runWorldviewCompile>[0]["db"],
       resolveLocale: async () => "en",
       job: {
         domainId: fixture.domainId,
@@ -363,6 +367,7 @@ describe("runWorldviewCompile — safety-net fanout", () => {
       wikiDeps: h.wikiDeps,
       author: h.author,
       logger: h.logger,
+      db: fixture.db as unknown as Parameters<typeof runWorldviewCompile>[0]["db"],
       resolveLocale: async () => "en",
       listSafetyNetDomains: async () => listed,
       enqueueSafetyNetFanout: async (job) => {
@@ -395,6 +400,7 @@ describe("runWorldviewCompile — safety-net fanout", () => {
       wikiDeps: h.wikiDeps,
       author: h.author,
       logger: h.logger,
+      db: fixture.db as unknown as Parameters<typeof runWorldviewCompile>[0]["db"],
       resolveLocale: async () => "en",
       // listSafetyNetDomains + enqueueSafetyNetFanout deliberately
       // omitted — the worker logs a warning and returns ok.
@@ -424,6 +430,7 @@ describe("buildWorldviewCompileHandler — Job wrapper", () => {
       wikiDeps: h.wikiDeps,
       author: h.author,
       logger: h.logger,
+      db: fixture.db as unknown as Parameters<typeof buildWorldviewCompileHandler>[0]["db"],
       resolveLocale: async () => "en",
     });
 

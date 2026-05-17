@@ -5,12 +5,17 @@
 
 export {
   loadPrompt,
+  loadPromptForScope,
   PROMPT_NAMES,
   PROMPT_LOCALES,
   type LoadPromptArgs,
+  type LoadPromptForScopeArgs,
   type LoadedPrompt,
+  type LoadedPromptWithOverride,
   type PromptLocale,
   type PromptName,
+  type PromptOverrideRef,
+  type ScopeResolverDb,
 } from "./loader.js";
 export {
   PROMPT_VERSION_MANIFEST,

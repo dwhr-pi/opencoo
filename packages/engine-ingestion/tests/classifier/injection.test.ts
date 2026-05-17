@@ -185,6 +185,7 @@ describe("injection corpus — adversarial LLM end-to-end", () => {
 
       const promise = classify({
         router,
+        db: db as unknown as Parameters<typeof classify>[0]["db"],
         domainId: domainId as Parameters<typeof classify>[0]["domainId"],
         sourceRef: `corpus:${entry.fixture}`,
         content: body,

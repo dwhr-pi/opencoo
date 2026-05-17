@@ -77,6 +77,7 @@ describe("compileDomainWorldview — token-cap retry + happy path", () => {
     const result = await compileDomainWorldview({
       router,
       wikiAdapter: wiki,
+      db: fixture.db as unknown as Parameters<typeof compileDomainWorldview>[0]["db"],
       domainId: fixture.domainId as DomainId,
       domainSlug: "test-domain" as DomainSlug,
       locale: "en",
@@ -105,6 +106,7 @@ describe("compileDomainWorldview — token-cap retry + happy path", () => {
     const result = await compileDomainWorldview({
       router,
       wikiAdapter: wiki,
+      db: fixture.db as unknown as Parameters<typeof compileDomainWorldview>[0]["db"],
       domainId: fixture.domainId as DomainId,
       domainSlug: "test-domain" as DomainSlug,
       locale: "en",
@@ -130,6 +132,7 @@ describe("compileDomainWorldview — token-cap retry + happy path", () => {
       compileDomainWorldview({
         router,
         wikiAdapter: wiki,
+        db: fixture.db as unknown as Parameters<typeof compileDomainWorldview>[0]["db"],
         domainId: fixture.domainId as DomainId,
         domainSlug: "test-domain" as DomainSlug,
         locale: "en",
@@ -151,6 +154,7 @@ describe("compileDomainWorldview — token-cap retry + happy path", () => {
     const result = await compileDomainWorldview({
       router,
       wikiAdapter: wiki,
+      db: fixture.db as unknown as Parameters<typeof compileDomainWorldview>[0]["db"],
       domainId: fixture.domainId as DomainId,
       domainSlug: "test-domain" as DomainSlug,
       locale: "en",

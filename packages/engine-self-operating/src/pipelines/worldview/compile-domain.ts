@@ -20,7 +20,10 @@
  *     instructions, only as labelled headings.
  */
 import { spotlight } from "@opencoo/shared/spotlight";
-import { loadPrompt } from "@opencoo/shared/prompts";
+import {
+  loadPromptForScope,
+  type ScopeResolverDb,
+} from "@opencoo/shared/prompts";
 import type { DomainId, DomainSlug } from "@opencoo/shared/db";
 import { LlmProviderError, type LlmRouter } from "@opencoo/shared/llm-router";
 import type { WikiAdapter } from "@opencoo/shared/wiki-write";
@@ -46,6 +49,11 @@ one sentence over two. Do NOT extend; SHRINK.
 export interface CompileDomainArgs {
   readonly router: LlmRouter;
   readonly wikiAdapter: WikiAdapter;
+  /** Drizzle handle for the PR-W1 prompt-override resolver.
+   *  Worldview-domain compiles are domain-scoped (no agent
+   *  instance), so the resolver picks the domain-scoped row if
+   *  one exists, otherwise the shipped baseline. */
+  readonly db: ScopeResolverDb;
   readonly domainId: DomainId;
   readonly domainSlug: DomainSlug;
   readonly locale: "en" | "pl" | "auto";
@@ -81,9 +89,11 @@ export async function compileDomainWorldview(
     pageEntries.push({ path, body: page.content });
   }
 
-  const prompt = loadPrompt({
+  const prompt = await loadPromptForScope({
     name: "worldview-domain",
     locale: args.locale,
+    domainId: args.domainId,
+    db: args.db,
   });
 
   const envelopes = pageEntries

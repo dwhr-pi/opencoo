@@ -37,7 +37,7 @@
 import { sql } from "drizzle-orm";
 
 import { spotlight } from "@opencoo/shared/spotlight";
-import { loadPrompt } from "@opencoo/shared/prompts";
+import { loadPromptForScope } from "@opencoo/shared/prompts";
 import type { DomainId } from "@opencoo/shared/db";
 
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
@@ -85,7 +85,13 @@ export async function runBuilder(
   }
   const domainId = scope[0]! as DomainId;
 
-  const prompt = loadPrompt({ name: "builder", locale: ctx.instance.locale });
+  const prompt = await loadPromptForScope({
+    name: "builder",
+    locale: ctx.instance.locale,
+    domainId,
+    instanceId: ctx.instance.id,
+    db: args.db,
+  });
   const fetchedAt = now();
   const proposalEnvelope = spotlight({
     content: JSON.stringify(candidate.proposal),

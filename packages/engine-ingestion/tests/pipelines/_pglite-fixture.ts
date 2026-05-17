@@ -190,6 +190,42 @@ const TABLES_DDL = `
     response_text text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
   );
+
+  -- agent_instances (FK target for prompt_overrides; pipelines tests
+  -- never insert here directly but the cascade requires the table).
+  CREATE TABLE agent_instances (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    definition_slug text NOT NULL,
+    name text NOT NULL,
+    scope_domain_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    output_channel_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
+    schedule_cron text,
+    memory jsonb DEFAULT '{}'::jsonb NOT NULL,
+    locale text DEFAULT 'en' NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+  );
+
+  -- prompt_overrides (PR-W1 phase-a appendix #15) — source for the
+  -- per-domain prompt override resolver consumed by classifier and
+  -- compiler. Pipeline tests do not seed rows; loadPromptForScope
+  -- falls back to the shipped baseline (legacy synchronous-path
+  -- parity).
+  CREATE TABLE prompt_overrides (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    domain_id uuid NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+    instance_id uuid REFERENCES agent_instances(id) ON DELETE CASCADE,
+    prompt_name text NOT NULL,
+    locale text NOT NULL CHECK (locale IN ('en','pl')),
+    body text NOT NULL CHECK (length(body) <= 100000),
+    overrides_version text NOT NULL,
+    baseline_version text NOT NULL,
+    updated_by_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT prompt_overrides_scope_unique UNIQUE NULLS NOT DISTINCT (domain_id, instance_id, prompt_name, locale)
+  );
 `;
 
 export interface PipelineFixture {

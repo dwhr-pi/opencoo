@@ -69,6 +69,25 @@ const DDL = `
     response_text text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
   );
+
+  -- prompt_overrides (PR-W1 phase-a appendix #15) — classifier's
+  -- loadPromptForScope reads from this. Tests that do not insert
+  -- a row hit the shipped baseline (identical behaviour to the
+  -- previous synchronous loadPrompt path).
+  CREATE TABLE prompt_overrides (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    domain_id uuid NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+    instance_id uuid,
+    prompt_name text NOT NULL,
+    locale text NOT NULL CHECK (locale IN ('en','pl')),
+    body text NOT NULL CHECK (length(body) <= 100000),
+    overrides_version text NOT NULL,
+    baseline_version text NOT NULL,
+    updated_by_user_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT prompt_overrides_scope_unique UNIQUE NULLS NOT DISTINCT (domain_id, instance_id, prompt_name, locale)
+  );
 `;
 
 export interface ClassifierFixture {

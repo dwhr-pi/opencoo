@@ -229,6 +229,25 @@ const TABLES_DDL = `
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
   );
+
+  -- prompt_overrides (PR-W1 phase-a appendix #15) — source for
+  -- the per-(domain, instance) prompt override resolver consumed
+  -- by every agent body. Tests that do not seed rows hit the
+  -- shipped baseline (legacy synchronous-path parity).
+  CREATE TABLE prompt_overrides (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    domain_id uuid NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+    instance_id uuid REFERENCES agent_instances(id) ON DELETE CASCADE,
+    prompt_name text NOT NULL,
+    locale text NOT NULL CHECK (locale IN ('en','pl')),
+    body text NOT NULL CHECK (length(body) <= 100000),
+    overrides_version text NOT NULL,
+    baseline_version text NOT NULL,
+    updated_by_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT prompt_overrides_scope_unique UNIQUE NULLS NOT DISTINCT (domain_id, instance_id, prompt_name, locale)
+  );
 `;
 
 export interface AgentFixture {

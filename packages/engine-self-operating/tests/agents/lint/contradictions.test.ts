@@ -66,6 +66,7 @@ describe("detectContradictions — LLM-backed pair analysis", () => {
 
     const findings = await detectContradictions({
       router,
+      db: fixture.db as unknown as Parameters<typeof detectContradictions>[0]["db"],
       domainId: fixture.domainId as DomainId,
       locale: "en",
       pages: [
@@ -89,6 +90,7 @@ describe("detectContradictions — LLM-backed pair analysis", () => {
     );
     const findings = await detectContradictions({
       router,
+      db: fixture.db as unknown as Parameters<typeof detectContradictions>[0]["db"],
       domainId: fixture.domainId as DomainId,
       locale: "en",
       pages: [
@@ -116,6 +118,7 @@ describe("detectContradictions — LLM-backed pair analysis", () => {
     const router = makeRouter(provider, fixture.db);
     const findings = await detectContradictions({
       router,
+      db: fixture.db as unknown as Parameters<typeof detectContradictions>[0]["db"],
       domainId: fixture.domainId as DomainId,
       locale: "en",
       pages: [{ domainSlug: "exec", path: "alone.md", body: "x" }],
@@ -141,6 +144,7 @@ describe("detectContradictions — LLM-backed pair analysis", () => {
     await expect(
       detectContradictions({
         router,
+        db: fixture.db as unknown as Parameters<typeof detectContradictions>[0]["db"],
         domainId: fixture.domainId as DomainId,
         locale: "en",
         pages: [

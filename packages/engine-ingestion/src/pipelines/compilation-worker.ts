@@ -268,6 +268,7 @@ export async function runCompilationWorker(
       // contentKind === 'document' — classic two-pass path.
       const classified = await classify({
         router: args.router,
+        db: args.db,
         domainId: meta.domainId as DomainId,
         sourceRef: args.job.sourceRef,
         content,

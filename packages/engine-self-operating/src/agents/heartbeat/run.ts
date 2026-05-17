@@ -14,7 +14,7 @@
  * additionally spotlighted before reaching the LLM.
  */
 import { spotlight } from "@opencoo/shared/spotlight";
-import { loadPrompt } from "@opencoo/shared/prompts";
+import { loadPromptForScope } from "@opencoo/shared/prompts";
 import type { DomainId } from "@opencoo/shared/db";
 
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
@@ -174,7 +174,13 @@ export async function runHeartbeat(
     now,
   });
 
-  const prompt = loadPrompt({ name: "heartbeat", locale: ctx.instance.locale });
+  const prompt = await loadPromptForScope({
+    name: "heartbeat",
+    locale: ctx.instance.locale,
+    domainId: resolvedDomainId,
+    instanceId: ctx.instance.id,
+    db: args.db,
+  });
 
   // Spotlight the fetched-at-runtime context. The harness has
   // already spotlighted `ctx.spotlightedMemory` (prior runs);

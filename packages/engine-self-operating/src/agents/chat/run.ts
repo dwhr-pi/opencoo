@@ -20,7 +20,7 @@
  * the engine HTTP handler renders it in the response body.
  */
 import { spotlight } from "@opencoo/shared/spotlight";
-import { loadPrompt } from "@opencoo/shared/prompts";
+import { loadPromptForScope } from "@opencoo/shared/prompts";
 import type { DomainId } from "@opencoo/shared/db";
 
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
@@ -124,7 +124,13 @@ export async function runChat(
     indexSearch(scopedMcp, { domainSlug: args.domainSlug }),
   );
 
-  const prompt = loadPrompt({ name: "chat", locale: ctx.instance.locale });
+  const prompt = await loadPromptForScope({
+    name: "chat",
+    locale: ctx.instance.locale,
+    domainId: resolvedDomainId,
+    instanceId: ctx.instance.id,
+    db: args.db,
+  });
 
   // Spotlight every untrusted source: the user's question,
   // the worldview body, the index. Each in its own

@@ -13,7 +13,17 @@
  * of truth for what the loader supports — adding a new prompt
  * requires extending both the tuple AND the inlined registry, so
  * a stale entry in only one half fails type-check.
+ *
+ * PR-W1 (phase-a appendix #15) adds the asynchronous
+ * `loadPromptForScope` overload that reads `prompt_overrides`
+ * with `instance > domain > baseline` precedence. The
+ * synchronous `loadPrompt` signature is unchanged — the
+ * injection-corpus runner is version-pinned to shipped
+ * baselines and explicitly bypasses the override path.
  */
+import { sql } from "drizzle-orm";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+
 import {
   CLASSIFIER_PROMPT_VERSION,
   EN_CLASSIFIER_PROMPT,
@@ -170,5 +180,192 @@ export function loadPrompt(args: LoadPromptArgs): LoadedPrompt {
     body: REGISTRY[effective][args.name],
     version: VERSIONS[args.name],
     fallbackApplied,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// PR-W1 (phase-a appendix #15) — per-(domain, instance) override resolver.
+// ---------------------------------------------------------------------------
+
+/**
+ * Loose Drizzle handle accepted by `loadPromptForScope`. Mirrors
+ * the `Db` shape every engine module already passes around
+ * (`PgDatabase<PgQueryResultHKT, Record<string, unknown>>`) so
+ * existing call-site rewrites can pass their existing `db`
+ * handle without an adapter.
+ */
+export type ScopeResolverDb = PgDatabase<
+  PgQueryResultHKT,
+  Record<string, unknown>
+>;
+
+/**
+ * Args for `loadPromptForScope`. `instanceId` is optional —
+ * scheduled callers that don't have a per-instance scope (e.g.
+ * one-off scripts or v2+ background jobs) MAY omit it and get
+ * the next-most-specific scope (domain row → baseline).
+ *
+ * `db` is whatever Drizzle pg-core handle the caller already
+ * has. The resolver issues exactly ONE SELECT.
+ */
+export interface LoadPromptForScopeArgs {
+  readonly name: PromptName;
+  readonly locale: PromptLocale;
+  readonly domainId: string;
+  readonly instanceId?: string;
+  readonly db: ScopeResolverDb;
+}
+
+/**
+ * Structured override metadata. `scope` records which row the
+ * resolver matched (so the page-citations writer can persist
+ * `overridesVersion` and the admin UI can render "instance" /
+ * "domain" badges). `isStale` is the `(baseline_version
+ * stored_at_apply !== current_shipped_version)` predicate the
+ * UI's lagging-overrides banner consumes.
+ */
+export interface PromptOverrideRef {
+  readonly scope: "instance" | "domain";
+  readonly overridesVersion: string;
+  readonly baselineVersion: string;
+  readonly isStale: boolean;
+}
+
+/**
+ * The async-path return shape. Adds the `override` field
+ * alongside every field on `LoadedPrompt`. `override === null`
+ * when the resolver fell through to the shipped baseline; the
+ * page-citations writer's contract is:
+ *
+ *   prompt_version := override?.overridesVersion ?? baseline.version
+ *
+ * which is also persisted into `page_citations.prompt_version`
+ * by the compiler so a stale-output bug can be triaged to the
+ * exact (override, baseline) pair that produced it.
+ */
+export interface LoadedPromptWithOverride extends LoadedPrompt {
+  readonly override: PromptOverrideRef | null;
+}
+
+interface PromptOverrideRow {
+  readonly body: string;
+  readonly overrides_version: string;
+  readonly baseline_version: string;
+  readonly is_instance_scoped: boolean;
+}
+
+interface ExecResult<R> {
+  readonly rows: R[];
+}
+
+/**
+ * Asynchronous, scope-aware loader. Reads `prompt_overrides`
+ * once with `instance > domain > baseline` precedence and
+ * returns the effective prompt body. Always returns — the
+ * shipped baseline is the terminal fallback so this function
+ * never throws on "no row found".
+ *
+ * Precedence is enforced in the SQL by `ORDER BY instance_id
+ * NULLS LAST LIMIT 1`: when both a domain-scoped (NULL
+ * instance_id) and an instance-scoped row match the filter, the
+ * instance row sorts first and wins. When the caller didn't
+ * pass `instanceId` the `instance_id IS NULL` half of the OR
+ * clause selects only the domain row.
+ *
+ * SCOPE NOTE: the resolver does NOT enforce caller-scope
+ * itself. The agent harness's `assertDomainSlugInScope`
+ * (`engine-self-operating/src/agents/scope-check.ts`) is the
+ * authoritative runtime check that the `domainId` belongs to a
+ * domain in the caller's scope. The resolver trusts the caller
+ * because (a) every v0.1 call site is downstream of that
+ * harness check, and (b) duplicating the check here would
+ * couple `@opencoo/shared` to the agent harness.
+ *
+ * UUID-FORMAT NOTE: `domainId` / `instanceId` are interpolated
+ * into a `::uuid` cast via Drizzle's parameterised template (so
+ * SQL injection is impossible), but malformed values surface as
+ * a Postgres `invalid input syntax for type uuid` error. The
+ * resolver does NOT pre-validate — every v0.1 caller obtains
+ * these from already-validated DB rows or admin-API surfaces
+ * (UUID-validated before cast per `domains-llm-policy.ts`
+ * pattern). A future caller path that doesn't share that
+ * upstream validation should validate before calling.
+ *
+ * PERF NOTE: the resolver issues one indexed SELECT per call.
+ * In hot paths (classifier / merge-page run per ingested doc;
+ * agents run once per scheduled tick) this is an extra DB
+ * roundtrip even when no override exists. The UNIQUE index on
+ * `(domain_id, instance_id, prompt_name, locale)` keeps the
+ * lookup O(log n), and on PGlite-fast Postgres the empty-case
+ * is sub-millisecond. A domain-scoped LRU is a v0.2 candidate
+ * once we have measurements showing the overhead is material.
+ */
+export async function loadPromptForScope(
+  args: LoadPromptForScopeArgs,
+): Promise<LoadedPromptWithOverride> {
+  const baseline = loadPrompt({ name: args.name, locale: args.locale });
+
+  // The SELECT predicate covers both shapes in one query:
+  //   - instance-scoped row (instance_id = caller's instanceId)
+  //   - domain-scoped row (instance_id IS NULL)
+  //
+  // `ORDER BY instance_id NULLS LAST LIMIT 1` picks the
+  // instance row when both exist. `is_instance_scoped` is
+  // computed in SQL so the JS branch on `scope` is a pure
+  // boolean check (avoids re-comparing UUIDs).
+  //
+  // The locale used for the SELECT is the EFFECTIVE locale
+  // after fallback (baseline.locale), not the requested one —
+  // a caller asking for `locale='auto'` resolves against the
+  // 'en' row, matching how the baseline body itself is
+  // selected. This keeps the override path consistent with
+  // the synchronous baseline path; storing an 'auto' row is
+  // already forbidden by the CHECK constraint.
+  const result = (await args.db.execute(sql`
+    SELECT
+      body,
+      overrides_version,
+      baseline_version,
+      (instance_id IS NOT NULL) AS is_instance_scoped
+    FROM prompt_overrides
+    WHERE prompt_name = ${args.name}
+      AND locale = ${baseline.locale}
+      AND domain_id = ${args.domainId}::uuid
+      AND (
+        instance_id IS NULL
+        ${args.instanceId !== undefined ? sql`OR instance_id = ${args.instanceId}::uuid` : sql``}
+      )
+    ORDER BY instance_id NULLS LAST
+    LIMIT 1
+  `)) as unknown as ExecResult<PromptOverrideRow>;
+
+  const row = result.rows[0];
+  if (row === undefined) {
+    return { ...baseline, override: null };
+  }
+
+  const overridesVersion = row.overrides_version;
+  const storedBaselineVersion = row.baseline_version;
+  const currentBaselineVersion = baseline.version;
+  const isStale = storedBaselineVersion !== currentBaselineVersion;
+
+  return {
+    name: args.name,
+    locale: baseline.locale,
+    body: row.body,
+    // Per the page-citations contract: prompt_version on
+    // override-active runs is the override's semver, not the
+    // shipped baseline's. The writer reads
+    // `result.override?.overridesVersion ?? result.version`
+    // so this field stays the SHIPPED version for triage
+    // continuity (`isStale` tells the UI when they diverge).
+    version: currentBaselineVersion,
+    fallbackApplied: baseline.fallbackApplied,
+    override: {
+      scope: row.is_instance_scoped ? "instance" : "domain",
+      overridesVersion,
+      baselineVersion: storedBaselineVersion,
+      isStale,
+    },
   };
 }

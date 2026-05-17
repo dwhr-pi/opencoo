@@ -104,6 +104,7 @@ describe("compileCompanyWorldview — sovereignty + token-cap", () => {
     const result = await compileCompanyWorldview({
       router,
       wikiAdapter: spy,
+      db: fixture.db as unknown as Parameters<typeof compileCompanyWorldview>[0]["db"],
       aggregatorDomainId: fixture.domainId as DomainId,
       nonAggregatorDomainSlugs: [
         "exec" as DomainSlug,
@@ -150,6 +151,7 @@ describe("compileCompanyWorldview — sovereignty + token-cap", () => {
     const result = await compileCompanyWorldview({
       router,
       wikiAdapter: spy,
+      db: fixture.db as unknown as Parameters<typeof compileCompanyWorldview>[0]["db"],
       aggregatorDomainId: fixture.domainId as DomainId,
       nonAggregatorDomainSlugs: ["exec" as DomainSlug],
       locale: "en",
@@ -188,6 +190,7 @@ describe("compileCompanyWorldview — sovereignty + token-cap", () => {
       compileCompanyWorldview({
         router,
         wikiAdapter: spy,
+        db: fixture.db as unknown as Parameters<typeof compileCompanyWorldview>[0]["db"],
         aggregatorDomainId: fixture.domainId as DomainId,
         nonAggregatorDomainSlugs: ["exec" as DomainSlug],
         locale: "en",
@@ -219,6 +222,7 @@ describe("compileCompanyWorldview — sovereignty + token-cap", () => {
     const result = await compileCompanyWorldview({
       router,
       wikiAdapter: spy,
+      db: fixture.db as unknown as Parameters<typeof compileCompanyWorldview>[0]["db"],
       aggregatorDomainId: fixture.domainId as DomainId,
       nonAggregatorDomainSlugs: [
         "exec" as DomainSlug,

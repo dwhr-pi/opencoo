@@ -105,6 +105,14 @@ export interface RunLintCoreArgs {
   readonly locale: "en" | "pl" | "auto";
   readonly router: LlmRouter;
   readonly now: Date;
+  /** PR-W1 — Drizzle handle forwarded into the LLM-backed
+   *  `detectContradictions` so its `loadPromptForScope` lookup
+   *  reads from the same connection as the orchestrator. */
+  readonly db: Db;
+  /** Lint instance id, forwarded into `detectContradictions`
+   *  so an instance-scoped lint-prompt override wins over the
+   *  domain-scoped one. */
+  readonly instanceId: string;
 }
 
 export async function runLintCore(args: RunLintCoreArgs): Promise<LintOutput> {
@@ -134,7 +142,9 @@ export async function runLintCore(args: RunLintCoreArgs): Promise<LintOutput> {
   findings.push(
     ...(await detectContradictions({
       router: args.router,
+      db: args.db,
       domainId: args.domainId,
+      instanceId: args.instanceId,
       locale: args.locale,
       pages: args.contradictionInputs.slice(0, CONTRADICTIONS_PAGE_CAP),
       fetchedAt: args.now,
@@ -377,5 +387,7 @@ export async function runLint(
     locale: ctx.instance.locale,
     router: ctx.router,
     now: now(),
+    db: args.db,
+    instanceId: ctx.instance.id,
   });
 }

@@ -16,7 +16,7 @@
  * reader agents (Heartbeat, Lint, Chat).
  */
 import { spotlight } from "@opencoo/shared/spotlight";
-import { loadPrompt } from "@opencoo/shared/prompts";
+import { loadPromptForScope } from "@opencoo/shared/prompts";
 import type { DomainId } from "@opencoo/shared/db";
 
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
@@ -79,7 +79,13 @@ export async function runSurfacer(
     indexSearch(args.mcp, { domainSlug: args.domainSlug }),
   );
 
-  const prompt = loadPrompt({ name: "surfacer", locale: ctx.instance.locale });
+  const prompt = await loadPromptForScope({
+    name: "surfacer",
+    locale: ctx.instance.locale,
+    domainId: resolvedDomainId,
+    instanceId: ctx.instance.id,
+    db: args.db,
+  });
 
   const fetchedAt = now();
   const worldviewEnvelope = spotlight({

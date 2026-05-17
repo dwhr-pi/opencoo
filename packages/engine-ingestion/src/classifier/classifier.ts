@@ -27,7 +27,7 @@
  * re-tried with the same prompt.
  */
 
-import { loadPrompt, type PromptLocale } from "@opencoo/shared/prompts";
+import { loadPromptForScope, type PromptLocale, type ScopeResolverDb } from "@opencoo/shared/prompts";
 import type { LlmRouter } from "@opencoo/shared/llm-router";
 import type { DomainId } from "@opencoo/shared/db";
 
@@ -42,6 +42,12 @@ import {
 
 export interface ClassifyArgs {
   readonly router: LlmRouter;
+  /** Drizzle handle for the per-(domain) prompt-override lookup
+   *  (`loadPromptForScope`). The orchestrator already has a db
+   *  handle for the surrounding intake-row UPDATE; we thread the
+   *  same handle through so the classifier reads from the same
+   *  consistency snapshot. */
+  readonly db: ScopeResolverDb;
   readonly domainId: DomainId;
   readonly sourceRef: string;
   readonly content: string;
@@ -64,7 +70,12 @@ export async function classify(args: ClassifyArgs): Promise<ClassifierOutput> {
     fetchedAt,
   });
 
-  const prompt = loadPrompt({ name: "classifier", locale: args.locale });
+  const prompt = await loadPromptForScope({
+    name: "classifier",
+    locale: args.locale,
+    domainId: args.domainId,
+    db: args.db,
+  });
 
   // Inject the binding's allowed_domains and allowed_paths as a
   // runtime-constructed constraints block BETWEEN the prompt body

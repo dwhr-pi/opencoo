@@ -246,6 +246,7 @@ export async function composeWorldviewBundle(
       wikiDeps: args.wikiDeps,
       author: args.author,
       logger: args.logger,
+      db: args.db,
       resolveLocale,
       listSafetyNetDomains,
       enqueueSafetyNetFanout,

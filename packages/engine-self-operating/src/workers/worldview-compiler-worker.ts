@@ -37,6 +37,8 @@ import {
   type WorkerOptions,
 } from "bullmq";
 
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+
 import type { DomainId, DomainSlug } from "@opencoo/shared/db";
 import type { LlmRouter } from "@opencoo/shared/llm-router";
 import type { Logger } from "@opencoo/shared/logger";
@@ -95,12 +97,20 @@ export interface SafetyNetFanoutDomain {
   readonly domainSlug: string;
 }
 
+type Db = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
+
 export interface WorldviewCompileHandlerDeps {
   readonly router: LlmRouter;
   readonly wikiAdapter: WikiAdapter;
   readonly wikiDeps: WikiWriteDeps;
   readonly author: WikiAuthor;
   readonly logger: Logger;
+  /** Drizzle handle forwarded into `compileDomainWorldview`
+   *  for the PR-W1 per-domain prompt-override lookup. The
+   *  composition root (`composition/worldview-bundle.ts`)
+   *  already passes a `db` handle for the `listSafetyNetDomains`
+   *  enumerator — same handle threads through here. */
+  readonly db: Db;
   /** Per-domain locale lookup. The trigger payload carries only the
    *  id + slug; the orchestrator passes a resolver that looks up
    *  `domains.locale` (typically a cached map). Falls back to
@@ -187,6 +197,7 @@ export async function runWorldviewCompile(
     const result = await compileDomainWorldview({
       router: args.router,
       wikiAdapter: args.wikiAdapter,
+      db: args.db,
       domainId,
       domainSlug,
       locale,

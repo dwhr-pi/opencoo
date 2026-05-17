@@ -17,7 +17,11 @@
 
 import type { LlmRouter } from "@opencoo/shared/llm-router";
 import type { DomainId } from "@opencoo/shared/db";
-import { loadPrompt, type PromptLocale } from "@opencoo/shared/prompts";
+import {
+  loadPromptForScope,
+  type PromptLocale,
+  type ScopeResolverDb,
+} from "@opencoo/shared/prompts";
 
 import { spotlight } from "../classifier/spotlight.js";
 
@@ -26,6 +30,10 @@ import { MERGED_PAGE_BODY_SCHEMA, type MergedPageBody } from "./types.js";
 
 export interface MergePageArgs {
   readonly router: LlmRouter;
+  /** Drizzle handle for the prompt-override resolver. Plumbed
+   *  alongside `domainId` so a per-domain `compiler` prompt
+   *  override (PR-W1) wins over the shipped baseline. */
+  readonly db: ScopeResolverDb;
   readonly domainId: DomainId;
   readonly sourceRef: string;
   readonly sourceContent: string;
@@ -68,7 +76,12 @@ export async function mergePage(args: MergePageArgs): Promise<MergedPageBody> {
     fetchedAt,
   });
 
-  const prompt = loadPrompt({ name: "compiler", locale: args.locale });
+  const prompt = await loadPromptForScope({
+    name: "compiler",
+    locale: args.locale,
+    domainId: args.domainId,
+    db: args.db,
+  });
   const fullPrompt = buildPrompt(
     prompt.body,
     args.pagePath,
@@ -105,9 +118,17 @@ export async function mergePage(args: MergePageArgs): Promise<MergedPageBody> {
     );
   }
 
+  // PR-W1 page-citations contract: when an override is active,
+  // the persisted `prompt_version` is the override's semver
+  // (`overridesVersion`), NOT the shipped baseline. Triage flows
+  // can still resolve back to the baseline because the override
+  // row stores `baseline_version` alongside.
+  const persistedPromptVersion =
+    prompt.override?.overridesVersion ?? prompt.version;
+
   return {
     mergedBody: wire.merged_body,
     worldviewImpact: [...wire.worldview_impact],
-    promptVersion: prompt.version,
+    promptVersion: persistedPromptVersion,
   };
 }

@@ -21,7 +21,10 @@
 import { z } from "zod";
 
 import { spotlight } from "@opencoo/shared/spotlight";
-import { loadPrompt } from "@opencoo/shared/prompts";
+import {
+  loadPromptForScope,
+  type ScopeResolverDb,
+} from "@opencoo/shared/prompts";
 import type { LlmRouter } from "@opencoo/shared/llm-router";
 import type { DomainId } from "@opencoo/shared/db";
 
@@ -62,7 +65,15 @@ export interface PageBody {
 
 export interface ContradictionsArgs {
   readonly router: LlmRouter;
+  /** Drizzle handle for the per-(domain, instance) prompt
+   *  override resolver (PR-W1). The orchestrator forwards the
+   *  same handle it uses for binding/citation queries. */
+  readonly db: ScopeResolverDb;
   readonly domainId: DomainId;
+  /** Lint instance id — used to resolve instance-scoped lint
+   *  prompt overrides. The orchestrator forwards
+   *  `ctx.instance.id`. */
+  readonly instanceId?: string;
   readonly locale: "en" | "pl" | "auto";
   /** The page bodies the orchestrator picked for this run.
    *  Already capped by the orchestrator; the detector enforces
@@ -77,7 +88,13 @@ export async function detectContradictions(
   const sampled = args.pages.slice(0, CONTRADICTIONS_PAGE_CAP);
   if (sampled.length < 2) return [];
 
-  const prompt = loadPrompt({ name: "lint", locale: args.locale });
+  const prompt = await loadPromptForScope({
+    name: "lint",
+    locale: args.locale,
+    domainId: args.domainId,
+    db: args.db,
+    ...(args.instanceId !== undefined ? { instanceId: args.instanceId } : {}),
+  });
   const envelopes = sampled
     .map((p) =>
       spotlight({

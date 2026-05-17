@@ -24,7 +24,10 @@
  *      breaks structure still fails loud.
  */
 import { spotlight } from "@opencoo/shared/spotlight";
-import { loadPrompt } from "@opencoo/shared/prompts";
+import {
+  loadPromptForScope,
+  type ScopeResolverDb,
+} from "@opencoo/shared/prompts";
 import type { DomainId, DomainSlug } from "@opencoo/shared/db";
 import { LlmProviderError, type LlmRouter } from "@opencoo/shared/llm-router";
 import type { WikiAdapter } from "@opencoo/shared/wiki-write";
@@ -58,6 +61,12 @@ export const SOVEREIGN_AGGREGATOR_INPUT_PATH = "worldview.md";
 export interface CompileCompanyArgs {
   readonly router: LlmRouter;
   readonly wikiAdapter: WikiAdapter;
+  /** Drizzle handle for the PR-W1 prompt-override resolver.
+   *  Routed against the aggregator's `domainId` (its llm_policy
+   *  bounds the aggregation call); a per-aggregator-domain
+   *  override of `worldview-company` wins over the shipped
+   *  baseline. */
+  readonly db: ScopeResolverDb;
   /** The aggregator's own domainId — used to route the LLM
    *  call (its llm_policy applies). */
   readonly aggregatorDomainId: DomainId;
@@ -101,9 +110,11 @@ export async function compileCompanyWorldview(
     inputs.push({ slug, body: page.content });
   }
 
-  const prompt = loadPrompt({
+  const prompt = await loadPromptForScope({
     name: "worldview-company",
     locale: args.locale,
+    domainId: args.aggregatorDomainId,
+    db: args.db,
   });
 
   const envelopes = inputs
