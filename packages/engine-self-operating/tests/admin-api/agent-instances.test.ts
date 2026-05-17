@@ -541,3 +541,345 @@ describe("admin-api /api/admin/agent-instances (PR-W2)", () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+// ── PR-W4 (phase-a appendix #15): POST create + scope/name/locale/memory_clear PATCH branches.
+
+describe("POST /api/admin/agent-instances (PR-W4)", () => {
+  let cleanup: (() => Promise<void>) | null = null;
+  afterEach(async () => {
+    if (cleanup !== null) {
+      await cleanup();
+      cleanup = null;
+    }
+  });
+
+  it("201 — creates an agent_instances row + writes audit", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const domainId = await seedDomain(f.raw);
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+    const res = await f.app.inject({
+      method: "POST",
+      url: "/api/admin/agent-instances",
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        definition_slug: "heartbeat",
+        name: "morning",
+        scope_domain_ids: [domainId],
+        locale: "en",
+        enabled: true,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.id).toBeDefined();
+    expect(body.name).toBe("morning");
+    expect(body.scopeDomainIds).toEqual([domainId]);
+    // Row persisted.
+    const rows = await f.raw.query<{ name: string; locale: string }>(
+      `SELECT name, locale FROM agent_instances WHERE id = $1::uuid`,
+      [body.id],
+    );
+    expect(rows.rows[0]?.name).toBe("morning");
+    // Audit row.
+    const audit = await f.raw.query<{ action: string }>(
+      `SELECT action FROM admin_audit_log WHERE action = 'agent_instance.create'`,
+    );
+    expect(audit.rows).toHaveLength(1);
+  });
+
+  it("409 — name_collision when (definition_slug, name) already exists", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const domainId = await seedDomain(f.raw);
+    await seedInstance(f.raw, domainId, {
+      definitionSlug: "heartbeat",
+      name: "morning",
+    });
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+    const res = await f.app.inject({
+      method: "POST",
+      url: "/api/admin/agent-instances",
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        definition_slug: "heartbeat",
+        name: "morning",
+        scope_domain_ids: [domainId],
+      },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body).error).toBe("name_collision");
+  });
+
+  it("422 — unknown_scope_domain_ids when any UUID dangles", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+    const res = await f.app.inject({
+      method: "POST",
+      url: "/api/admin/agent-instances",
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        definition_slug: "heartbeat",
+        name: "ghost",
+        scope_domain_ids: ["11111111-1111-4111-9111-111111111111"],
+      },
+    });
+    expect(res.statusCode).toBe(422);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe("unknown_scope_domain_ids");
+    expect(body.missing).toEqual(["11111111-1111-4111-9111-111111111111"]);
+  });
+
+  it("422 — invalid_cron when schedule_cron is garbage", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const domainId = await seedDomain(f.raw);
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+    const res = await f.app.inject({
+      method: "POST",
+      url: "/api/admin/agent-instances",
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        definition_slug: "heartbeat",
+        name: "broken",
+        scope_domain_ids: [domainId],
+        schedule_cron: "not a cron",
+      },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(JSON.parse(res.body).error).toBe("invalid_cron");
+  });
+
+  it("403 — CSRF gate rejects without token", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const domainId = await seedDomain(f.raw);
+    const res = await f.app.inject({
+      method: "POST",
+      url: "/api/admin/agent-instances",
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        definition_slug: "heartbeat",
+        name: "no-csrf",
+        scope_domain_ids: [domainId],
+      },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+describe("PATCH agent-instances — PR-W4 branches (scope/name/locale/memory_clear)", () => {
+  let cleanup: (() => Promise<void>) | null = null;
+  afterEach(async () => {
+    if (cleanup !== null) {
+      await cleanup();
+      cleanup = null;
+    }
+  });
+
+  it("scope_domain_ids: 200 — replaces scope + writes audit", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const domainA = await seedDomain(f.raw);
+    const r2 = await f.raw.query<{ id: string }>(
+      `INSERT INTO domains (slug, name) VALUES ('w-extra-domain', 'Extra') RETURNING id`,
+    );
+    const domainB = r2.rows[0]!.id;
+    const instId = await seedInstance(f.raw, domainA);
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/agent-instances/${instId}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { scope_domain_ids: [domainA, domainB] },
+    });
+    expect(res.statusCode).toBe(200);
+    const row = await f.raw.query<{ scope_domain_ids: string[] }>(
+      `SELECT scope_domain_ids FROM agent_instances WHERE id = $1::uuid`,
+      [instId],
+    );
+    expect(row.rows[0]?.scope_domain_ids).toHaveLength(2);
+    const audit = await f.raw.query<{ action: string }>(
+      `SELECT action FROM admin_audit_log WHERE action = 'agent_instance.set_scope'`,
+    );
+    expect(audit.rows).toHaveLength(1);
+  });
+
+  it("scope_domain_ids: 422 — unknown_scope_domain_ids when any UUID dangles", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const domainId = await seedDomain(f.raw);
+    const instId = await seedInstance(f.raw, domainId);
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/agent-instances/${instId}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        scope_domain_ids: ["11111111-1111-4111-9111-111111111111"],
+      },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(JSON.parse(res.body).error).toBe("unknown_scope_domain_ids");
+  });
+
+  it("name: 200 — renames + writes audit", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const domainId = await seedDomain(f.raw);
+    const instId = await seedInstance(f.raw, domainId, { name: "old-name" });
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/agent-instances/${instId}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { name: "new-name" },
+    });
+    expect(res.statusCode).toBe(200);
+    const row = await f.raw.query<{ name: string }>(
+      `SELECT name FROM agent_instances WHERE id = $1::uuid`,
+      [instId],
+    );
+    expect(row.rows[0]?.name).toBe("new-name");
+  });
+
+  it("name: 409 — name_collision within (definition_slug, name)", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const domainId = await seedDomain(f.raw);
+    const instId = await seedInstance(f.raw, domainId, {
+      definitionSlug: "heartbeat",
+      name: "alpha",
+    });
+    await seedInstance(f.raw, domainId, {
+      definitionSlug: "heartbeat",
+      name: "bravo",
+    });
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/agent-instances/${instId}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { name: "bravo" },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it("locale: 200 — flips locale + writes audit", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const domainId = await seedDomain(f.raw);
+    const instId = await seedInstance(f.raw, domainId);
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/agent-instances/${instId}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { locale: "pl" },
+    });
+    expect(res.statusCode).toBe(200);
+    const row = await f.raw.query<{ locale: string }>(
+      `SELECT locale FROM agent_instances WHERE id = $1::uuid`,
+      [instId],
+    );
+    expect(row.rows[0]?.locale).toBe("pl");
+  });
+
+  it("memory_clear: 200 — zeroes memory + audit records prior_memory_byte_count", async () => {
+    const f = await makeAdminFixture({ adminTeamSlug: "opencoo-admins" });
+    cleanup = f.close;
+    await setupAdmin(f);
+    const domainId = await seedDomain(f.raw);
+    const instId = await seedInstance(f.raw, domainId);
+    // Seed memory with some content.
+    await f.raw.query(
+      `UPDATE agent_instances SET memory = $1::jsonb WHERE id = $2::uuid`,
+      [JSON.stringify({ type: "briefings", entries: ["a", "b", "c"] }), instId],
+    );
+    const { csrfToken, cookie } = await getCsrf(f, ADMIN_PAT);
+    const res = await f.app.inject({
+      method: "PATCH",
+      url: `/api/admin/agent-instances/${instId}`,
+      headers: {
+        authorization: `Bearer ${ADMIN_PAT}`,
+        "x-csrf-token": csrfToken,
+        cookie: `opencoo_csrf=${cookie}`,
+        "content-type": "application/json",
+      },
+      payload: { memory_clear: true },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.priorBytes).toBeGreaterThan(0);
+    const row = await f.raw.query<{ memory: unknown }>(
+      `SELECT memory FROM agent_instances WHERE id = $1::uuid`,
+      [instId],
+    );
+    expect(row.rows[0]?.memory).toEqual({});
+    const audit = await f.raw.query<{ metadata: { prior_memory_byte_count: number } }>(
+      `SELECT metadata FROM admin_audit_log WHERE action = 'agent_instance.memory_clear'`,
+    );
+    expect(audit.rows[0]?.metadata.prior_memory_byte_count).toBeGreaterThan(0);
+    // Memory contents never enter audit metadata.
+    expect(JSON.stringify(audit.rows[0]?.metadata)).not.toContain("briefings");
+  });
+});

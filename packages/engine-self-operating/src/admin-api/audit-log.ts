@@ -201,6 +201,39 @@ export const AUDIT_LOG_ACTIONS = [
   "agent_instance.bind_outputs",
   "agent_instance.set_enabled",
   "agent_instance.set_schedule",
+  // PR-W4 (phase-a appendix #15) — agent-instance lifecycle +
+  // scope editing.
+  //
+  // `create`       — INSERT a new agent_instances row from the
+  //                  Management UI's "+ New agent instance"
+  //                  modal. Metadata: instance_id, definition_slug,
+  //                  name, scope_domain_ids (UUID list), locale,
+  //                  enabled, output_channel_ids, schedule_cron,
+  //                  caller_username.
+  // `set_scope`    — replaces `agent_instances.scope_domain_ids[]`.
+  //                  Privilege-reduction-friendly: removing a
+  //                  domain from scope takes effect on the next
+  //                  dispatch. Metadata: instance_id,
+  //                  scope_domain_ids (UUID list),
+  //                  caller_username.
+  // `set_name`     — renames the instance's display name (unique
+  //                  within (definition_slug, name)). Metadata:
+  //                  instance_id, name, caller_username.
+  // `set_locale`   — flips the instance's locale ('en' | 'pl' |
+  //                  'auto'). Metadata: instance_id, locale,
+  //                  caller_username.
+  // `memory_clear` — zeroes `agent_instances.memory` jsonb (the
+  //                  agent harness re-seeds from scratch on the
+  //                  next run). Audit metadata captures
+  //                  `prior_memory_byte_count` only — the memory
+  //                  contents themselves NEVER enter the audit
+  //                  table (THREAT-MODEL §3.13 — memory may
+  //                  contain spotlighted page bytes).
+  "agent_instance.create",
+  "agent_instance.set_scope",
+  "agent_instance.set_name",
+  "agent_instance.set_locale",
+  "agent_instance.memory_clear",
   // PR-W2 (phase-a appendix #15) — per-(domain, instance) prompt
   // overrides. `apply` records every UPSERT into prompt_overrides
   // via the sovereignty-token confirm flow; `delete` records every
