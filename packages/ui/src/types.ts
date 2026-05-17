@@ -232,6 +232,14 @@ export interface SourceBinding {
     readonly errorClass: string | null;
     readonly errorTextSnippet: string | null;
   }>;
+  /** PR-W5 (phase-a appendix #15) — per-binding retention override.
+   *  `null` means "use domain default". The SourceBindingDetail
+   *  editor shows the current value plus the domain default. */
+  readonly retentionDaysOverride?: number | null;
+  /** PR-W5 — domain-level default retention. Surfaced alongside
+   *  `retentionDaysOverride` so the editor can render "Using domain
+   *  default: X days" when the override is null. */
+  readonly domainRetentionDays?: number | null;
 }
 
 export interface PromptManifestEntry {

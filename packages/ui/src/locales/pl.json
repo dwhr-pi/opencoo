@@ -303,6 +303,27 @@
       "subtitle": "Subtree globs the classifier may write into. The runtime guard rejects empty or wildcard-only lists.",
       "editOpen": "Edit",
       "saveFailed": "Could not save allowed paths. Try again or check the audit log."
+    },
+    "retentionOverride": {
+      "title": "Nadpisanie retencji",
+      "helper": "Nadpisz domyślną wartość domeny ({{days}} dni). Wyczyść, aby przywrócić.",
+      "helperNoDomainDefault": "Nadpisz domyślną wartość domeny. Wyczyść, aby przywrócić wartość silnika.",
+      "placeholder": "{{days}}",
+      "save": "Zapisz nadpisanie",
+      "saved": "Nadpisanie zapisane.",
+      "noOp": "Brak zmian do zapisu.",
+      "outOfRange": "Retencja musi być liczbą całkowitą z zakresu 1–365 dni.",
+      "saveFailed": "Nie udało się zapisać nadpisania retencji. Spróbuj ponownie lub sprawdź dziennik audytu."
+    },
+    "notes": {
+      "title": "Notatki",
+      "helper": "Etykieta wyświetlana operatorowi dla tego powiązania. Zwykły tekst, do 4096 znaków.",
+      "save": "Zapisz notatki",
+      "clear": "Wyczyść notatki",
+      "saved": "Notatki zapisane.",
+      "overCap": "Notatki są ograniczone do 4096 znaków.",
+      "emptyHint": "Użyj „Wyczyść notatki”, aby usunąć istniejącą wartość.",
+      "saveFailed": "Nie udało się zapisać notatek. Spróbuj ponownie lub sprawdź dziennik audytu."
     }
   },
   "llmPolicy": {

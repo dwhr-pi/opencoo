@@ -1503,6 +1503,21 @@ export function SourceBindingDetail(
           fetchImpl={props.fetchImpl}
         />
 
+        {/* PR-W5-UI (phase-a appendix #15) — retention-override + notes
+         *  editors. Both PATCH the same `/api/admin/source-bindings/:id`
+         *  endpoint via the W5 API branches (`retention_days_override`
+         *  + `notes`). Each panel owns its own draft / submit state. */}
+        <RetentionOverridePanel
+          binding={props.binding}
+          onChanged={props.onChanged}
+          fetchImpl={props.fetchImpl}
+        />
+        <NotesPanel
+          binding={props.binding}
+          onChanged={props.onChanged}
+          fetchImpl={props.fetchImpl}
+        />
+
         {/* PR-W4 (phase-a appendix #14) — Intake state panel. Renders
          *  the four per-status `intakeCounts` (defaulted to 0 for
          *  back-compat) and the most-recent 3 `failed` rows. The
@@ -2129,5 +2144,375 @@ function IntakeFailedRow(props: IntakeFailedRowProps): JSX.Element {
         {t("sources.detail.intakeState.retry")}
       </button>
     </li>
+  );
+}
+
+// ─── PR-W5-UI (phase-a appendix #15) — RetentionOverridePanel ──────────────
+
+interface RetentionOverridePanelProps {
+  readonly binding: SourceBinding;
+  readonly onChanged: () => void;
+  readonly fetchImpl?: typeof fetch | undefined;
+}
+
+/** Per-binding retention-days override editor (PR-W5 API branch
+ *  `{retention_days_override}`). Operators clear by sending `null`
+ *  (the W5 API treats `null` as "revert to domain default"). The
+ *  Zod boundary caps at 1–365 days — out-of-range values surface
+ *  a 422 with an inline error. The route also emits a 200 +
+ *  `noOp: true` when the submitted value equals the persisted value;
+ *  we surface a small "no changes saved" status row instead of
+ *  bumping the parent's refresh nonce. */
+function RetentionOverridePanel(
+  props: RetentionOverridePanelProps,
+): JSX.Element {
+  const { t } = useTranslation();
+  const persisted = props.binding.retentionDaysOverride ?? null;
+  const domainDefault = props.binding.domainRetentionDays ?? null;
+  const [draft, setDraft] = useState<string>(
+    persisted === null ? "" : String(persisted),
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusNote, setStatusNote] = useState<"saved" | "noOp" | null>(null);
+
+  const save = async (): Promise<void> => {
+    setError(null);
+    setStatusNote(null);
+    // Empty input → clear (null). Otherwise coerce to integer and
+    // gate at the client side BEFORE PATCH; the W5 API's Zod schema
+    // is the ground truth (1..365) and surfaces a 422 on out-of-range,
+    // but a client-side bound gives the operator a faster error path.
+    const trimmed = draft.trim();
+    let body: { retention_days_override: number | null };
+    if (trimmed === "") {
+      body = { retention_days_override: null };
+    } else {
+      const n = Number(trimmed);
+      if (!Number.isInteger(n) || n < 1 || n > 365) {
+        setError(t("sourceBindingDetail.retentionOverride.outOfRange"));
+        return;
+      }
+      body = { retention_days_override: n };
+    }
+    setSubmitting(true);
+    try {
+      const resp = await fetchAdmin<{
+        id: string;
+        retention_days_override?: number | null;
+        noOp?: boolean;
+      }>(`/api/admin/source-bindings/${props.binding.id}`, {
+        method: "PATCH",
+        body,
+        ...fetchOptsFor(props.fetchImpl),
+      });
+      if (resp.noOp === true) {
+        setStatusNote("noOp");
+      } else {
+        setStatusNote("saved");
+        props.onChanged();
+      }
+    } catch (err) {
+      if (err instanceof ApiValidationError && err.status === 422) {
+        setError(t("sourceBindingDetail.retentionOverride.outOfRange"));
+        return;
+      }
+      if (err instanceof ApiAuthError) {
+        setError(t("sources.detail.errors.auth"));
+      } else if (err instanceof ApiTransientError) {
+        setError(t("sources.detail.errors.transient"));
+      } else {
+        setError(t("sourceBindingDetail.retentionOverride.saveFailed"));
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={ALLOWED_PANEL_STYLE} data-testid="retention-override-panel">
+      <span id="retention-override-title" style={LABEL_STYLE}>
+        {t("sourceBindingDetail.retentionOverride.title")}
+      </span>
+      <p style={EDIT_FIELD_DESCRIPTION_STYLE}>
+        {domainDefault === null
+          ? t("sourceBindingDetail.retentionOverride.helperNoDomainDefault")
+          : t("sourceBindingDetail.retentionOverride.helper", {
+              days: domainDefault,
+            })}
+      </p>
+      <div
+        style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}
+      >
+        <input
+          id="retention-override-input"
+          type="number"
+          min={1}
+          max={365}
+          step={1}
+          name="retention_days_override"
+          aria-labelledby="retention-override-title"
+          data-testid="retention-override-input"
+          value={draft}
+          onChange={(e): void => {
+            setDraft(e.target.value);
+            setError(null);
+            setStatusNote(null);
+          }}
+          placeholder={
+            domainDefault === null
+              ? ""
+              : t("sourceBindingDetail.retentionOverride.placeholder", {
+                  days: domainDefault,
+                })
+          }
+          style={{
+            flex: "0 0 auto",
+            width: "10ch",
+            background: "var(--paper)",
+            border:
+              error !== null
+                ? "1px solid var(--alert)"
+                : "1px solid var(--rule)",
+            borderRadius: "var(--radius-m)",
+            padding: "var(--space-2) var(--space-3)",
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--fs-mono)",
+            color: "var(--ink-1)",
+          }}
+        />
+        <Btn
+          variant="subtle"
+          disabled={submitting}
+          onClick={(): void => {
+            void save();
+          }}
+        >
+          {submitting
+            ? t("sourceBindingDetail.edit.saving")
+            : t("sourceBindingDetail.retentionOverride.save")}
+        </Btn>
+      </div>
+      {error !== null ? (
+        <p
+          role="alert"
+          data-testid="retention-override-error"
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: "var(--fs-small)",
+            color: "var(--alert)",
+            margin: 0,
+          }}
+        >
+          {error}
+        </p>
+      ) : null}
+      {statusNote === "noOp" ? (
+        <span
+          style={COPY_FEEDBACK_STYLE}
+          role="status"
+          data-testid="retention-override-noop"
+        >
+          {t("sourceBindingDetail.retentionOverride.noOp")}
+        </span>
+      ) : null}
+      {statusNote === "saved" ? (
+        <span
+          style={COPY_FEEDBACK_STYLE}
+          role="status"
+          data-testid="retention-override-saved"
+        >
+          <GlyphFilledDisc
+            size={10}
+            title="saved"
+            style={{ color: "var(--healthy)" }}
+          />
+          {t("sourceBindingDetail.retentionOverride.saved")}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+// ─── PR-W5-UI (phase-a appendix #15) — NotesPanel ──────────────────────────
+
+interface NotesPanelProps {
+  readonly binding: SourceBinding;
+  readonly onChanged: () => void;
+  readonly fetchImpl?: typeof fetch | undefined;
+}
+
+/** Operator-facing notes editor for the binding's display label.
+ *  Caps at 4096 chars at the client side (matches the W5 API Zod
+ *  schema). The API rejects empty strings (`.min(1).max(4096)`) —
+ *  operators clear via the dedicated "Clear notes" button which
+ *  sends `null`. The notes value never enters audit metadata per
+ *  §3.13; the API only records `notes_changed: true` + `cleared`. */
+const NOTES_MAX_LENGTH = 4096;
+
+function NotesPanel(props: NotesPanelProps): JSX.Element {
+  const { t } = useTranslation();
+  const persisted = props.binding.notes ?? "";
+  const [draft, setDraft] = useState<string>(persisted);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<boolean>(false);
+
+  const overCap = draft.length > NOTES_MAX_LENGTH;
+
+  const patchNotes = async (value: string | null): Promise<void> => {
+    setError(null);
+    setSaved(false);
+    setSubmitting(true);
+    try {
+      await fetchAdmin<{ id: string; updated: true }>(
+        `/api/admin/source-bindings/${props.binding.id}`,
+        {
+          method: "PATCH",
+          body: { notes: value },
+          ...fetchOptsFor(props.fetchImpl),
+        },
+      );
+      setSaved(true);
+      props.onChanged();
+    } catch (err) {
+      if (err instanceof ApiValidationError && err.status === 422) {
+        setError(t("sourceBindingDetail.notes.overCap"));
+        return;
+      }
+      if (err instanceof ApiAuthError) {
+        setError(t("sources.detail.errors.auth"));
+      } else if (err instanceof ApiTransientError) {
+        setError(t("sources.detail.errors.transient"));
+      } else {
+        setError(t("sourceBindingDetail.notes.saveFailed"));
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const onSave = (): void => {
+    // overCap is also gated by the Save button's `disabled` prop; this
+    // guard is kept as defense-in-depth so a programmatic click via the
+    // DOM ref still surfaces an inline error rather than firing a PATCH
+    // the server's Zod boundary would reject (Copilot review fix-up:
+    // pin the surface so the dead-branch concern resolves to a
+    // documented redundancy, not a latent UX gap).
+    if (overCap) {
+      setError(t("sourceBindingDetail.notes.overCap"));
+      return;
+    }
+    // Empty string is rejected by the API — the operator clears via
+    // the "Clear notes" button which sends `null`. If the operator
+    // tries to Save while the textarea is empty, surface the same
+    // hint inline.
+    if (draft.length === 0) {
+      setError(t("sourceBindingDetail.notes.emptyHint"));
+      return;
+    }
+    void patchNotes(draft);
+  };
+  const onClear = (): void => {
+    setDraft("");
+    void patchNotes(null);
+  };
+
+  return (
+    <div style={ALLOWED_PANEL_STYLE} data-testid="notes-panel">
+      <span id="notes-title" style={LABEL_STYLE}>
+        {t("sourceBindingDetail.notes.title")}
+      </span>
+      <p style={EDIT_FIELD_DESCRIPTION_STYLE}>
+        {t("sourceBindingDetail.notes.helper")}
+      </p>
+      {/* TODO(wave-15-W9): migrate to <TextArea/> once the shared
+       *  primitive lands. The inline styles below mirror
+       *  EDIT_FIELD_INPUT_STYLE shape adapted to a multi-line element. */}
+      <textarea
+        id="notes-textarea-el"
+        name="notes"
+        aria-labelledby="notes-title"
+        data-testid="notes-textarea"
+        value={draft}
+        onChange={(e): void => {
+          setDraft(e.target.value);
+          setError(null);
+          setSaved(false);
+        }}
+        rows={4}
+        style={{
+          width: "100%",
+          minHeight: "5rem",
+          resize: "vertical",
+          background: "var(--paper)",
+          border: overCap ? "1px solid var(--alert)" : "1px solid var(--rule)",
+          borderRadius: "var(--radius-m)",
+          padding: "var(--space-2) var(--space-3)",
+          fontFamily: "var(--font-sans)",
+          fontSize: "var(--fs-body)",
+          color: "var(--ink-1)",
+        }}
+      />
+      <div
+        style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}
+      >
+        <Btn
+          variant="subtle"
+          disabled={submitting || overCap}
+          onClick={onSave}
+        >
+          {submitting
+            ? t("sourceBindingDetail.edit.saving")
+            : t("sourceBindingDetail.notes.save")}
+        </Btn>
+        <Btn
+          variant="ghost"
+          disabled={submitting || persisted.length === 0}
+          onClick={onClear}
+        >
+          {t("sourceBindingDetail.notes.clear")}
+        </Btn>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--fs-micro)",
+            color: overCap ? "var(--alert)" : "var(--ink-3)",
+            marginLeft: "auto",
+          }}
+          data-testid="notes-char-count"
+        >
+          {draft.length} / {NOTES_MAX_LENGTH}
+        </span>
+      </div>
+      {error !== null ? (
+        <p
+          role="alert"
+          data-testid="notes-error"
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: "var(--fs-small)",
+            color: "var(--alert)",
+            margin: 0,
+          }}
+        >
+          {error}
+        </p>
+      ) : null}
+      {saved ? (
+        <span
+          style={COPY_FEEDBACK_STYLE}
+          role="status"
+          data-testid="notes-saved"
+        >
+          <GlyphFilledDisc
+            size={10}
+            title="saved"
+            style={{ color: "var(--healthy)" }}
+          />
+          {t("sourceBindingDetail.notes.saved")}
+        </span>
+      ) : null}
+    </div>
   );
 }

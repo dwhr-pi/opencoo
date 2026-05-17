@@ -227,6 +227,16 @@ interface BindingRow {
     readonly errorClass: string | null;
     readonly errorTextSnippet: string | null;
   }>;
+  /** PR-W5 (phase-a appendix #15) — per-binding retention override
+   *  (overrides the domain-level `domains.retention_days`). `null`
+   *  means "use domain default"; the SourceBindingDetail editor
+   *  surfaces the current value plus the domain default so the
+   *  operator sees what would apply if cleared. */
+  readonly retentionDaysOverride: number | null;
+  /** PR-W5 — domain-level default retention (joined from `domains`).
+   *  Surfaced so the editor can show "Using domain default: X days"
+   *  when the override is null. */
+  readonly domainRetentionDays: number | null;
 }
 
 /** Coerce pg's timestamp result (Date when node-postgres parsed it,
@@ -548,6 +558,8 @@ export function registerSourceBindingsRoutes(
              b.notes,
              b.config,
              b.allowed_paths,
+             b.retention_days_override,
+             d.retention_days AS domain_retention_days,
              COALESCE(b.notes, b.adapter_slug || ' → ' || d.slug) AS name,
              (
                SELECT w.received_at
@@ -619,6 +631,8 @@ export function registerSourceBindingsRoutes(
         notes: string | null;
         config: Record<string, unknown> | null;
         allowed_paths: string[] | null;
+        retention_days_override: number | null;
+        domain_retention_days: number | null;
         name: string;
         last_event_at: Date | string | null;
         sig_fail_count_24h: number;
@@ -681,6 +695,12 @@ export function registerSourceBindingsRoutes(
         recentFailedIntake: decodeRecentFailedIntake(
           r.recent_failed_intake_json,
         ),
+        // PR-W5 (phase-a appendix #15): per-binding retention override
+        // + the domain default (joined from `domains.retention_days`)
+        // so the SourceBindingDetail editor can render the "Using
+        // domain default: X days" copy when override is null.
+        retentionDaysOverride: r.retention_days_override,
+        domainRetentionDays: r.domain_retention_days,
       };
     });
     return { rows };

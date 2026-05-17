@@ -301,6 +301,27 @@
       "subtitle": "Subtree globs the classifier may write into. The runtime guard rejects empty or wildcard-only lists.",
       "editOpen": "Edit",
       "saveFailed": "Could not save allowed paths. Try again or check the audit log."
+    },
+    "retentionOverride": {
+      "title": "Retention override",
+      "helper": "Override the domain default ({{days}} days). Clear to revert.",
+      "helperNoDomainDefault": "Override the domain default. Clear to revert to the engine default.",
+      "placeholder": "{{days}}",
+      "save": "Save override",
+      "saved": "Override saved.",
+      "noOp": "No changes saved.",
+      "outOfRange": "Retention must be an integer between 1 and 365 days.",
+      "saveFailed": "Could not save retention override. Try again or check the audit log."
+    },
+    "notes": {
+      "title": "Notes",
+      "helper": "Operator-facing display label for this binding. Plain text, up to 4096 characters.",
+      "save": "Save notes",
+      "clear": "Clear notes",
+      "saved": "Notes saved.",
+      "overCap": "Notes are limited to 4096 characters.",
+      "emptyHint": "Use Clear notes to remove the existing value.",
+      "saveFailed": "Could not save notes. Try again or check the audit log."
     }
   },
   "llmPolicy": {
