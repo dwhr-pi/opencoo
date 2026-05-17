@@ -30,7 +30,9 @@ import { useTranslation } from "react-i18next";
 
 import { AgentsRunNowButton } from "../components/AgentsRunNowButton.js";
 import { SchedulerEditor } from "../components/SchedulerEditor.js";
+import { Skeleton } from "../components/Skeleton.js";
 import { StatusPill, type StatusTone } from "../components/StatusPill.js";
+import { useDeferredSkeleton } from "../hooks/useDeferredSkeleton.js";
 import {
   createAgentRunsSubscription,
   type SubscribeToAgentRuns,
@@ -528,6 +530,12 @@ function RunsView(props: { fetchImpl?: typeof fetch }): JSX.Element {
   const { t } = useTranslation();
   const [rows, setRows] = useState<readonly AgentRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Wave-16 PR-B1 proof-of-use site. The deferred-skeleton hook
+  // hides the placeholder for sub-80ms warm-cache loads so the
+  // table doesn't flash, then renders Skeleton.Row x N (one per
+  // expected row) at full table width — eliminates the layout
+  // reshape when /api/admin/agent-runs lands.
+  const showSkeleton = useDeferredSkeleton(rows === null && error === null);
 
   useEffect(() => {
     void (async () => {
@@ -544,7 +552,50 @@ function RunsView(props: { fetchImpl?: typeof fetch }): JSX.Element {
   }, []);
 
   if (error !== null) return <NoticeRow tone="alert">{error}</NoticeRow>;
-  if (rows === null) return <NoticeRow tone="muted">{t("common.loading")}</NoticeRow>;
+  if (rows === null) {
+    if (!showSkeleton) {
+      // Pre-deferral window (<80ms): keep the surface blank so a
+      // fast warm-cache load doesn't paint a skeleton then
+      // immediately replace it.
+      return <></>;
+    }
+    return (
+      <table
+        style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          fontFamily: "var(--font-sans)",
+          fontSize: 13,
+        }}
+      >
+        <thead>
+          <tr style={{ borderBottom: "1px solid var(--rule)" }}>
+            {["agent", "status", "tokens", "cost", "latency", "started"].map((col) => (
+              <th
+                key={col}
+                style={{
+                  textAlign: "left",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-3)",
+                  padding: "6px 8px",
+                }}
+              >
+                {col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton.Row key={i} mono cols={6} />
+          ))}
+        </tbody>
+      </table>
+    );
+  }
   if (rows.length === 0) return <NoticeRow tone="muted">{t("activity.runs.empty")}</NoticeRow>;
 
   return (
