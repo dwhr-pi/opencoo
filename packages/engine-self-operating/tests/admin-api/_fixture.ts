@@ -312,6 +312,27 @@ const TABLES_DDL = `
   CREATE INDEX IF NOT EXISTS page_citations_source_binding_id_idx
     ON page_citations (source_binding_id);
 
+  -- PR-W2 (phase-a appendix #15): prompt_overrides — per-(domain,
+  -- instance, prompt_name, locale) operator-managed overrides of
+  -- the shipped baseline prompts. Mirrors the production schema
+  -- from packages/shared/src/db/schema/prompt-overrides.ts; the
+  -- admin-API tests INSERT/UPDATE/DELETE here through the
+  -- sovereignty-confirm flow.
+  CREATE TABLE IF NOT EXISTS prompt_overrides (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    domain_id uuid NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+    instance_id uuid REFERENCES agent_instances(id) ON DELETE CASCADE,
+    prompt_name text NOT NULL CHECK (prompt_name IN ('classifier','compiler','heartbeat','lint','chat','surfacer','builder','worldview-domain','worldview-company')),
+    locale text NOT NULL CHECK (locale IN ('en','pl')),
+    body text NOT NULL CHECK (length(body) <= 100000),
+    overrides_version text NOT NULL,
+    baseline_version text NOT NULL,
+    updated_by_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT prompt_overrides_scope_unique UNIQUE NULLS NOT DISTINCT (domain_id, instance_id, prompt_name, locale)
+  );
+
   -- Phase-a appendix #10 PR-R5: cost analytics dashboard reads
   -- llm_usage to surface per-domain × agent × tier spend. The
   -- schema mirrors packages/shared/src/db/schema/llm-usage.ts.

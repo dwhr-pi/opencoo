@@ -201,6 +201,31 @@ export const AUDIT_LOG_ACTIONS = [
   "agent_instance.bind_outputs",
   "agent_instance.set_enabled",
   "agent_instance.set_schedule",
+  // PR-W2 (phase-a appendix #15) — per-(domain, instance) prompt
+  // overrides. `apply` records every UPSERT into prompt_overrides
+  // via the sovereignty-token confirm flow; `delete` records every
+  // operator revert that drops the override row.
+  //
+  // `apply` metadata captures `scope` ('domains' | 'agent-instances'),
+  // `scope_id` (UUID), `name` (prompt name), `locale`,
+  // `baseline_version` (the shipped version the override was forked
+  // from at apply time), and `payload_hash` (SHA-256 of the
+  // body+baselineVersion canonical form).
+  //
+  // `delete` metadata captures the same `scope` / `scope_id` /
+  // `name` / `locale` always, and ADDITIONALLY captures the
+  // departing row's `overrides_version`, `baseline_version`, and
+  // `payload_hash` WHEN a row was found at SELECT-before-DELETE
+  // time. A no-op delete (idempotent revert against an
+  // already-baseline scope) records only the four scope fields —
+  // the conditional metadata makes the audit trail informative
+  // without inventing fields for the empty case.
+  //
+  // The body itself NEVER enters the audit table — the
+  // `payload_hash` reference is enough to prove the operator's
+  // intent without persisting the LLM-input bytes through audit.
+  "prompt_override.apply",
+  "prompt_override.delete",
   // Logout — records the operator-initiated session-end so an
   // audit-log read can correlate an action burst with the
   // operator's session window.

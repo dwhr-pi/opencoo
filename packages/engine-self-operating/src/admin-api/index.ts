@@ -63,6 +63,7 @@ import {
   type OutputAdapterSlug,
 } from "./routes/output-channels.js";
 import { registerPipelinesRoutes } from "./routes/pipelines.js";
+import { registerPromptOverridesRoutes } from "./routes/prompt-overrides.js";
 import { registerPromptsRoutes } from "./routes/prompts.js";
 import { registerRedactionEventsRoutes } from "./routes/redaction-events.js";
 import {
@@ -333,6 +334,14 @@ export async function registerAdminApi(
   });
   registerPromptsRoutes({ app: guardedApp });
   registerDomainsLlmPolicyRoutes({
+    app: guardedApp,
+    db: args.db,
+    sessionHmacKey: args.sessionHmacKey,
+  });
+  // PR-W2 (phase-a appendix #15) — per-(domain, instance)
+  // prompt-override read + sovereignty-confirm preview/apply +
+  // delete. Mirrors `domains-llm-policy.ts` token-by-token.
+  registerPromptOverridesRoutes({
     app: guardedApp,
     db: args.db,
     sessionHmacKey: args.sessionHmacKey,
