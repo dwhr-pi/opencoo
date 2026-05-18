@@ -25,7 +25,7 @@
  *   - No `--wiki` on this route — Activity is not compiled-
  *     knowledge chrome.
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AgentsRunNowButton } from "../components/AgentsRunNowButton.js";
@@ -42,6 +42,11 @@ import {
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
 import { formatDateTime, formatTime } from "../lib/intl-format.js";
 import { clearPat } from "../lib/pat-store.js";
+import {
+  markRouteFetchEnd,
+  markRouteFetchStart,
+  measureRouteNav,
+} from "../lib/perf-marks.js";
 import { openSseClient } from "../lib/sse.js";
 import type { AgentRun, Pipeline } from "../types.js";
 
@@ -1028,6 +1033,23 @@ function PipelinesView(props: {
 export function Activity(props: ActivityProps = {}): JSX.Element {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<ActivityTab>("feed");
+
+  // PR-B8+ (wave-17) — route-level perf bracket. Activity's
+  // default sub-tab is the SSE-only `feed`, so there's no
+  // fetchAdmin call to bracket at the route boundary. Emitting
+  // both marks on mount keeps the wave-end Lighthouse runner's
+  // expectation (every route emits a `route:<tab>:fetch-*` pair
+  // when the operator navigates to it) intact, regardless of
+  // which sub-tab is active. Copilot triage on PR-B8+.
+  const didMeasureNavRef = useRef(false);
+  useEffect(() => {
+    markRouteFetchStart("activity");
+    markRouteFetchEnd("activity");
+    if (!didMeasureNavRef.current) {
+      didMeasureNavRef.current = true;
+      measureRouteNav("activity");
+    }
+  }, []);
 
   const tabs: Array<{ key: ActivityTab; label: string }> = [
     { key: "feed", label: t("activity.tabs.feed") },

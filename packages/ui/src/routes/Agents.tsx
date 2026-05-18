@@ -15,7 +15,7 @@
  * `--alert` on the load-error message only; `--healthy` only on
  * the enabled-status indicator.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AgentInstanceDetail } from "../components/AgentInstanceDetail.js";
@@ -24,6 +24,11 @@ import { Card } from "../components/Card.js";
 import { EmptyStatePanel } from "../components/EmptyStatePanel.js";
 import { NewAgentInstanceModal } from "../components/NewAgentInstanceModal.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
+import {
+  markRouteFetchEnd,
+  markRouteFetchStart,
+  measureRouteNav,
+} from "../lib/perf-marks.js";
 import type { AgentInstance } from "../types.js";
 
 interface AgentsResponse {
@@ -58,7 +63,11 @@ export function Agents(props: AgentsProps = {}): JSX.Element {
   const [refreshNonce, setRefreshNonce] = useState(0);
   const opts = fetchOptsFor(props.fetchImpl);
 
+  // PR-B8+ (wave-17) — first-fetch-only nav measure (see Domains).
+  const didMeasureNavRef = useRef(false);
+
   useEffect((): void => {
+    markRouteFetchStart("agents");
     void (async (): Promise<void> => {
       // Clear any prior error at the start of each request so a
       // transient failure followed by a successful refetch doesn't
@@ -72,6 +81,12 @@ export function Agents(props: AgentsProps = {}): JSX.Element {
         setRows(r.rows);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        markRouteFetchEnd("agents");
+        if (!didMeasureNavRef.current) {
+          didMeasureNavRef.current = true;
+          measureRouteNav("agents");
+        }
       }
     })();
   }, [refreshNonce]);

@@ -37,6 +37,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -48,6 +49,11 @@ import { GlyphRingWithDot } from "../components/Glyph.js";
 import { Table, type TableColumn } from "../components/Table.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
 import { formatNumber as formatNumberShared, formatUsd as formatUsdShared } from "../lib/intl-format.js";
+import {
+  markRouteFetchEnd,
+  markRouteFetchStart,
+  measureRouteNav,
+} from "../lib/perf-marks.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -641,11 +647,18 @@ export function Cost(props: CostProps = {}): JSX.Element {
   const [tierSummary, setTierSummary] = useState<CostSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // PR-B8+ (wave-17) — first-fetch-only nav measure (see Domains).
+  // The route fires two parallel cost-summary requests
+  // (primary + tier-split); the bracket wraps the Promise.all so
+  // the perf measure captures both round-trips.
+  const didMeasureNavRef = useRef(false);
+
   useEffect(() => {
     let cancelled = false;
     setSummary(null);
     setTierSummary(null);
     setError(null);
+    markRouteFetchStart("cost");
     void (async () => {
       try {
         const [primary, tier] = await Promise.all([
@@ -664,6 +677,18 @@ export function Cost(props: CostProps = {}): JSX.Element {
         }
       } catch {
         if (!cancelled) setError(t("cost.loadError"));
+      } finally {
+        // Respect the cancelled flag so an abandoned request
+        // (operator changed filters / navigated away mid-flight)
+        // doesn't emit fetch-end and consume the one-shot nav
+        // measurement (Copilot triage on PR-B8+).
+        if (!cancelled) {
+          markRouteFetchEnd("cost");
+          if (!didMeasureNavRef.current) {
+            didMeasureNavRef.current = true;
+            measureRouteNav("cost");
+          }
+        }
       }
     })();
     return (): void => {

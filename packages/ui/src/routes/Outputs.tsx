@@ -29,6 +29,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
 } from "react";
@@ -47,6 +48,11 @@ import {
   ApiAuthError,
   ApiTransientError,
 } from "../lib/api.js";
+import {
+  markRouteFetchEnd,
+  markRouteFetchStart,
+  measureRouteNav,
+} from "../lib/perf-marks.js";
 import type { OutputChannel } from "../types.js";
 
 interface OutputsResponse {
@@ -141,7 +147,11 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
   // so the operator sees them before the modal closes.
   const opts = fetchOptsFor(props.fetchImpl);
 
+  // PR-B8+ (wave-17) — first-fetch-only nav measure (see Domains).
+  const didMeasureNavRef = useRef(false);
+
   useEffect((): void => {
+    markRouteFetchStart("outputs");
     void (async (): Promise<void> => {
       try {
         const r = await fetchAdmin<OutputsResponse>(
@@ -151,6 +161,12 @@ export function Outputs(props: OutputsProps = {}): JSX.Element {
         setRows(r.rows);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        markRouteFetchEnd("outputs");
+        if (!didMeasureNavRef.current) {
+          didMeasureNavRef.current = true;
+          measureRouteNav("outputs");
+        }
       }
     })();
   }, [refreshNonce]);

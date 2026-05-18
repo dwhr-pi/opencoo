@@ -8,7 +8,7 @@
  * `--alert` only on error display + apply-error mono line;
  * `--healthy` only on the apply-success indicator.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Btn } from "../components/Btn.js";
@@ -19,6 +19,11 @@ import {
   type LlmPolicyValue,
 } from "../components/LlmPolicyEditor.js";
 import { ApiValidationError, fetchAdmin } from "../lib/api.js";
+import {
+  markRouteFetchEnd,
+  markRouteFetchStart,
+  measureRouteNav,
+} from "../lib/perf-marks.js";
 import type { Domain, SovereigntyDiffPreview } from "../types.js";
 
 interface DomainsResponse {
@@ -46,13 +51,25 @@ export function LlmPolicy(): JSX.Element {
   const [applyError, setApplyError] = useState<string | null>(null);
   const [appliedNotice, setAppliedNotice] = useState<string | null>(null);
 
+  // PR-B8+ (wave-17) — first-fetch-only nav measure (see Domains).
+  // The post-apply re-fetch in `applyClick` shares the route's
+  // click mark but is an intra-route refresh, not a nav.
+  const didMeasureNavRef = useRef(false);
+
   useEffect((): void => {
+    markRouteFetchStart("llmPolicy");
     void (async (): Promise<void> => {
       try {
         const r = await fetchAdmin<DomainsResponse>("/api/admin/domains");
         setDomains(r.rows);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        markRouteFetchEnd("llmPolicy");
+        if (!didMeasureNavRef.current) {
+          didMeasureNavRef.current = true;
+          measureRouteNav("llmPolicy");
+        }
       }
     })();
   }, []);

@@ -43,6 +43,11 @@ import { useTranslation } from "react-i18next";
 import { EmptyStatePanel } from "../components/EmptyStatePanel.js";
 import { Table, type TableColumn } from "../components/Table.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
+import {
+  markRouteFetchEnd,
+  markRouteFetchStart,
+  measureRouteNav,
+} from "../lib/perf-marks.js";
 
 const PAGE_LIMIT = 50;
 
@@ -717,6 +722,11 @@ export function Audit(props: AuditProps = {}): JSX.Element {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // PR-B8+ (wave-17) — first-fetch-only nav measure (see Domains).
+  // Pagination (offset) refetches share the route's click mark
+  // but aren't the nav.
+  const didMeasureNavRef = useRef(false);
+
   useEffect(() => {
     // Race-safety: rapid offset changes (Next-Next-Next) or unmount
     // mid-flight can let an earlier request resolve AFTER a later
@@ -729,6 +739,7 @@ export function Audit(props: AuditProps = {}): JSX.Element {
     let cancelled = false;
     setRows(null);
     setError(null);
+    markRouteFetchStart("audit");
     void (async () => {
       try {
         const r = await fetchAdmin<AuditLogResponse>(
@@ -738,6 +749,19 @@ export function Audit(props: AuditProps = {}): JSX.Element {
         if (!cancelled) setRows(r.rows);
       } catch {
         if (!cancelled) setError(t("audit.loadError"));
+      } finally {
+        // Respect the cancelled flag so an abandoned request
+        // (operator paged away mid-flight, or unmount) doesn't
+        // emit fetch-end and consume the one-shot nav
+        // measurement — that would record a nav whose data was
+        // never rendered (Copilot triage on PR-B8+).
+        if (!cancelled) {
+          markRouteFetchEnd("audit");
+          if (!didMeasureNavRef.current) {
+            didMeasureNavRef.current = true;
+            measureRouteNav("audit");
+          }
+        }
       }
     })();
     return (): void => {

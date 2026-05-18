@@ -40,6 +40,11 @@ import { PromptEditor } from "../components/PromptEditor.js";
 import { PromptsDiffBanner } from "../components/PromptsDiffBanner.js";
 import { RevertOverrideModal } from "../components/RevertOverrideModal.js";
 import { ApiValidationError, fetchAdmin, fetchOptsFor } from "../lib/api.js";
+import {
+  markRouteFetchEnd,
+  markRouteFetchStart,
+  measureRouteNav,
+} from "../lib/perf-marks.js";
 import type {
   Domain,
   PromptManifestEntry,
@@ -271,8 +276,16 @@ export function Prompts(props: PromptsProps = {}): JSX.Element {
   const [paneNonce, setPaneNonce] = useState<number>(0);
   const [laggingNonce, setLaggingNonce] = useState<number>(0);
 
+  // PR-B8+ (wave-17) — first-fetch-only nav measure (see
+  // Domains.tsx). The manifest fetch is the route's earliest
+  // bootstrap, so the bracket lives here. The parallel
+  // domains+lagging effect below is captured end-to-end by the
+  // resulting `route:prompts:nav` measure.
+  const didMeasureNavRef = useRef(false);
+
   // ----- bootstrap: load manifest -----
   useEffect((): void => {
+    markRouteFetchStart("prompts");
     void (async (): Promise<void> => {
       try {
         const m = await fetchAdmin<PromptsManifestResponse>(
@@ -288,6 +301,12 @@ export function Prompts(props: PromptsProps = {}): JSX.Element {
         setManifest(mm);
       } catch (err) {
         setBootstrapError(err instanceof Error ? err.message : String(err));
+      } finally {
+        markRouteFetchEnd("prompts");
+        if (!didMeasureNavRef.current) {
+          didMeasureNavRef.current = true;
+          measureRouteNav("prompts");
+        }
       }
     })();
   }, []);

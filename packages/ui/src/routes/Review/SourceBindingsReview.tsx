@@ -12,7 +12,7 @@
  *   - Sovereignty-diff confirmation before any action that changes
  *     the binding's effective LLM policy scope.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Btn } from "../../components/Btn.js";
@@ -20,6 +20,11 @@ import { EmptyStatePanel } from "../../components/EmptyStatePanel.js";
 import { NoticeRow } from "../../components/NoticeRow.js";
 import { StatusPill } from "../../components/StatusPill.js";
 import { fetchAdmin, fetchOptsFor } from "../../lib/api.js";
+import {
+  markRouteFetchEnd,
+  markRouteFetchStart,
+  measureRouteNav,
+} from "../../lib/perf-marks.js";
 import type { SourceBinding } from "../../types.js";
 import { ReviewTableHeader } from "./ReviewTableHeader.js";
 
@@ -118,7 +123,15 @@ export function SourceBindingsReview(
   } | null>(null);
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
 
+  // PR-B8+ (wave-17) — first-fetch-only nav measure (see Domains).
+  // SourceBindingsReview is the Review route's default sub-view;
+  // the bracket therefore uses the parent route's tab key
+  // ("review") so the wave-end Lighthouse run sees a single nav
+  // pair per route.
+  const didMeasureNavRef = useRef(false);
+
   useEffect(() => {
+    markRouteFetchStart("review");
     void (async () => {
       try {
         const r = await fetchAdmin<SourceBindingsResponse>(
@@ -128,6 +141,12 @@ export function SourceBindingsReview(
         setRows(r.rows);
       } catch {
         setError(t("common.error"));
+      } finally {
+        markRouteFetchEnd("review");
+        if (!didMeasureNavRef.current) {
+          didMeasureNavRef.current = true;
+          measureRouteNav("review");
+        }
       }
     })();
   }, []);

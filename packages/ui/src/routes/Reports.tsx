@@ -25,7 +25,7 @@
  *   - `--healthy`: copy-to-clipboard success indicator + ok status —
  *     compliant.
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
@@ -43,6 +43,11 @@ import {
 } from "../lib/agent-runs-subscription.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
 import { formatDateTime, formatTime } from "../lib/intl-format.js";
+import {
+  markRouteFetchEnd,
+  markRouteFetchStart,
+  measureRouteNav,
+} from "../lib/perf-marks.js";
 import { safeErrorMessage } from "../lib/safe-error.js";
 import { extractDomainSlugFromPath } from "../lib/wiki-path.js";
 import type {
@@ -131,7 +136,14 @@ function HeartbeatView(props: {
   const [reports, setReports] = useState<readonly HeartbeatReport[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // PR-B8+ (wave-17) — first-fetch-only nav measure (see Domains).
+  // The diagnostics-panel preconditions fetch (when reports is
+  // empty) is the secondary fetch and is captured end-to-end by
+  // the resulting `route:reports:nav` measure.
+  const didMeasureNavRef = useRef(false);
+
   useEffect(() => {
+    markRouteFetchStart("reports");
     void (async () => {
       try {
         const r = await fetchAdmin<HeartbeatResponse>(
@@ -146,6 +158,12 @@ function HeartbeatView(props: {
         // Bearer-token bytes defensively in case the message echoes
         // a request header — see lib/safe-error.ts.
         setError(safeErrorMessage(err));
+      } finally {
+        markRouteFetchEnd("reports");
+        if (!didMeasureNavRef.current) {
+          didMeasureNavRef.current = true;
+          measureRouteNav("reports");
+        }
       }
     })();
   }, []);

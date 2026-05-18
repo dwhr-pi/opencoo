@@ -12,7 +12,7 @@
  * `--alert` on lastError mono line only; Badge tone mapping
  * (`advisory` for unbound) is the documented opt-in.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge, type BadgeTone } from "../components/Badge.js";
@@ -22,6 +22,11 @@ import { EmptyStatePanel } from "../components/EmptyStatePanel.js";
 import { NewSourceBindingModal } from "../components/NewSourceBindingModal.js";
 import { SourceBindingDetail } from "../components/SourceBindingDetail.js";
 import { fetchAdmin } from "../lib/api.js";
+import {
+  markRouteFetchEnd,
+  markRouteFetchStart,
+  measureRouteNav,
+} from "../lib/perf-marks.js";
 import type { SourceBinding } from "../types.js";
 
 interface SourcesResponse {
@@ -83,7 +88,16 @@ export function Sources(props: SourcesProps = {}): JSX.Element {
       ? { fetchImpl: props.fetchImpl as typeof fetch }
       : {};
 
+  // PR-B8+ (wave-17) — only the FIRST fetch following mount is a
+  // route-navigation event. Subsequent refetches (refreshNonce
+  // after create / detail commit) share the route's "click" mark
+  // but they aren't the nav. Without this gate measureRouteNav
+  // would re-measure click → fetch-end for every refetch and
+  // pollute `window.opencoo_perf` with non-navigation timings.
+  const didMeasureNavRef = useRef(false);
+
   useEffect((): void => {
+    markRouteFetchStart("sources");
     void (async (): Promise<void> => {
       try {
         const r = await fetchAdmin<SourcesResponse>(
@@ -93,6 +107,12 @@ export function Sources(props: SourcesProps = {}): JSX.Element {
         setRows(r.rows);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        markRouteFetchEnd("sources");
+        if (!didMeasureNavRef.current) {
+          didMeasureNavRef.current = true;
+          measureRouteNav("sources");
+        }
       }
     })();
     // refetch when the create modal flips refreshNonce.
