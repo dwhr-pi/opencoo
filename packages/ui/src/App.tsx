@@ -27,6 +27,7 @@ import { DebugBanner } from "./components/DebugBanner.js";
 import { Sidebar, TopBar } from "./components/Chrome.js";
 import { LiveRegions } from "./components/LiveRegions.js";
 import { PatEntryModal } from "./components/PatEntryModal.js";
+import { PerfPanel } from "./components/PerfPanel.js";
 import { RouteSkeleton } from "./components/RouteSkeleton.js";
 import { ToastProvider, ToastRegion } from "./components/Toast.js";
 import {
@@ -38,6 +39,11 @@ import {
   type SupportedLocale,
 } from "./lib/i18n.js";
 import { clearPat, getPat, setPat } from "./lib/pat-store.js";
+import {
+  markRouteClick,
+  markRouteImportEnd,
+  markRouteImportStart,
+} from "./lib/perf-marks.js";
 import type { Tab } from "./types.js";
 
 // ─── Route lazy boundaries ──────────────────────────────────
@@ -45,38 +51,79 @@ import type { Tab } from "./types.js";
 // default-export shape React.lazy requires. Source routes keep
 // their named exports intact so existing route unit tests
 // continue to pass unchanged.
-const Activity = lazy(() =>
-  import("./routes/Activity.js").then((m) => ({ default: m.Activity })),
+//
+// PR-B8 (wave-16) — each adapter brackets the dynamic `import()`
+// with `markRouteImportStart` / `markRouteImportEnd` so the
+// chunk-load duration lands on `window.opencoo_perf`. Vite still
+// emits one chunk per `import()` URL, so the side effect doesn't
+// regress B2's code-splitting.
+function tracedImport<T>(
+  tab: Tab,
+  factory: () => Promise<T>,
+): () => Promise<T> {
+  return (): Promise<T> => {
+    markRouteImportStart(tab);
+    return factory().then((mod) => {
+      markRouteImportEnd(tab);
+      return mod;
+    });
+  };
+}
+
+const Activity = lazy(
+  tracedImport("activity", () =>
+    import("./routes/Activity.js").then((m) => ({ default: m.Activity })),
+  ),
 );
-const Agents = lazy(() =>
-  import("./routes/Agents.js").then((m) => ({ default: m.Agents })),
+const Agents = lazy(
+  tracedImport("agents", () =>
+    import("./routes/Agents.js").then((m) => ({ default: m.Agents })),
+  ),
 );
-const Audit = lazy(() =>
-  import("./routes/Audit.js").then((m) => ({ default: m.Audit })),
+const Audit = lazy(
+  tracedImport("audit", () =>
+    import("./routes/Audit.js").then((m) => ({ default: m.Audit })),
+  ),
 );
-const Cost = lazy(() =>
-  import("./routes/Cost.js").then((m) => ({ default: m.Cost })),
+const Cost = lazy(
+  tracedImport("cost", () =>
+    import("./routes/Cost.js").then((m) => ({ default: m.Cost })),
+  ),
 );
-const Domains = lazy(() =>
-  import("./routes/Domains.js").then((m) => ({ default: m.Domains })),
+const Domains = lazy(
+  tracedImport("domains", () =>
+    import("./routes/Domains.js").then((m) => ({ default: m.Domains })),
+  ),
 );
-const LlmPolicy = lazy(() =>
-  import("./routes/LlmPolicy.js").then((m) => ({ default: m.LlmPolicy })),
+const LlmPolicy = lazy(
+  tracedImport("llmPolicy", () =>
+    import("./routes/LlmPolicy.js").then((m) => ({ default: m.LlmPolicy })),
+  ),
 );
-const Outputs = lazy(() =>
-  import("./routes/Outputs.js").then((m) => ({ default: m.Outputs })),
+const Outputs = lazy(
+  tracedImport("outputs", () =>
+    import("./routes/Outputs.js").then((m) => ({ default: m.Outputs })),
+  ),
 );
-const Prompts = lazy(() =>
-  import("./routes/Prompts.js").then((m) => ({ default: m.Prompts })),
+const Prompts = lazy(
+  tracedImport("prompts", () =>
+    import("./routes/Prompts.js").then((m) => ({ default: m.Prompts })),
+  ),
 );
-const Reports = lazy(() =>
-  import("./routes/Reports.js").then((m) => ({ default: m.Reports })),
+const Reports = lazy(
+  tracedImport("reports", () =>
+    import("./routes/Reports.js").then((m) => ({ default: m.Reports })),
+  ),
 );
-const Review = lazy(() =>
-  import("./routes/Review.js").then((m) => ({ default: m.Review })),
+const Review = lazy(
+  tracedImport("review", () =>
+    import("./routes/Review.js").then((m) => ({ default: m.Review })),
+  ),
 );
-const Sources = lazy(() =>
-  import("./routes/Sources.js").then((m) => ({ default: m.Sources })),
+const Sources = lazy(
+  tracedImport("sources", () =>
+    import("./routes/Sources.js").then((m) => ({ default: m.Sources })),
+  ),
 );
 
 /**
@@ -92,18 +139,30 @@ const Sources = lazy(() =>
  * `Tab` — the `Record<Tab, …>` type makes a missing entry a TS
  * compile error.
  */
+/**
+ * PR-B8 (wave-16) — prefetch entries are wrapped in the same
+ * tracedImport helper as the lazy adapters so the real chunk
+ * download time lands on `window.opencoo_perf` regardless of
+ * whether the chunk was warmed by hover/focus or pulled
+ * synchronously from the React.lazy adapter. Vite dedupes the
+ * dynamic-import URL across both call sites, so a hovered chunk
+ * + a subsequent click resolves the lazy adapter against the
+ * already-resolved promise; the import-start/end emitted from
+ * the prefetch path represents the ACTUAL download (Copilot
+ * triage on PR-B8).
+ */
 export const ROUTE_PREFETCH: Readonly<Record<Tab, () => Promise<unknown>>> = {
-  domains: (): Promise<unknown> => import("./routes/Domains.js"),
-  sources: (): Promise<unknown> => import("./routes/Sources.js"),
-  agents: (): Promise<unknown> => import("./routes/Agents.js"),
-  outputs: (): Promise<unknown> => import("./routes/Outputs.js"),
-  llmPolicy: (): Promise<unknown> => import("./routes/LlmPolicy.js"),
-  prompts: (): Promise<unknown> => import("./routes/Prompts.js"),
-  activity: (): Promise<unknown> => import("./routes/Activity.js"),
-  review: (): Promise<unknown> => import("./routes/Review.js"),
-  reports: (): Promise<unknown> => import("./routes/Reports.js"),
-  audit: (): Promise<unknown> => import("./routes/Audit.js"),
-  cost: (): Promise<unknown> => import("./routes/Cost.js"),
+  domains: tracedImport("domains", () => import("./routes/Domains.js")),
+  sources: tracedImport("sources", () => import("./routes/Sources.js")),
+  agents: tracedImport("agents", () => import("./routes/Agents.js")),
+  outputs: tracedImport("outputs", () => import("./routes/Outputs.js")),
+  llmPolicy: tracedImport("llmPolicy", () => import("./routes/LlmPolicy.js")),
+  prompts: tracedImport("prompts", () => import("./routes/Prompts.js")),
+  activity: tracedImport("activity", () => import("./routes/Activity.js")),
+  review: tracedImport("review", () => import("./routes/Review.js")),
+  reports: tracedImport("reports", () => import("./routes/Reports.js")),
+  audit: tracedImport("audit", () => import("./routes/Audit.js")),
+  cost: tracedImport("cost", () => import("./routes/Cost.js")),
 };
 
 interface CsrfResponse {
@@ -165,6 +224,13 @@ export function App(): JSX.Element {
       <LiveRegions />
       <AppInner />
       <ToastRegion />
+      {/* PR-B8 (wave-16) — perceived-performance debug panel.
+          Hidden by default. Renders only if `import.meta.env.DEV`
+          is true OR the URL carries `?perfDebug=1` — the runtime
+          query check holds the render path alive in the prod
+          bundle so a partner-deployment operator can flip the
+          panel on against a built bundle without a rebuild. */}
+      <PerfPanel />
     </ToastProvider>
   );
 }
@@ -225,7 +291,13 @@ function AppInner(): JSX.Element {
   // Tab navigation must clear the row-level crumb — the row name
   // belongs to the route we're leaving. The destination route
   // re-publishes its own crumb (or null) once mounted.
+  //
+  // PR-B8 (wave-16) — emit a `route:<tab>:click` perf mark so the
+  // wave-end Lighthouse run can measure the click → fetch-end
+  // bracket. Same hook fires for both the sidebar (callers of
+  // `navigateToTab`) and the palette dispatch below.
   const navigateToTab = useCallback((next: Tab): void => {
+    markRouteClick(next);
     setTab(next);
     setCrumb(null);
   }, []);
@@ -247,6 +319,11 @@ function AppInner(): JSX.Element {
   // rather than the empty picker (Copilot triage on PR-W10).
   const onPaletteNavigate = useCallback(
     (target: CommandPaletteTarget): void => {
+      // PR-B8 — palette nav is functionally a click for perf
+      // purposes (operator pressed Enter on a row); mark it the
+      // same way the sidebar does so the click → fetch-end
+      // bracket lands.
+      markRouteClick(target.tab);
       setDomainsOpenId(null);
       setSourcesOpenId(null);
       setAgentsOpenId(null);

@@ -363,3 +363,55 @@ describe("Tab type coverage (prefetch map is exhaustive)", () => {
     }
   });
 });
+
+// PR-B8 (wave-16) — sidebar nav fires a `route:<tab>:click`
+// perf mark, and each lazy `import()` is bracketed by
+// `route:<tab>:import-start` / `route:<tab>:import-end`. Tests
+// read entries from `window.opencoo_perf` — the side-channel
+// `lib/perf-marks.ts` writes to. That's the same channel the
+// dev PerfPanel and the wave-end Lighthouse runner read from,
+// so pinning that path keeps the test close to the production
+// contract.
+describe("App perf instrumentation (PR-B8)", () => {
+  beforeEach(() => {
+    delete (window as { opencoo_perf?: unknown }).opencoo_perf;
+  });
+
+  it("emits 'route:agents:click' on sidebar Agents click", async () => {
+    const { App } = await loadApp();
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.queryByTestId("route-domains")).not.toBeNull();
+    });
+    // Clear entries accumulated by the initial Domains render so
+    // the post-click assertion is unambiguous.
+    window.opencoo_perf = [];
+
+    const operate = document.querySelector('[data-group="operate"]');
+    expect(operate).not.toBeNull();
+    const agentsBtn = Array.from(operate!.querySelectorAll("button")).find(
+      (b) => b.textContent?.toLowerCase().includes("agent"),
+    );
+    expect(agentsBtn).not.toBeUndefined();
+    await act(async () => {
+      fireEvent.click(agentsBtn!);
+    });
+
+    const names = (window.opencoo_perf ?? []).map((e) => e.name);
+    expect(names).toContain("route:agents:click");
+  });
+
+  it("brackets each lazy import with import-start / import-end marks", async () => {
+    const { App } = await loadApp();
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.queryByTestId("route-domains")).not.toBeNull();
+    });
+    // Initial render evaluates the Domains lazy adapter; both
+    // import-start and import-end marks should land on the
+    // side-channel.
+    const names = (window.opencoo_perf ?? []).map((e) => e.name);
+    expect(names).toContain("route:domains:import-start");
+    expect(names).toContain("route:domains:import-end");
+  });
+});

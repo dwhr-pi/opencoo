@@ -13,7 +13,7 @@
  * the enabled-status indicator.
  */
 import type { KeyboardEvent } from "react";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Btn } from "../components/Btn.js";
@@ -27,6 +27,11 @@ import {
   OnboardingWizard,
 } from "../components/OnboardingWizard.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
+import {
+  markRouteFetchEnd,
+  markRouteFetchStart,
+  measureRouteNav,
+} from "../lib/perf-marks.js";
 import type { Domain } from "../types.js";
 
 interface DomainsResponse {
@@ -121,7 +126,25 @@ export function Domains(props: DomainsProps = {}): JSX.Element {
 
   const fetchOpts = fetchOptsFor(props.fetchImpl);
 
+  // PR-B8 (wave-16) — only the FIRST fetch following mount is a
+  // route-navigation event. Subsequent refetches (showDisabled
+  // toggle, refreshNonce after a create / detail commit) are
+  // intra-route operations — they share the route's "click" mark
+  // but they aren't the nav. Without this gate, measureRouteNav
+  // would re-measure click → fetch-end for every refetch and
+  // pollute `window.opencoo_perf` with non-navigation timings
+  // (Copilot triage on PR-B8).
+  const didMeasureNavRef = useRef(false);
+
   useEffect((): void => {
+    // PR-B8 (wave-16) — bracket the data-fetch with perf marks
+    // so the click → fetch-end measure lands on
+    // `window.opencoo_perf`. The Domains route is the
+    // representative wave-end Lighthouse target; the same
+    // pattern applies one-import-one-bracket to every other
+    // route (follow-up: instrument Sources / Agents / Activity
+    // / Review the same way once B8 lands).
+    markRouteFetchStart("domains");
     void (async (): Promise<void> => {
       try {
         const path = showDisabled
@@ -131,6 +154,12 @@ export function Domains(props: DomainsProps = {}): JSX.Element {
         setRows(r.rows);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        markRouteFetchEnd("domains");
+        if (!didMeasureNavRef.current) {
+          didMeasureNavRef.current = true;
+          measureRouteNav("domains");
+        }
       }
     })();
     // refetch when the create modal flips refreshNonce, when the
