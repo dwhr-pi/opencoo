@@ -19,7 +19,65 @@
  */
 import { PGlite } from "@electric-sql/pglite";
 import { isPgEnum, type PgEnum } from "drizzle-orm/pg-core";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+// PR-Flake (wave-17) — module-mock the `bullmq` Queue constructor.
+//
+// `composeProductionFromEnv` → `composeProductionWorkerContext` builds
+// three Queue handles internally (`ingestion.scanner.classify`,
+// `ingestion.scanner`, `ingestion.intake.dlq`) using the
+// `{ url: "redis://stub", ... }` connection from the test fixture.
+// BullMQ Queue eagerly opens an internal `ioredis` connection from
+// those options, which fires `getaddrinfo('stub')` against the real
+// DNS resolver. On CI's restricted-egress runners the lookup fails
+// with `EAI_AGAIN` AFTER the test has already torn down, surfacing as
+// an unhandled rejection that exit-1's the vitest shard. Locally the
+// same lookup fails with `ENOTFOUND` synchronously and is harmless,
+// which is why this regressed only on CI.
+//
+// The existing test seams (`forgetQueueFactory`, `worldviewQueueFactory`,
+// `registerScannerCronFn`, `registerWorldviewSafetyNetCronFn`) cover
+// every OTHER queue/cron the composition builds — these three are the
+// only ones the test couldn't substitute. Replacing `Queue` at the
+// module-mock level is the smallest test-side diff that closes the
+// gap; the production code that constructs the Queues is untouched.
+vi.mock("bullmq", async () => {
+  const actual = await vi.importActual<typeof import("bullmq")>("bullmq");
+  class FakeQueue {
+    public readonly name: string;
+    constructor(name: string) {
+      this.name = name;
+    }
+    async add(): Promise<{ readonly id: string }> {
+      return { id: "stub" };
+    }
+    async close(): Promise<void> {
+      return undefined;
+    }
+    async waitUntilReady(): Promise<void> {
+      return undefined;
+    }
+    async getRepeatableJobs(): Promise<readonly unknown[]> {
+      return [];
+    }
+    async removeRepeatableByKey(): Promise<void> {
+      return undefined;
+    }
+  }
+  return {
+    ...actual,
+    Queue: FakeQueue,
+  };
+});
 
 import * as schema from "@opencoo/shared/db/schema";
 import {
@@ -177,6 +235,23 @@ async function makeCompositionFixture(): Promise<CompositionFixture> {
 
 describe("composeProductionFromEnv — PR-Z4 output-channels wiring", () => {
   let fixture: CompositionFixture | null = null;
+  // PR-Flake (wave-17) — capture every unhandled rejection that
+  // escapes the test file. The previous failure mode was a BullMQ-
+  // owned ioredis raising `getaddrinfo EAI_AGAIN` AFTER the test had
+  // torn down; vitest then exit-1'd the shard. The pin-test at the
+  // bottom of the suite asserts this list stays empty.
+  const unhandledRejections: unknown[] = [];
+  const onUnhandledRejection = (reason: unknown): void => {
+    unhandledRejections.push(reason);
+  };
+
+  beforeAll(() => {
+    process.on("unhandledRejection", onUnhandledRejection);
+  });
+
+  afterAll(() => {
+    process.off("unhandledRejection", onUnhandledRejection);
+  });
 
   beforeEach(async () => {
     fixture = await makeCompositionFixture();
@@ -341,4 +416,36 @@ describe("composeProductionFromEnv — PR-Z4 output-channels wiring", () => {
         .catch(() => undefined);
     },
   );
+
+  // PR-Flake (wave-17) — pin-test for unhandled-rejection absence.
+  //
+  // Two-pronged assertion:
+  //   1. The `vi.mock("bullmq", ...)` block at module-top is in
+  //      effect — `Queue` resolves to the no-network FakeQueue.
+  //      Without the mock, `composeProductionWorkerContext` builds
+  //      three real BullMQ Queue handles against `redis://stub`,
+  //      each spawning an ioredis that fires `getaddrinfo('stub')`.
+  //      On CI's restricted-egress runners the lookup fails with
+  //      EAI_AGAIN POST-test and exit-1's the vitest shard.
+  //
+  //   2. After draining the macrotask + microtask queues, NO
+  //      unhandled rejection has reached the process-level handler.
+  //      Locally this passes either way (vitest's per-test
+  //      catchall swallows the synchronous ENOTFOUND); on CI the
+  //      late EAI_AGAIN escapes that catchall and would land here.
+  //
+  // Prong 1 catches the regression deterministically in any
+  // environment. Prong 2 is the defense-in-depth backstop.
+  it("does not leak post-test unhandled rejections (no EAI_AGAIN on CI)", async () => {
+    const { Queue } = await import("bullmq");
+    expect(Queue.name).toBe("FakeQueue");
+
+    // Two macrotask ticks + one microtask tick — enough for
+    // node:dns to settle a queued lookup and for ioredis' retry
+    // backoff to fire its first attempt.
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+    expect(unhandledRejections).toEqual([]);
+  });
 });
