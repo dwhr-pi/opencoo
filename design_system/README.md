@@ -81,11 +81,15 @@ opencoo looks like **printed documentation** — a technical manual, a blueprint
 
 Three families, one job each.
 
-- **Instrument Serif** (italic) — display only. Brand taglines, section ledes. Never body.
+- **Instrument Serif** (italic) — display only. Brand taglines, section ledes. Never body. **Inside the management console, the ONLY legal call site is `<Display>` (`packages/ui/src/components/Display.tsx`, wave-16 PR-C4).** An ESLint local rule (`packages/ui/eslint.local.js`) fails any other inline reference to `var(--font-serif)` / `t-lede` / `Instrument Serif`. Three strategic placements ship today: Reports heartbeat lede, Prompts empty-state lede, Domains tab top-line summary. `<Display level={1}>` is reserved for a future docs site; the UI uses level=2 + level=3 only.
 - **Geist** — everything UI: H1/H2/H3, body, card titles, buttons.
-- **JetBrains Mono** — paths, IDs, data, logs, micro labels (`REVIEW · APPROVE · REJECT`), button shortcuts (`⌘H`).
+- **JetBrains Mono** — paths, IDs, data, logs, micro labels (`REVIEW · APPROVE · REJECT`), button shortcuts (`⌘H`), the `?` tooltip-trigger character (PR-C1).
 
 Sizes are in `colors_and_type.css`. The `--tr-*` tokens encode tracking — negative on display/headings, positive on micro-caps.
+
+#### In-app help (`help.<term>` namespace)
+
+Per-jargon-term explanations live under the `help.<term>.{label,body}` i18n namespace. Each term renders via the `<Tooltip>` primitive (`packages/ui/src/components/Tooltip.tsx`, wave-16 PR-C1): a `<button>` with a JetBrains Mono `?` micro character, focus-keyboard reachable, ARIA-described, collision-positioned via `@floating-ui/react`. The glyph trio (RingWithDot / FilledDisc / OpenArc) is reserved for product-concept iconography; UI affordances use type. The PR-C1 baseline ships `reviewMode` / `allowedPaths` / `scopeDomainIds` / `worldviewEnabled` / `governanceCadence`. Adding a new term: write `help.<term>.label` (short noun phrase) + `help.<term>.body` (1-2 sentences explaining meaning + consequence-of-change) in `en.json`, mirror in `pl.json` (the `tools/i18n-check.ts` fence catches missing pl entries), then `<Tooltip term="<term>">` next to the form label or `<TooltipTrigger term="<term>" />` standalone.
 
 ### Backgrounds
 
