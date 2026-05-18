@@ -194,6 +194,7 @@
       "actions": {
         "save": "Save changes",
         "saving": "saving…",
+        "quickSave": "Save",
         "close": "Close",
         "cancel": "Cancel",
         "disable": "Disable",

@@ -41,6 +41,7 @@
  * it externally is by design (it is the public webhook target).
  */
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -54,7 +55,10 @@ import { Btn } from "./Btn.js";
 import { GlyphFilledDisc } from "./Glyph.js";
 import { ImpactPreviewDialog } from "./ImpactPreviewDialog.js";
 import { Modal } from "./Modal.js";
+import { SavingDot, type SavingDotState } from "./SavingDot.js";
+import { useToast } from "./Toast.js";
 import { TooltipTrigger } from "./Tooltip.js";
+import { useOptimisticPatch } from "../hooks/useOptimisticPatch.js";
 import {
   ApiAuthError,
   ApiTransientError,
@@ -62,6 +66,7 @@ import {
   fetchAdmin,
   fetchOptsFor,
 } from "../lib/api.js";
+import { safeErrorMessage } from "../lib/safe-error.js";
 import type { SourceBinding } from "../types.js";
 
 // PR-B5 (wave-16) follow-up — SourceBindingDetail's enable/disable
@@ -2179,72 +2184,98 @@ function RetentionOverridePanel(
   props: RetentionOverridePanelProps,
 ): JSX.Element {
   const { t } = useTranslation();
+  const toastApi = useToast();
   const persisted = props.binding.retentionDaysOverride ?? null;
   const domainDefault = props.binding.domainRetentionDays ?? null;
   const [draft, setDraft] = useState<string>(
     persisted === null ? "" : String(persisted),
   );
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusNote, setStatusNote] = useState<"saved" | "noOp" | null>(null);
+  const [cueState, setCueState] = useState<SavingDotState>("idle");
 
-  const save = async (): Promise<void> => {
+  /** Optimistic PATCH for `retention_days_override` (PR-B5+, wave-17).
+   *  The row beneath the modal sees the committed override immediately;
+   *  on 422 the value rolls back + the B7 alert toast surfaces. The
+   *  `applyFn` does the side-effecting bits — flipping the cue state,
+   *  surfacing the inline error slot on specific error classes,
+   *  bumping `onChanged` (or `noOp`-suppressing it). */
+  const applyOverride = useCallback(
+    async (next: number | null): Promise<number | null> => {
+      setCueState("saving");
+      setError(null);
+      setStatusNote(null);
+      try {
+        const resp = await fetchAdmin<{
+          id: string;
+          retention_days_override?: number | null;
+          noOp?: boolean;
+        }>(`/api/admin/source-bindings/${props.binding.id}`, {
+          method: "PATCH",
+          body: { retention_days_override: next },
+          ...fetchOptsFor(props.fetchImpl),
+        });
+        setCueState("success");
+        if (resp.noOp === true) {
+          setStatusNote("noOp");
+        } else {
+          setStatusNote("saved");
+          props.onChanged();
+        }
+        return next;
+      } catch (err) {
+        setCueState("error");
+        if (err instanceof ApiValidationError && err.status === 422) {
+          setError(t("sourceBindingDetail.retentionOverride.outOfRange"));
+        } else if (err instanceof ApiAuthError) {
+          setError(t("sources.detail.errors.auth"));
+        } else if (err instanceof ApiTransientError) {
+          setError(t("sources.detail.errors.transient"));
+        } else {
+          setError(t("sourceBindingDetail.retentionOverride.saveFailed"));
+        }
+        throw err;
+      }
+    },
+    [props, t],
+  );
+  const overrideOptimistic = useOptimisticPatch<number | null>(
+    persisted,
+    applyOverride,
+    {
+      rollbackToast: (err): void => {
+        toastApi.alert({
+          message: t("optimistic.savingError"),
+          details: safeErrorMessage(err),
+        });
+      },
+    },
+  );
+  const submitting = overrideOptimistic.saving;
+
+  const save = (): void => {
     setError(null);
     setStatusNote(null);
-    // Empty input → clear (null). Otherwise coerce to integer and
-    // gate at the client side BEFORE PATCH; the W5 API's Zod schema
-    // is the ground truth (1..365) and surfaces a 422 on out-of-range,
-    // but a client-side bound gives the operator a faster error path.
     const trimmed = draft.trim();
-    let body: { retention_days_override: number | null };
+    let next: number | null;
     if (trimmed === "") {
-      body = { retention_days_override: null };
+      next = null;
     } else {
       const n = Number(trimmed);
       if (!Number.isInteger(n) || n < 1 || n > 365) {
         setError(t("sourceBindingDetail.retentionOverride.outOfRange"));
         return;
       }
-      body = { retention_days_override: n };
+      next = n;
     }
-    setSubmitting(true);
-    try {
-      const resp = await fetchAdmin<{
-        id: string;
-        retention_days_override?: number | null;
-        noOp?: boolean;
-      }>(`/api/admin/source-bindings/${props.binding.id}`, {
-        method: "PATCH",
-        body,
-        ...fetchOptsFor(props.fetchImpl),
-      });
-      if (resp.noOp === true) {
-        setStatusNote("noOp");
-      } else {
-        setStatusNote("saved");
-        props.onChanged();
-      }
-    } catch (err) {
-      if (err instanceof ApiValidationError && err.status === 422) {
-        setError(t("sourceBindingDetail.retentionOverride.outOfRange"));
-        return;
-      }
-      if (err instanceof ApiAuthError) {
-        setError(t("sources.detail.errors.auth"));
-      } else if (err instanceof ApiTransientError) {
-        setError(t("sources.detail.errors.transient"));
-      } else {
-        setError(t("sourceBindingDetail.retentionOverride.saveFailed"));
-      }
-    } finally {
-      setSubmitting(false);
-    }
+    overrideOptimistic.setValue(next);
   };
 
   return (
     <div style={ALLOWED_PANEL_STYLE} data-testid="retention-override-panel">
       <span id="retention-override-title" style={LABEL_STYLE}>
         {t("sourceBindingDetail.retentionOverride.title")}
+        <SavingDot state={cueState} />
       </span>
       <p id="retention-override-helper" style={EDIT_FIELD_DESCRIPTION_STYLE}>
         {domainDefault === null
@@ -2310,7 +2341,7 @@ function RetentionOverridePanel(
           variant="subtle"
           disabled={submitting}
           onClick={(): void => {
-            void save();
+            save();
           }}
         >
           {submitting
@@ -2378,76 +2409,88 @@ const NOTES_MAX_LENGTH = 4096;
 
 function NotesPanel(props: NotesPanelProps): JSX.Element {
   const { t } = useTranslation();
+  const toastApi = useToast();
   const persisted = props.binding.notes ?? "";
   const [draft, setDraft] = useState<string>(persisted);
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<boolean>(false);
+  const [cueState, setCueState] = useState<SavingDotState>("idle");
 
   const overCap = draft.length > NOTES_MAX_LENGTH;
 
-  const patchNotes = async (value: string | null): Promise<void> => {
-    setError(null);
-    setSaved(false);
-    setSubmitting(true);
-    try {
-      await fetchAdmin<{ id: string; updated: true }>(
-        `/api/admin/source-bindings/${props.binding.id}`,
-        {
-          method: "PATCH",
-          body: { notes: value },
-          ...fetchOptsFor(props.fetchImpl),
-        },
-      );
-      setSaved(true);
-      props.onChanged();
-    } catch (err) {
-      if (err instanceof ApiValidationError && err.status === 422) {
-        setError(t("sourceBindingDetail.notes.overCap"));
-        return;
+  /** Optimistic PATCH for `notes` (PR-B5+, wave-17). `value === null`
+   *  clears; non-empty strings replace. The row beneath the modal
+   *  sees the new notes immediately; on 422 the value rolls back +
+   *  the B7 alert toast surfaces. */
+  const applyNotes = useCallback(
+    async (next: string | null): Promise<string | null> => {
+      setCueState("saving");
+      setError(null);
+      setSaved(false);
+      try {
+        await fetchAdmin<{ id: string; updated: true }>(
+          `/api/admin/source-bindings/${props.binding.id}`,
+          {
+            method: "PATCH",
+            body: { notes: next },
+            ...fetchOptsFor(props.fetchImpl),
+          },
+        );
+        setCueState("success");
+        setSaved(true);
+        props.onChanged();
+        return next;
+      } catch (err) {
+        setCueState("error");
+        if (err instanceof ApiValidationError && err.status === 422) {
+          setError(t("sourceBindingDetail.notes.overCap"));
+        } else if (err instanceof ApiAuthError) {
+          setError(t("sources.detail.errors.auth"));
+        } else if (err instanceof ApiTransientError) {
+          setError(t("sources.detail.errors.transient"));
+        } else {
+          setError(t("sourceBindingDetail.notes.saveFailed"));
+        }
+        throw err;
       }
-      if (err instanceof ApiAuthError) {
-        setError(t("sources.detail.errors.auth"));
-      } else if (err instanceof ApiTransientError) {
-        setError(t("sources.detail.errors.transient"));
-      } else {
-        setError(t("sourceBindingDetail.notes.saveFailed"));
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    },
+    [props, t],
+  );
+  const notesOptimistic = useOptimisticPatch<string | null>(
+    props.binding.notes ?? null,
+    applyNotes,
+    {
+      rollbackToast: (err): void => {
+        toastApi.alert({
+          message: t("optimistic.savingError"),
+          details: safeErrorMessage(err),
+        });
+      },
+    },
+  );
+  const submitting = notesOptimistic.saving;
 
   const onSave = (): void => {
-    // overCap is also gated by the Save button's `disabled` prop; this
-    // guard is kept as defense-in-depth so a programmatic click via the
-    // DOM ref still surfaces an inline error rather than firing a PATCH
-    // the server's Zod boundary would reject (Copilot review fix-up:
-    // pin the surface so the dead-branch concern resolves to a
-    // documented redundancy, not a latent UX gap).
     if (overCap) {
       setError(t("sourceBindingDetail.notes.overCap"));
       return;
     }
-    // Empty string is rejected by the API — the operator clears via
-    // the "Clear notes" button which sends `null`. If the operator
-    // tries to Save while the textarea is empty, surface the same
-    // hint inline.
     if (draft.length === 0) {
       setError(t("sourceBindingDetail.notes.emptyHint"));
       return;
     }
-    void patchNotes(draft);
+    notesOptimistic.setValue(draft);
   };
   const onClear = (): void => {
     setDraft("");
-    void patchNotes(null);
+    notesOptimistic.setValue(null);
   };
 
   return (
     <div style={ALLOWED_PANEL_STYLE} data-testid="notes-panel">
       <span id="notes-title" style={LABEL_STYLE}>
         {t("sourceBindingDetail.notes.title")}
+        <SavingDot state={cueState} />
       </span>
       <p id="notes-helper" style={EDIT_FIELD_DESCRIPTION_STYLE}>
         {t("sourceBindingDetail.notes.helper")}

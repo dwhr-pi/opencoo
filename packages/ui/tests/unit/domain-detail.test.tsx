@@ -15,7 +15,15 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { DomainDetail } from "../../src/components/DomainDetail.js";
+import { ToastProvider } from "../../src/components/Toast.js";
 import type { Domain } from "../../src/types.js";
+
+/** PR-B5+ (wave-17): DomainDetail now calls `useToast` for the
+ *  per-field optimistic-PATCH rollback alerts. Wrap renders in
+ *  ToastProvider. */
+function withProvider(node: JSX.Element): JSX.Element {
+  return <ToastProvider>{node}</ToastProvider>;
+}
 
 const DOMAIN_ID = "11111111-2222-3333-4444-555555555555";
 
@@ -59,14 +67,14 @@ describe("DomainDetail", () => {
     });
     const onChanged = vi.fn();
     const onClose = vi.fn();
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain()}
         onClose={onClose}
         onChanged={onChanged}
         fetchImpl={fetchImpl as unknown as typeof fetch}
       />,
-    );
+    ));
     const input = screen.getByLabelText(/display name/i) as HTMLInputElement;
     await user.clear(input);
     await user.type(input, "Renamed wiki");
@@ -101,14 +109,14 @@ describe("DomainDetail", () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch;
     const onChanged = vi.fn();
     const onClose = vi.fn();
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain()}
         onClose={onClose}
         onChanged={onChanged}
         fetchImpl={fetchImpl}
       />,
-    );
+    ));
     await user.click(screen.getByRole("button", { name: /save changes/i }));
     expect(
       (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.length,
@@ -119,14 +127,14 @@ describe("DomainDetail", () => {
   it("Hard-delete button is disabled when bindingCount > 0; helper message renders", async () => {
     const user = userEvent.setup();
     const fetchImpl = vi.fn() as unknown as typeof fetch;
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain({ bindingCount: 3 })}
         onClose={() => undefined}
         onChanged={() => undefined}
         fetchImpl={fetchImpl}
       />,
-    );
+    ));
     // Open the hard-delete confirmation panel.
     await user.click(
       screen.getByRole("button", { name: /delete permanently/i }),
@@ -157,14 +165,14 @@ describe("DomainDetail", () => {
     });
     const onChanged = vi.fn();
     const onClose = vi.fn();
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain()}
         onClose={onClose}
         onChanged={onChanged}
         fetchImpl={fetchImpl as unknown as typeof fetch}
       />,
-    );
+    ));
     await user.click(
       screen.getByRole("button", { name: /delete permanently/i }),
     );
@@ -204,14 +212,14 @@ describe("DomainDetail", () => {
     });
     const onChanged = vi.fn();
     const onClose = vi.fn();
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain()}
         onClose={onClose}
         onChanged={onChanged}
         fetchImpl={fetchImpl as unknown as typeof fetch}
       />,
-    );
+    ));
     await user.click(screen.getByRole("button", { name: /^disable$/i }));
     // Confirmation panel appears with the "Confirm disable" button.
     await user.click(
@@ -244,14 +252,14 @@ describe("DomainDetail", () => {
       }
       return new Response("not found", { status: 404 });
     });
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain()}
         onClose={() => undefined}
         onChanged={() => undefined}
         fetchImpl={fetchImpl as unknown as typeof fetch}
       />,
-    );
+    ));
     const btn = screen.getByRole("button", { name: /recompile worldview/i });
     await user.click(btn);
 
@@ -282,14 +290,14 @@ describe("DomainDetail", () => {
 
   it("Recompile-worldview button is disabled when the domain is soft-disabled", async () => {
     const fetchImpl = vi.fn(async () => new Response("", { status: 404 }));
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain({ disabledAt: "2026-05-10T00:00:00Z" })}
         onClose={() => undefined}
         onChanged={() => undefined}
         fetchImpl={fetchImpl as unknown as typeof fetch}
       />,
-    );
+    ));
     const btn = screen.getByRole("button", { name: /recompile worldview/i });
     expect((btn as HTMLButtonElement).disabled).toBe(true);
   });
@@ -309,14 +317,14 @@ describe("DomainDetail", () => {
       }
       return new Response("not found", { status: 404 });
     });
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain()}
         onClose={() => undefined}
         onChanged={() => undefined}
         fetchImpl={fetchImpl as unknown as typeof fetch}
       />,
-    );
+    ));
     // Tick the aggregator toggle and save.
     await user.click(
       screen.getByRole("checkbox", { name: /aggregator/i }),
@@ -343,7 +351,7 @@ describe("DomainDetail", () => {
  */
 describe("DomainDetail — Configuration section (PR-W3, phase-a appendix #15)", () => {
   it("renders Configuration section with the five new fields populated from props", () => {
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain({
           retentionDays: 30,
@@ -356,7 +364,7 @@ describe("DomainDetail — Configuration section (PR-W3, phase-a appendix #15)",
         onChanged={() => undefined}
         fetchImpl={vi.fn() as unknown as typeof fetch}
       />,
-    );
+    ));
     expect(screen.getByLabelText(/retention/i)).toHaveValue(30);
     // PR-C1 (wave-16) added a `?` Tooltip trigger next to the
     // governance + worldview labels; its aria-label echoes the term
@@ -404,7 +412,7 @@ describe("DomainDetail — Configuration section (PR-W3, phase-a appendix #15)",
     });
     const onChanged = vi.fn();
     const onClose = vi.fn();
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain({
           retentionDays: null,
@@ -417,7 +425,7 @@ describe("DomainDetail — Configuration section (PR-W3, phase-a appendix #15)",
         onChanged={onChanged}
         fetchImpl={fetchImpl as unknown as typeof fetch}
       />,
-    );
+    ));
 
     // Retention: 0 → 14 (set from cleared).
     const retention = screen.getByLabelText(/retention/i) as HTMLInputElement;
@@ -429,7 +437,11 @@ describe("DomainDetail — Configuration section (PR-W3, phase-a appendix #15)",
       screen.getByLabelText(/governance cadence/i, { selector: "select" }),
       "nightly",
     );
-    // Worldview enabled: true → false. Pin to the checkbox.
+    // Worldview enabled: true → false. Pin to the checkbox. PR-B5+
+    // (wave-17): this click fires its OWN single-field optimistic
+    // PATCH (separate from the combined Save below) — the wave-17
+    // change moved the 3 whitelisted fields off the combined Save
+    // and onto per-field optimistic hooks.
     await user.click(
       screen.getByLabelText(/worldview compilation/i, {
         selector: "input[type='checkbox']",
@@ -441,23 +453,40 @@ describe("DomainDetail — Configuration section (PR-W3, phase-a appendix #15)",
 
     await waitFor(() =>
       expect(
-        fetchImpl.mock.calls.some(
+        fetchImpl.mock.calls.filter(
           (c) =>
             String(c[0]) === `/api/admin/domains/${DOMAIN_ID}` &&
             (c[1] as RequestInit | undefined)?.method === "PATCH",
-        ),
-      ).toBe(true),
+        ).length,
+      ).toBeGreaterThanOrEqual(2),
     );
-    const patchCall = fetchImpl.mock.calls.find(
+    const patchCalls = fetchImpl.mock.calls.filter(
       (c) =>
         String(c[0]) === `/api/admin/domains/${DOMAIN_ID}` &&
         (c[1] as RequestInit | undefined)?.method === "PATCH",
-    )!;
-    const body = JSON.parse(String((patchCall[1] as RequestInit).body));
-    expect(body).toEqual({
+    );
+    // PR-B5+ split: one PATCH is the per-field worldview commit
+    // {worldview_enabled: false}; another is the combined Save with
+    // the remaining (non-whitelisted) fields.
+    const worldviewPatch = patchCalls.find((c) => {
+      const b = JSON.parse(String((c[1] as RequestInit).body));
+      return "worldview_enabled" in b;
+    });
+    expect(worldviewPatch).toBeTruthy();
+    expect(
+      JSON.parse(String((worldviewPatch![1] as RequestInit).body)),
+    ).toEqual({ worldview_enabled: false });
+
+    const combinedPatch = patchCalls.find((c) => {
+      const b = JSON.parse(String((c[1] as RequestInit).body));
+      return !("worldview_enabled" in b);
+    });
+    expect(combinedPatch).toBeTruthy();
+    expect(
+      JSON.parse(String((combinedPatch![1] as RequestInit).body)),
+    ).toEqual({
       retention_days: 14,
       governance_cadence: "nightly",
-      worldview_enabled: false,
     });
     expect(onChanged).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
@@ -470,7 +499,7 @@ describe("DomainDetail — Configuration section (PR-W3, phase-a appendix #15)",
       void init;
       return new Response(JSON.stringify({ id: DOMAIN_ID }), { status: 200 });
     });
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain({
           retentionDays: 90,
@@ -483,7 +512,7 @@ describe("DomainDetail — Configuration section (PR-W3, phase-a appendix #15)",
         onChanged={() => undefined}
         fetchImpl={fetchImpl as unknown as typeof fetch}
       />,
-    );
+    ));
     // Clear retention.
     await user.clear(screen.getByLabelText(/retention/i));
     // Clear review role.
@@ -519,14 +548,14 @@ describe("DomainDetail — Configuration section (PR-W3, phase-a appendix #15)",
   // sitting next to its label so operators can read the term
   // explanation without leaving the form.
   it("renders `?` tooltip triggers next to worldview + governance-cadence labels (PR-C1)", () => {
-    render(
+    render(withProvider(
       <DomainDetail
         domain={makeDomain()}
         onClose={vi.fn()}
         onChanged={vi.fn()}
         fetchImpl={vi.fn() as unknown as typeof fetch}
       />,
-    );
+    ));
     // Each trigger button is `aria-label="About <term-label>"`.
     // We search by accessible-name pattern (case-insensitive) so
     // small wording changes ("review mode" vs "Review mode") still

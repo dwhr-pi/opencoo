@@ -163,13 +163,24 @@ export function AgentInstanceDetail(
     [],
   );
 
-  // ── Optimistic-patch lifecycle cues (PR-B5, wave-16) ───────────────────
+  // ── Optimistic-patch lifecycle cues (PR-B5, wave-16; PR-B5+, wave-17) ──
   // The saving-cue dot next to each whitelisted field renders one of
   // four states (`idle | saving | success | error`) projected from
   // `useOptimisticPatch`'s `saving + lastError` pair via local state.
   // The B7 alert toast surfaces on rollback via `fireRollbackToast`.
+  //
+  // Wave-16 baseline routed `enabled` through the hook. Wave-17 B5+
+  // extends the wiring to `name`, `locale`, and `scope_domain_ids`
+  // (the per-field Save buttons stay; their PATCH dispatch now flows
+  // through useOptimisticPatch so the row beneath sees the new value
+  // immediately, the saving-cue dot fades in, and on 422 the field
+  // reverts + the B7 alert toast surfaces).
   const [enabledCueState, setEnabledCueState] =
     useState<SavingDotState>("idle");
+  const [nameCueState, setNameCueState] = useState<SavingDotState>("idle");
+  const [localeCueState, setLocaleCueState] =
+    useState<SavingDotState>("idle");
+  const [scopeCueState, setScopeCueState] = useState<SavingDotState>("idle");
 
   const fireRollbackToast = useCallback(
     (err: unknown): void => {
@@ -278,13 +289,46 @@ export function AgentInstanceDetail(
   );
   const scheduleDirty = scheduleCron !== (props.instance.scheduleCron ?? "");
 
-  // ── Name state (PR-W4-UI) ──────────────────────────────────────────────
+  // ── Name state (PR-W4-UI; optimistic via PR-B5+, wave-17) ──────────────
+  //
+  // The textarea draft is local; submitting routes through
+  // `useOptimisticPatch` so the row beneath the modal sees the new
+  // name immediately. `nameOptimistic.value` is the committed name
+  // (rolls back to the prior value on 422 + surfaces alert toast).
 
-  const [name, setName] = useState<string>(props.instance.name);
   const [nameError, setNameError] = useState<string | null>(null);
-  const nameDirty = name.trim() !== props.instance.name && name.trim().length > 0;
+  const applyName = useCallback(
+    async (next: string): Promise<string> => {
+      setNameCueState("saving");
+      try {
+        await fetchAdmin(`/api/admin/agent-instances/${props.instance.id}`, {
+          method: "PATCH",
+          body: { name: next },
+          ...opts,
+        });
+        if (mountedRef.current) {
+          setNameCueState("success");
+          props.onChanged();
+        }
+        return next;
+      } catch (err) {
+        if (mountedRef.current) setNameCueState("error");
+        throw err;
+      }
+    },
+    [props, opts],
+  );
+  const nameOptimistic = useOptimisticPatch<string>(
+    props.instance.name,
+    applyName,
+    { rollbackToast: fireRollbackToast },
+  );
+  const [nameDraft, setNameDraft] = useState<string>(props.instance.name);
+  const nameDirty =
+    nameDraft.trim() !== nameOptimistic.value &&
+    nameDraft.trim().length > 0;
 
-  // ── Locale state (PR-W4-UI) ────────────────────────────────────────────
+  // ── Locale state (PR-W4-UI; optimistic via PR-B5+, wave-17) ────────────
 
   /** Server enum is `en | pl | auto`. The widget pins these literally;
    *  the API's Zod parser is the source of truth and will 422 on a
@@ -296,18 +340,71 @@ export function AgentInstanceDetail(
     if (v === "en" || v === "pl" || v === "auto") return v;
     return "en";
   })();
-  const [locale, setLocale] = useState<LocaleOpt>(initialLocale);
+  const applyLocale = useCallback(
+    async (next: LocaleOpt): Promise<LocaleOpt> => {
+      setLocaleCueState("saving");
+      try {
+        await fetchAdmin(`/api/admin/agent-instances/${props.instance.id}`, {
+          method: "PATCH",
+          body: { locale: next },
+          ...opts,
+        });
+        if (mountedRef.current) {
+          setLocaleCueState("success");
+          props.onChanged();
+        }
+        return next;
+      } catch (err) {
+        if (mountedRef.current) setLocaleCueState("error");
+        throw err;
+      }
+    },
+    [props, opts],
+  );
+  const localeOptimistic = useOptimisticPatch<LocaleOpt>(
+    initialLocale,
+    applyLocale,
+    { rollbackToast: fireRollbackToast },
+  );
+  const locale = localeOptimistic.value;
 
-  // ── Scope state (PR-W4-UI) ─────────────────────────────────────────────
+  // ── Scope state (PR-W4-UI; optimistic via PR-B5+, wave-17) ─────────────
 
   const initialScope = props.instance.scopeDomainIds ?? [];
-  const [scopeIds, setScopeIds] = useState<ReadonlyArray<string>>(initialScope);
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [scopeEditing, setScopeEditing] = useState<boolean>(false);
-  // Source-of-truth for the chip list — only updated after a
-  // successful PATCH so cancel-mid-edit reverts cleanly.
-  const [scopeCommitted, setScopeCommitted] =
-    useState<ReadonlyArray<string>>(initialScope);
+  // Editable draft, separate from the committed value below.
+  const [scopeIds, setScopeIds] = useState<ReadonlyArray<string>>(initialScope);
+  const applyScope = useCallback(
+    async (
+      next: ReadonlyArray<string>,
+    ): Promise<ReadonlyArray<string>> => {
+      setScopeCueState("saving");
+      try {
+        await fetchAdmin(`/api/admin/agent-instances/${props.instance.id}`, {
+          method: "PATCH",
+          body: { scope_domain_ids: next },
+          ...opts,
+        });
+        if (mountedRef.current) {
+          setScopeCueState("success");
+          props.onChanged();
+        }
+        return next;
+      } catch (err) {
+        if (mountedRef.current) setScopeCueState("error");
+        throw err;
+      }
+    },
+    [props, opts],
+  );
+  const scopeOptimistic = useOptimisticPatch<ReadonlyArray<string>>(
+    initialScope,
+    applyScope,
+    { rollbackToast: fireRollbackToast },
+  );
+  // Committed (row-beneath-the-modal) value.
+  const scopeCommitted = scopeOptimistic.value;
   const scopeDirty =
     scopeEditing &&
     (scopeIds.length !== scopeCommitted.length ||
@@ -417,99 +514,77 @@ export function AgentInstanceDetail(
 
   // ── Name / Locale / Scope / Memory-clear (PR-W4-UI) ──────────────────
 
-  const saveName = async (): Promise<void> => {
-    if (busy || onCooldown() || !nameDirty) return;
+  const saveName = (): void => {
+    if (onCooldown() || !nameDirty || nameOptimistic.saving) return;
     setNameError(null);
-    setBusy(true);
-    try {
-      await fetchAdmin(`/api/admin/agent-instances/${props.instance.id}`, {
-        method: "PATCH",
-        body: { name: name.trim() },
-        ...opts,
-      });
-      if (!mountedRef.current) return;
-      flashToast("healthy", t("agentInstance.detail.nameSaved"));
-      startCooldown();
-      props.onChanged();
-    } catch (err) {
-      if (!mountedRef.current) return;
-      if (err instanceof ApiValidationError && err.status === 409) {
-        const code = (err.body as { error?: string } | undefined)?.error;
-        if (code === "name_collision") {
-          setNameError(t("agentInstance.detail.errors.nameCollision"));
-          return;
-        }
-      }
-      flashToast("alert", mapErr(err, t("errors.bindOutputsFailed")));
-    } finally {
-      if (mountedRef.current) setBusy(false);
-    }
+    nameOptimistic.setValue(nameDraft.trim());
+    startCooldown();
   };
 
-  const saveLocale = async (next: LocaleOpt): Promise<void> => {
-    if (busy || onCooldown() || next === locale) return;
-    setBusy(true);
-    try {
-      await fetchAdmin(`/api/admin/agent-instances/${props.instance.id}`, {
-        method: "PATCH",
-        body: { locale: next },
-        ...opts,
-      });
-      if (!mountedRef.current) return;
-      setLocale(next);
-      flashToast("healthy", t("agentInstance.detail.localeSaved"));
-      startCooldown();
-      props.onChanged();
-    } catch (err) {
-      if (!mountedRef.current) return;
-      flashToast("alert", mapErr(err, t("errors.bindOutputsFailed")));
-    } finally {
-      if (mountedRef.current) setBusy(false);
-    }
+  const saveLocale = (next: LocaleOpt): void => {
+    if (onCooldown() || next === locale || localeOptimistic.saving) return;
+    localeOptimistic.setValue(next);
+    startCooldown();
   };
 
-  const saveScope = async (): Promise<void> => {
-    if (busy || onCooldown() || !scopeDirty) return;
+  const saveScope = (): void => {
+    if (onCooldown() || !scopeDirty || scopeOptimistic.saving) return;
     if (scopeIds.length === 0) {
       setScopeError(t("agentInstance.detail.errors.scopeRequired"));
       return;
     }
     setScopeError(null);
-    setBusy(true);
-    try {
-      await fetchAdmin(`/api/admin/agent-instances/${props.instance.id}`, {
-        method: "PATCH",
-        body: { scope_domain_ids: scopeIds },
-        ...opts,
-      });
-      if (!mountedRef.current) return;
-      setScopeCommitted(scopeIds);
-      setScopeEditing(false);
-      flashToast("healthy", t("agentInstance.detail.scopeSaved"));
-      startCooldown();
-      props.onChanged();
-    } catch (err) {
-      if (!mountedRef.current) return;
-      if (err instanceof ApiValidationError && err.status === 422) {
-        const code = (err.body as { error?: string } | undefined)?.error;
-        if (code === "unknown_scope_domain_ids") {
-          setScopeError(
-            t("agentInstance.detail.errors.unknownScopeDomainIds"),
-          );
-          return;
-        }
-        if (code === "duplicate_scope_domain_ids") {
-          setScopeError(
-            t("agentInstance.detail.errors.duplicateScopeDomainIds"),
-          );
-          return;
-        }
-      }
-      flashToast("alert", mapErr(err, t("errors.bindOutputsFailed")));
-    } finally {
-      if (mountedRef.current) setBusy(false);
-    }
+    // Close the chip-editor immediately so the row beneath shows the
+    // new chips via `scopeOptimistic.value`. On 422 the value rolls
+    // back; specific error codes (`unknown_scope_domain_ids` /
+    // `duplicate_scope_domain_ids`) still surface in the inline slot
+    // via the `lastError` effect below.
+    setScopeEditing(false);
+    scopeOptimistic.setValue(scopeIds);
+    startCooldown();
   };
+
+  /** Translate scope-specific 422 codes from `lastError` into the
+   *  inline error slot. Each `useOptimisticPatch` cycle clears
+   *  `lastError` on the next `setValue`, so this effect is idempotent
+   *  across multiple submissions. Also re-opens the chip editor on
+   *  error so the operator can see the inline error + the
+   *  pre-failure draft they tried to commit (Copilot triage:
+   *  closed-editor-on-422 hides the error slot otherwise). */
+  useEffect((): void => {
+    const err = scopeOptimistic.lastError;
+    if (err === null) return;
+    if (err instanceof ApiValidationError && err.status === 422) {
+      const code = (err.body as { error?: string } | undefined)?.error;
+      if (code === "unknown_scope_domain_ids") {
+        setScopeError(
+          t("agentInstance.detail.errors.unknownScopeDomainIds"),
+        );
+        setScopeEditing(true);
+        return;
+      }
+      if (code === "duplicate_scope_domain_ids") {
+        setScopeError(
+          t("agentInstance.detail.errors.duplicateScopeDomainIds"),
+        );
+        setScopeEditing(true);
+        return;
+      }
+    }
+  }, [scopeOptimistic.lastError, t]);
+
+  /** Map `name` PATCH 409 (`name_collision`) into the inline name
+   *  error slot. Same idempotency story as scope above. */
+  useEffect((): void => {
+    const err = nameOptimistic.lastError;
+    if (err === null) return;
+    if (err instanceof ApiValidationError && err.status === 409) {
+      const code = (err.body as { error?: string } | undefined)?.error;
+      if (code === "name_collision") {
+        setNameError(t("agentInstance.detail.errors.nameCollision"));
+      }
+    }
+  }, [nameOptimistic.lastError, t]);
 
   const cancelScopeEdit = (): void => {
     setScopeIds(scopeCommitted);
@@ -581,21 +656,22 @@ export function AgentInstanceDetail(
           <div>{props.instance.outputChannelCount}</div>
         </div>
 
-        {/* Name editor (PR-W4-UI) */}
+        {/* Name editor (PR-W4-UI; optimistic via PR-B5+) */}
         <h3 style={SECTION_HEADING_STYLE}>
           {t("agentInstance.detail.name")}
+          <SavingDot state={nameCueState} />
         </h3>
         <div style={SECTION_STYLE}>
           <input
             type="text"
-            value={name}
+            value={nameDraft}
             onChange={(e): void => {
-              setName(e.target.value);
+              setNameDraft(e.target.value);
               setNameError(null);
             }}
             style={INPUT_STYLE}
             maxLength={100}
-            disabled={busy}
+            disabled={busy || nameOptimistic.saving}
             aria-invalid={nameError !== null ? true : undefined}
           />
           {nameError !== null ? (
@@ -615,19 +691,22 @@ export function AgentInstanceDetail(
             <Btn
               variant="ghost"
               onClick={(): void => {
-                void saveName();
+                saveName();
               }}
-              disabled={busy || onCooldown() || !nameDirty}
+              disabled={
+                busy || onCooldown() || !nameDirty || nameOptimistic.saving
+              }
             >
               {t("agentInstance.detail.saveName")}
             </Btn>
           </div>
         </div>
 
-        {/* Scope editor (PR-W4-UI) */}
+        {/* Scope editor (PR-W4-UI; optimistic via PR-B5+) */}
         <h3 style={SECTION_HEADING_STYLE}>
           {t("agentInstance.detail.scope")}
           <TooltipTrigger term="scopeDomainIds" />
+          <SavingDot state={scopeCueState} />
         </h3>
         <div style={SECTION_STYLE}>
           {scopeEditing ? (
@@ -673,9 +752,14 @@ export function AgentInstanceDetail(
                 <Btn
                   variant="ghost"
                   onClick={(): void => {
-                    void saveScope();
+                    saveScope();
                   }}
-                  disabled={busy || onCooldown() || !scopeDirty}
+                  disabled={
+                    busy ||
+                    onCooldown() ||
+                    !scopeDirty ||
+                    scopeOptimistic.saving
+                  }
                 >
                   {t("agentInstance.detail.saveScope")}
                 </Btn>
@@ -734,18 +818,19 @@ export function AgentInstanceDetail(
           )}
         </div>
 
-        {/* Locale editor (PR-W4-UI) */}
+        {/* Locale editor (PR-W4-UI; optimistic via PR-B5+) */}
         <h3 style={SECTION_HEADING_STYLE}>
           {t("agentInstance.detail.locale")}
+          <SavingDot state={localeCueState} />
         </h3>
         <div style={SECTION_STYLE}>
           <select
             value={locale}
-            disabled={busy || onCooldown()}
+            disabled={busy || onCooldown() || localeOptimistic.saving}
             onChange={(e): void => {
               const v = e.target.value;
               if (v === "en" || v === "pl" || v === "auto") {
-                void saveLocale(v);
+                saveLocale(v);
               }
             }}
             style={INPUT_STYLE}

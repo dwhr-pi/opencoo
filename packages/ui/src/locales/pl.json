@@ -195,6 +195,7 @@
       "actions": {
         "save": "Zapisz zmiany",
         "saving": "zapisywanie…",
+        "quickSave": "Zapisz",
         "close": "Zamknij",
         "cancel": "Anuluj",
         "disable": "Wyłącz",
