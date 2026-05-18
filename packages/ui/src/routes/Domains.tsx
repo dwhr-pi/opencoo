@@ -22,6 +22,10 @@ import { Display } from "../components/Display.js";
 import { DomainDetail } from "../components/DomainDetail.js";
 import { EmptyStatePanel } from "../components/EmptyStatePanel.js";
 import { NewDomainModal } from "../components/NewDomainModal.js";
+import {
+  ONBOARDING_DISMISSED_KEY,
+  OnboardingWizard,
+} from "../components/OnboardingWizard.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
 import type { Domain } from "../types.js";
 
@@ -74,6 +78,46 @@ export function Domains(props: DomainsProps = {}): JSX.Element {
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [showDisabled, setShowDisabled] = useState(false);
   const [selected, setSelected] = useState<Domain | null>(null);
+  // PR-B6 (wave-16): wizard dismissal is persisted client-side
+  // via `opencoo_onboarding_dismissed`. Read once on mount;
+  // Cmd-K → "Run onboarding wizard" clears the flag and emits a
+  // `storage` event so this route re-renders the wizard
+  // immediately. The state is initialized lazily so SSR /
+  // jsdom-less environments don't blow up on the read.
+  const [wizardDismissed, setWizardDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  // Re-read the dismissal flag when the storage event fires
+  // (cross-tab or via the palette re-summon below). Storage
+  // events don't fire in the same window that wrote the value,
+  // so the palette also calls a window-level custom event to
+  // notify the same-tab listener.
+  useEffect((): (() => void) => {
+    const onStorage = (e: StorageEvent): void => {
+      if (e.key !== ONBOARDING_DISMISSED_KEY) return;
+      setWizardDismissed(e.newValue === "1");
+    };
+    const onCustom = (): void => {
+      try {
+        setWizardDismissed(
+          localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "1",
+        );
+      } catch {
+        setWizardDismissed(false);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("opencoo:onboarding-summon", onCustom);
+    return (): void => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("opencoo:onboarding-summon", onCustom);
+    };
+  }, []);
 
   const fetchOpts = fetchOptsFor(props.fetchImpl);
 
@@ -161,14 +205,21 @@ export function Domains(props: DomainsProps = {}): JSX.Element {
         </div>
       </div>
       {error === null && rows !== null && rows.length === 0 ? (
-        <EmptyStatePanel
-          title={t("domains.emptyState.title")}
-          body={t("domains.emptyState.body")}
-          cta={{
-            label: t("domains.emptyState.ctaLabel"),
-            onClick: (): void => setCreateOpen(true),
-          }}
-        />
+        wizardDismissed ? (
+          <EmptyStatePanel
+            title={t("domains.emptyState.title")}
+            body={t("domains.emptyState.body")}
+            cta={{
+              label: t("domains.emptyState.ctaLabel"),
+              onClick: (): void => setCreateOpen(true),
+            }}
+          />
+        ) : (
+          <OnboardingWizard
+            {...fetchOpts}
+            onDismissed={(): void => setWizardDismissed(true)}
+          />
+        )
       ) : (
       <Card>
         {error !== null ? (

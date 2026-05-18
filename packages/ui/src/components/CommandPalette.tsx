@@ -70,14 +70,26 @@ export interface CommandPaletteTarget {
   readonly promptName?: string;
 }
 
-type ResultKind = "domain" | "binding" | "agent" | "prompt";
+type ResultKind = "domain" | "binding" | "agent" | "prompt" | "command";
 
 interface CommandResult {
   readonly id: string;
   readonly kind: ResultKind;
   readonly label: string;
   readonly target: CommandPaletteTarget;
+  /** PR-B6: an optional side-effect run before the navigation
+   *  callback fires. Used by the "Run onboarding wizard"
+   *  command to clear the localStorage dismissal flag so the
+   *  Domains route re-renders the wizard. */
+  readonly onSelect?: () => void;
 }
+
+/** PR-B6 — localStorage key + custom event name kept in sync with
+ *  the OnboardingWizard component. Duplicated here (rather than
+ *  imported) to avoid a circular component-level dep; the contract
+ *  is asserted by the `command-palette-onboarding.test.tsx` suite. */
+const ONBOARDING_DISMISSED_KEY = "opencoo_onboarding_dismissed";
+const ONBOARDING_SUMMON_EVENT = "opencoo:onboarding-summon";
 
 interface DomainsResponse {
   readonly rows: ReadonlyArray<Domain>;
@@ -234,11 +246,83 @@ function scoreResult(label: string, q: string): number | null {
   return null;
 }
 
+/** PR-B6 — clear the wizard-dismissal flag and notify the
+ *  Domains route (storage events don't fire same-tab, so we
+ *  bridge with a custom event). The navigation dispatcher
+ *  takes care of switching to the `domains` tab + scrolling. */
+function clearOnboardingDismissal(): void {
+  try {
+    localStorage.removeItem(ONBOARDING_DISMISSED_KEY);
+  } catch {
+    // ignore — localStorage can throw under quota / private-mode
+  }
+  try {
+    window.dispatchEvent(new Event(ONBOARDING_SUMMON_EVENT));
+  } catch {
+    // ignore — no window (SSR) means there's nothing to notify
+  }
+  // Best-effort scroll-to-top — the wizard sits at the top of
+  // Domains so the operator sees step 1 immediately.
+  //
+  // App.tsx renders the route inside a `<main>` element that
+  // owns the scrollable viewport (`overflow: auto`, see
+  // `packages/ui/src/App.tsx:487-494`) — `window.scrollTo`
+  // alone does not move that container. We scroll both the
+  // window (covers static-height layouts / future refactors)
+  // and the live `<main>` (covers the current chrome). The
+  // attribute selector matches the same node `aria-labelledby`
+  // anchors the route h1 to, so we don't depend on a brittle
+  // ref or DOM id. (Copilot triage on PR-B6.)
+  if (typeof window !== "undefined") {
+    try {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    } catch {
+      // ignore — degraded environment (jsdom etc.)
+    }
+  }
+  if (typeof document !== "undefined") {
+    const main = document.querySelector(
+      'main[aria-labelledby="opencoo-page-h1"]',
+    );
+    if (main !== null) {
+      try {
+        (main as HTMLElement).scrollTop = 0;
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+/** PR-B6 — the always-present "Run onboarding wizard" entry.
+ *  Built lazily so each render of the palette gets a fresh
+ *  closure (the side effect is idempotent; the closure carries
+ *  no state). */
+function buildOnboardingCommand(label: string): CommandResult {
+  return {
+    id: "command:onboarding",
+    kind: "command",
+    label,
+    target: { tab: "domains" },
+    onSelect: clearOnboardingDismissal,
+  };
+}
+
 export function CommandPalette(props: CommandPaletteProps): JSX.Element {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
+  // PR-B6: the static "Run onboarding wizard" entry is the last
+  // result regardless of source. It's appended both to the
+  // pre-seeded `initialResults` (test path) and to the async
+  // `collected` list (production path).
+  const onboardingCommand = useMemo(
+    () => buildOnboardingCommand(t("onboarding.palette.label")),
+    [t],
+  );
   const [results, setResults] = useState<ReadonlyArray<CommandResult>>(
-    props.initialResults ?? [],
+    props.initialResults !== undefined
+      ? [...props.initialResults, onboardingCommand]
+      : [onboardingCommand],
   );
   const [loading, setLoading] = useState<boolean>(
     props.initialResults === undefined,
@@ -329,12 +413,18 @@ export function CommandPalette(props: CommandPaletteProps): JSX.Element {
             target: { tab: "prompts", promptName: name },
           });
         }
+        // PR-B6: static command entries last in the list. The
+        // onboarding entry is always present even if every
+        // admin-API list above came back empty.
+        collected.push(onboardingCommand);
         setResults(collected);
       } catch {
         // Read-only navigation surface — a failed load just
         // renders the empty state; operator can close and retry
-        // by re-opening the palette.
-        if (!cancelled) setResults([]);
+        // by re-opening the palette. Even on load failure, the
+        // static onboarding entry is still useful (operators
+        // who dismissed the wizard early can re-summon it).
+        if (!cancelled) setResults([onboardingCommand]);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -342,7 +432,7 @@ export function CommandPalette(props: CommandPaletteProps): JSX.Element {
     return (): void => {
       cancelled = true;
     };
-  }, [fetchImpl, props.initialResults, props.promptNames]);
+  }, [fetchImpl, props.initialResults, props.promptNames, onboardingCommand]);
 
   // Filter + sort. Memoize so arrow-key navigation doesn't
   // re-score on every render.
@@ -373,6 +463,16 @@ export function CommandPalette(props: CommandPaletteProps): JSX.Element {
     }
   }, [activeIdx, ranked.length]);
 
+  // PR-B6: invoke the optional `onSelect` side-effect before
+  // navigation so command-class entries (e.g. "Run onboarding
+  // wizard") can clear localStorage flags or fire window events
+  // before the route swaps.
+  const dispatchSelection = (chosen: CommandResult): void => {
+    if (chosen.onSelect !== undefined) chosen.onSelect();
+    onNavigate(chosen.target);
+    onClose();
+  };
+
   const onListKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
     if (ranked.length === 0) return;
     if (e.key === "ArrowDown") {
@@ -384,10 +484,7 @@ export function CommandPalette(props: CommandPaletteProps): JSX.Element {
     } else if (e.key === "Enter") {
       e.preventDefault();
       const chosen = ranked[activeIdx];
-      if (chosen) {
-        onNavigate(chosen.target);
-        onClose();
-      }
+      if (chosen) dispatchSelection(chosen);
     }
   };
 
@@ -441,10 +538,7 @@ export function CommandPalette(props: CommandPaletteProps): JSX.Element {
                   data-result-active={active ? "true" : "false"}
                   style={active ? ROW_STYLE_ACTIVE : ROW_STYLE_BASE}
                   onMouseEnter={(): void => setActiveIdx(idx)}
-                  onClick={(): void => {
-                    onNavigate(r.target);
-                    onClose();
-                  }}
+                  onClick={(): void => dispatchSelection(r)}
                 >
                   <span style={KIND_TAG_STYLE}>
                     {t(`commandPalette.kind.${r.kind}`)}

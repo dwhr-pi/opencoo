@@ -63,6 +63,19 @@ if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
   });
 }
 
+// jsdom 25.x logs "Not implemented: window.scrollTo" any time a
+// component invokes it. The wizard re-summon path (CommandPalette
+// "Run onboarding wizard" command) scrolls to top after clearing
+// the dismissal flag — harmless in production, noisy in tests.
+// Stub the method here so it stays no-op silent under jsdom.
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "scrollTo", {
+    writable: true,
+    configurable: true,
+    value: (): void => undefined,
+  });
+}
+
 afterEach(() => {
   cleanup();
 });

@@ -17,7 +17,7 @@
  * (Reports is regressed in `reports.test.tsx` separately —
  * its empty state is the chain-shaped W8 panel.)
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -71,6 +71,18 @@ function emptyFetch(): typeof fetch {
 }
 
 describe("Route empty-state — Domains", () => {
+  // PR-B6 (wave-16): the Domains route now hosts an OnboardingWizard
+  // when the DB is empty *and* the operator hasn't skipped the
+  // wizard. To pin the original B3 empty-state surface, opt into
+  // dismissal up-front; B6's `domains-onboarding.test.tsx` covers
+  // the wizard branch explicitly.
+  beforeEach(() => {
+    localStorage.setItem("opencoo_onboarding_dismissed", "1");
+  });
+  afterEach(() => {
+    localStorage.removeItem("opencoo_onboarding_dismissed");
+  });
+
   it("renders the EmptyStatePanel with title + CTA when no domains exist", async () => {
     const fetchImpl = emptyFetch();
     renderRoute(<Domains fetchImpl={fetchImpl} />);

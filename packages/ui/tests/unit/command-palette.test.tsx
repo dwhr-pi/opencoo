@@ -74,7 +74,10 @@ describe("CommandPalette (PR-W10)", () => {
   it("renders all seeded results on open", () => {
     renderPalette();
     const rows = document.querySelectorAll("[data-result-id]");
-    expect(rows.length).toBe(SAMPLE_RESULTS.length);
+    // PR-B6 (wave-16): the palette always appends a static
+    // "Run onboarding wizard" command entry, so the row count
+    // is SAMPLE_RESULTS + 1.
+    expect(rows.length).toBe(SAMPLE_RESULTS.length + 1);
   });
 
   it("narrows the list by case-insensitive substring match", () => {
@@ -127,15 +130,15 @@ describe("CommandPalette (PR-W10)", () => {
       '[data-result-active="true"]',
     ) as HTMLElement;
     expect(active.getAttribute("data-result-id")).toBe("domain:2");
-    // From idx 0, ArrowUp wraps to the last row.
+    // From idx 0, ArrowUp wraps to the last row. PR-B6
+    // (wave-16) appends the static "Run onboarding wizard"
+    // command, so the last row is now `command:onboarding`.
     fireEvent.keyDown(sheet, { key: "ArrowUp" });
     fireEvent.keyDown(sheet, { key: "ArrowUp" });
     active = document.querySelector(
       '[data-result-active="true"]',
     ) as HTMLElement;
-    expect(active.getAttribute("data-result-id")).toBe(
-      SAMPLE_RESULTS[SAMPLE_RESULTS.length - 1]!.id,
-    );
+    expect(active.getAttribute("data-result-id")).toBe("command:onboarding");
   });
 
   it("Enter dispatches onNavigate for the active row and closes the palette", () => {

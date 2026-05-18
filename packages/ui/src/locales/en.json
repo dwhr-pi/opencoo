@@ -44,7 +44,44 @@
       "domain": "Domain",
       "binding": "Binding",
       "agent": "Agent",
-      "prompt": "Prompt"
+      "prompt": "Prompt",
+      "command": "Command"
+    }
+  },
+  "onboarding": {
+    "title": "Welcome to opencoo",
+    "intro": "Four steps from a fresh install to the first heartbeat. Each step opens the same modal you'd use from the toolbar; the wizard just walks you through them in order.",
+    "skip": "Skip wizard",
+    "stepStatus": {
+      "idle": "idle",
+      "pending": "pending",
+      "done": "done",
+      "failed": "failed"
+    },
+    "steps": {
+      "domain": {
+        "title": "Create your first domain",
+        "body": "Provision a Gitea repo for a knowledge surface. opencoo seeds index, log, and schema so the domain is ready to receive ingestion.",
+        "ctaLabel": "+ New domain"
+      },
+      "source": {
+        "title": "Bind your first source",
+        "body": "Connect a Google Drive, Asana, or webhook source so the domain has documents to compile.",
+        "ctaLabel": "+ New source binding"
+      },
+      "agent": {
+        "title": "Seed your first agent instance",
+        "body": "Heartbeat, lint, or chat — give a domain a recurring job so opencoo runs on your behalf.",
+        "ctaLabel": "+ New agent instance"
+      },
+      "heartbeat": {
+        "title": "Wait for the first heartbeat",
+        "body": "Once the agent runs and produces output, this step turns green. You can leave the wizard open or skip — the next run unblocks the chain either way.",
+        "ctaLabel": "Watching for run…"
+      }
+    },
+    "palette": {
+      "label": "Run onboarding wizard"
     }
   },
   "auth": {
