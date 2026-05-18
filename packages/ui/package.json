@@ -22,6 +22,7 @@
     "react-i18next": "15.4.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
     "@playwright/test": "1.49.0",
     "@testing-library/jest-dom": "6.6.3",
     "@testing-library/react": "16.1.0",

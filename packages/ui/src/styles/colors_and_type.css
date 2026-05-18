@@ -20,7 +20,7 @@
   --paper-3:      #E6E1D4;   /* hairline / divider */
   --ink:          #121210;   /* primary text */
   --ink-2:        #3D3B36;   /* secondary */
-  --ink-3:        #67645C;   /* tertiary / caption — WCAG 1.4.3 AA (≥4.5:1) on every paper layer; PR-A6 darkened from #78746B */
+  --ink-3:        #67645C;   /* tertiary / caption — WCAG 1.4.3 AA (≥4.5:1) on every paper layer; PR-A6 darkened from #78746B, kept on A7 rebase */
   --ink-4:        #A8A398;   /* muted / placeholder */
   --rule:         #1212101a; /* 10% ink, for hairlines */
 
@@ -28,8 +28,8 @@
   --advisory:     oklch(0.74 0.13 70);   /* warm amber — agent/advisory layer */
   --advisory-ink: oklch(0.42 0.10 55);   /* deep amber — advisory text on paper */
   --wiki:         oklch(0.55 0.08 180);  /* deep teal — compiled knowledge, citations */
-  --alert:        oklch(0.62 0.17 25);   /* red — only in dashboard alerts */
-  --healthy:      oklch(0.55 0.10 150);  /* green — compiled/ok state */
+  --alert:        oklch(0.50 0.17 25);   /* red — only in dashboard alerts — meets 4.5:1 on the 8%-tint banner background (PR-A7) */
+  --healthy:      oklch(0.45 0.11 150);  /* green — compiled/ok state — meets 4.5:1 on the 14%-tint ok-badge background (PR-A7) */
 
   /* ---------- Semantic foreground tokens ---------- */
   --fg-1: var(--ink);       /* primary body + headings */

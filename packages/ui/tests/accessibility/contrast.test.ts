@@ -309,14 +309,19 @@ describe("WCAG color-contrast sweep (PR-A6)", () => {
   });
 
   it("oklch resolver matches a known sample (regression pin)", () => {
-    // oklch(0.62 0.17 25) is the `--alert` token. The accepted sRGB
-    // result is roughly #da534f (matches the design-system docs).
+    // PR-A7 rebase: `--alert` is now `oklch(0.50 0.17 25)`
+    // (darkened from `oklch(0.62 0.17 25)` so the 8%-tint
+    // banner background in `Prompts.tsx` meets axe-core's 4.5:1
+    // body-text threshold — A6's UI/large-text threshold of
+    // 3.0:1 still held the prior value, but live rendered text
+    // sits in the body-text bucket). The accepted sRGB result
+    // is now roughly #b03831 (mid-160s r, low g/b).
     const alert = resolveColor("alert");
-    expect(alert.r).toBeGreaterThan(200);
-    expect(alert.r).toBeLessThan(230);
-    expect(alert.g).toBeGreaterThan(70);
-    expect(alert.g).toBeLessThan(95);
-    expect(alert.b).toBeGreaterThan(70);
-    expect(alert.b).toBeLessThan(95);
+    expect(alert.r).toBeGreaterThan(155);
+    expect(alert.r).toBeLessThan(195);
+    expect(alert.g).toBeGreaterThan(35);
+    expect(alert.g).toBeLessThan(65);
+    expect(alert.b).toBeGreaterThan(35);
+    expect(alert.b).toBeLessThan(65);
   });
 });

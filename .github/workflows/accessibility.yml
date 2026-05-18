@@ -1,0 +1,101 @@
+name: accessibility
+
+# PR-A7 (wave-16, phase-a appendix #16) — @axe-core/playwright
+# walk across every management-UI route × every primary modal ×
+# both supported locales (en + pl). The job is the certification
+# gate for wave-16's accessibility floor (WCAG 2.2 AA).
+#
+# Design choices documented in
+# `docs/plan-appendix/phase-a-16-impeccable-ux.md` PR-A7 and the
+# manual SR walk in `docs/accessibility-walk-checklist.md`:
+#
+#   - Hermetic by design — `tests/accessibility/fixtures.ts`
+#     installs a `page.route` handler that returns canned
+#     responses for every `/api/admin/*` endpoint. The engine,
+#     Postgres, and Gitea compose stack are NOT booted; what
+#     matters for axe is rendered DOM, not live data. This is
+#     why the workflow does NOT pull `compose.e2e.yml`.
+#
+#   - One browser (chromium) — opencoo is a desktop operator
+#     console. v0.2 will revisit mobile + narrow-viewport.
+#
+#   - Two playwright projects (`axe-en`, `axe-pl`) emitted by
+#     `packages/ui/playwright.config.ts`; each writes the matching
+#     `localStorage.opencoo_locale` BEFORE the SPA boots.
+#
+# Wall-clock budget: < 5 min on a warm cache (local: ~30s build
+# + 20s axe walk × 2 locales). Cold runner: ~3-4 min including
+# the chromium binary pull.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded PR runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  axe:
+    name: axe-core walk (en + pl)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @opencoo/eslint-plugin
+        # Same shape as `ci.yml` — the workspace's root config
+        # imports the plugin, so vite/tsx tooling pulls it in
+        # transitively and a missing dist surfaces here as an
+        # opaque resolve error.
+        run: pnpm --filter @opencoo/eslint-plugin build
+
+      - name: Build @opencoo/shared
+        # `@opencoo/ui` doesn't import shared, but the root
+        # `pnpm install` install hooks transitively touch it via
+        # the build pipeline; building it first matches the
+        # ci.yml shape and prevents a flake when a contributor
+        # bumps shared without also rebuilding it.
+        run: pnpm --filter @opencoo/shared build
+
+      - name: Install Playwright browser (chromium)
+        run: pnpm --filter @opencoo/ui exec playwright install --with-deps chromium
+
+      - name: Build UI bundle
+        run: pnpm --filter @opencoo/ui build
+
+      - name: Run @axe-core/playwright walk
+        # The spec drives its own `webServer` (vite preview) via
+        # `packages/ui/playwright.config.ts` — no need to spawn
+        # a dev server here. The `axe-en` + `axe-pl` projects
+        # are picked up automatically. Preview port is
+        # hardcoded in the playwright config (5174).
+        run: pnpm --filter @opencoo/ui exec playwright test tests/accessibility
+
+      - name: Upload Playwright report on failure
+        # The HTML report has per-test traces (we enabled
+        # `trace: "on-first-retry"` in the config); pulling it
+        # off the runner makes triage one-click.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: axe-playwright-report
+          path: |
+            packages/ui/playwright-report/
+            packages/ui/test-results/
+          retention-days: 7

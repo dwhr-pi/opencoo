@@ -26,6 +26,10 @@ coverage/
 npm-debug.log*
 pnpm-debug.log*
 
+# Playwright artefacts (PR-A7 accessibility walk)
+playwright-report/
+test-results/
+
 # Editor / OS
 .DS_Store
 .vscode/
