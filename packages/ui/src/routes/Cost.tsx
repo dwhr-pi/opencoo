@@ -47,6 +47,7 @@ import { Card } from "../components/Card.js";
 import { GlyphRingWithDot } from "../components/Glyph.js";
 import { Table, type TableColumn } from "../components/Table.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
+import { formatNumber as formatNumberShared, formatUsd as formatUsdShared } from "../lib/intl-format.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -124,32 +125,17 @@ const MAX_BUCKETS = 100;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Format a USD amount with two decimals + thousands separators.
- *  JetBrains Mono in render so columns align in the bottom table.
- *  The number formatting follows the operator's UI locale (en →
- *  `1,234.56`, pl → `1 234,56`) so it lines up with the rest of
- *  the chrome; currency stays USD because the engine bills in USD
- *  and the dashboard's semantics are always USD. */
+/** Format a USD amount via the shared locale-aware helper.
+ *  PR-C3 (wave-16) lifted the implementation to
+ *  `lib/intl-format.ts` so every Intl caller resolves through one
+ *  binding helper. The wrapper stays so existing call sites don't
+ *  re-import. */
 function formatUsd(amount: number, locale: string): string {
-  const sign = amount < 0 ? "-" : "";
-  const abs = Math.abs(amount);
-  return `${sign}$${abs.toLocaleString(intlLocale(locale), {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return formatUsdShared(amount, locale);
 }
 
 function formatTokens(n: number, locale: string): string {
-  return n.toLocaleString(intlLocale(locale));
-}
-
-/** Map i18next's locale codes (`en`, `pl`) onto Intl BCP-47 tags
- *  with grouping conventions the operator expects. Unknown locales
- *  fall back to en-US so a missing translation never produces
- *  malformed numbers. */
-function intlLocale(language: string): string {
-  if (language.toLowerCase().startsWith("pl")) return "pl-PL";
-  return "en-US";
+  return formatNumberShared(n, locale);
 }
 
 /** Burn-down threshold tone. The strict ranges from PR-R5 spec:

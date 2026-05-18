@@ -42,6 +42,7 @@ import {
   type SubscribeToAgentRuns,
 } from "../lib/agent-runs-subscription.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
+import { formatDateTime, formatTime } from "../lib/intl-format.js";
 import { safeErrorMessage } from "../lib/safe-error.js";
 import { extractDomainSlugFromPath } from "../lib/wiki-path.js";
 import type {
@@ -281,7 +282,7 @@ function HeartbeatCard(props: {
   subscribeToAgentRuns: SubscribeToAgentRuns;
   fetchImpl?: typeof fetch;
 }): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { report } = props;
   const instanceLabel = report.instanceName ?? t("reports.heartbeat.noInstance");
   const runIdShort = report.runId.slice(0, 8);
@@ -347,7 +348,7 @@ function HeartbeatCard(props: {
           {/* Copy the full run UUID to clipboard (Activity runs route is a PR-B addition). */}
           <CopyButton value={report.runId} label={runIdShort} />
           {report.startedAt !== null && (
-            <span>{new Date(report.startedAt).toLocaleString()}</span>
+            <span>{formatDateTime(report.startedAt, i18n.language)}</span>
           )}
         </span>
       </div>
@@ -463,6 +464,7 @@ interface DiagnosticRow {
 function deriveDiagnosticRow(
   pre: HeartbeatPreconditions,
   t: TFunction,
+  locale: string,
 ): DiagnosticRow {
   if (pre.heartbeatInstanceCount === 0) {
     return {
@@ -496,7 +498,7 @@ function deriveDiagnosticRow(
     };
   }
   const when = pre.mostRecentRun.startedAt !== null
-    ? new Date(pre.mostRecentRun.startedAt).toLocaleString()
+    ? formatDateTime(pre.mostRecentRun.startedAt, locale)
     : "—";
   // Status discrimination ordering matters (Copilot triage on PR #148):
   //   - `running` (in-progress): the operator should see "run is in
@@ -567,7 +569,7 @@ function HeartbeatDiagnosticsPanel(props: {
   fetchImpl?: typeof fetch;
   onNavigate?: (tab: Tab) => void;
 }): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [pre, setPre] = useState<HeartbeatPreconditions | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -596,7 +598,7 @@ function HeartbeatDiagnosticsPanel(props: {
     return <NoticeRow tone="muted">{t("reports.diagnostics.loading")}</NoticeRow>;
   }
 
-  const row = deriveDiagnosticRow(pre, t);
+  const row = deriveDiagnosticRow(pre, t, i18n.language);
   const navigate = props.onNavigate;
   const cta =
     row.cta !== undefined && navigate !== undefined
@@ -630,7 +632,7 @@ function HeartbeatDiagnosticsPanel(props: {
       {pre.mostRecentDispatchedAt !== null ? (
         <span>
           last dispatch:{" "}
-          {new Date(pre.mostRecentDispatchedAt).toLocaleString()}
+          {formatDateTime(pre.mostRecentDispatchedAt, i18n.language)}
         </span>
       ) : null}
     </span>
@@ -661,7 +663,7 @@ interface RedactionEventsResponse {
 }
 
 function RedactionEventsView(props: { fetchImpl?: typeof fetch }): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [events, setEvents] = useState<readonly RedactionEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -744,7 +746,7 @@ function RedactionEventsView(props: { fetchImpl?: typeof fetch }): JSX.Element {
       cellStyle: { fontSize: 11, color: "var(--ink-3)" },
       render: (event) =>
         event.createdAt !== null
-          ? new Date(event.createdAt).toLocaleTimeString()
+          ? formatTime(event.createdAt, i18n.language)
           : "—",
     },
   ];

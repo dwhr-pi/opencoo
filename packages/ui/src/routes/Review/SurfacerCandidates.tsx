@@ -18,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import { Btn } from "../../components/Btn.js";
 import { NoticeRow } from "../../components/NoticeRow.js";
 import { ApiValidationError, fetchAdmin, fetchOptsFor } from "../../lib/api.js";
+import { formatDate } from "../../lib/intl-format.js";
 import { ReviewTableHeader } from "./ReviewTableHeader.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -120,7 +121,7 @@ function DecisionCell(props: DecisionCellProps): JSX.Element {
 export function SurfacerCandidates(
   props: SurfacerCandidatesProps = {},
 ): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<readonly AutomationCandidate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Per-row decision result: id → decision state
@@ -234,7 +235,7 @@ export function SurfacerCandidates(
                     color: "var(--ink-3)",
                   }}
                 >
-                  {new Date(candidate.createdAt).toLocaleDateString()}
+                  {formatDate(candidate.createdAt, i18n.language)}
                 </td>
                 <td style={{ padding: "10px 8px" }}>
                   <DecisionCell

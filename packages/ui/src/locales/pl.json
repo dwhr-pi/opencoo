@@ -1,8 +1,8 @@
 {
-  "_comment": "PR 29 / plan #131 — pl.json placeholder per §17 Resolved (UI i18n). Real translations land in v0.2; en strings duplicated for forward-compat so unset keys don't fall back to undefined.",
+  "_comment": "Polish locale bundle. LLM-translated in PR-C3 (wave-16); native-Polish-speaker review is a separate post-wave-16 PR. Values may carry a `_lint_translate_c3` marker comment when phrasing is uncertain — the human-review pass will sweep for these. Voice: terse, technical, operator-oriented; no marketing language. Proper nouns (opencoo, Asana, Gitea, Worker, Thinker, Light, Heartbeat, Lint) stay untranslated.",
   "app": {
     "title": "opencoo",
-    "tagline": "self-hosted",
+    "tagline": "samodzielny hosting",
     "version": "v0.1"
   },
   "validation": {
@@ -15,91 +15,91 @@
     "adapterRequired": "Wybierz adapter, aby kontynuować."
   },
   "nav": {
-    "primary": "primary navigation",
-    "domains": "domains",
-    "sources": "sources",
-    "agents": "agents",
-    "outputs": "outputs",
-    "llmPolicy": "llm policy",
-    "prompts": "prompts",
-    "activity": "activity",
-    "review": "review",
-    "reports": "reports",
-    "logout": "log out",
-    "audit": "audit",
-    "cost": "cost",
+    "primary": "nawigacja główna",
+    "domains": "domeny",
+    "sources": "źródła",
+    "agents": "agenci",
+    "outputs": "wyjścia",
+    "llmPolicy": "polityka llm",
+    "prompts": "prompty",
+    "activity": "aktywność",
+    "review": "przegląd",
+    "reports": "raporty",
+    "logout": "wyloguj",
+    "audit": "audyt",
+    "cost": "koszty",
     "groups": {
-      "operate": "operate",
-      "knowledge": "knowledge",
-      "governance": "governance",
-      "diagnostics": "diagnostics"
+      "operate": "praca",
+      "knowledge": "wiedza",
+      "governance": "nadzór",
+      "diagnostics": "diagnostyka"
     }
   },
   "commandPalette": {
-    "placeholder": "Type to search domains, bindings, agents, prompts…",
-    "empty": "No results.",
-    "loading": "Loading…",
+    "placeholder": "Wpisz, aby przeszukać domeny, powiązania, agentów, prompty…",
+    "empty": "Brak wyników.",
+    "loading": "Wczytywanie…",
     "shortcut": "Cmd-K",
-    "hint": "Up/Down to navigate · Enter to open · Esc to close",
+    "hint": "Strzałki góra/dół do nawigacji · Enter aby otworzyć · Esc aby zamknąć",
     "kind": {
-      "domain": "Domain",
-      "binding": "Binding",
+      "domain": "Domena",
+      "binding": "Powiązanie",
       "agent": "Agent",
       "prompt": "Prompt",
-      "command": "Command"
+      "command": "Komenda"
     }
   },
   "onboarding": {
-    "title": "Welcome to opencoo",
-    "intro": "Four steps from a fresh install to the first heartbeat. Each step opens the same modal you'd use from the toolbar; the wizard just walks you through them in order.",
-    "skip": "Skip wizard",
+    "title": "Witamy w opencoo",
+    "intro": "Cztery kroki od świeżej instalacji do pierwszego raportu Heartbeat. Każdy krok otwiera ten sam modal, którego użyłbyś z paska narzędzi; kreator po prostu prowadzi cię przez nie po kolei.",
+    "skip": "Pomiń kreatora",
     "stepStatus": {
-      "idle": "idle",
-      "pending": "pending",
-      "done": "done",
-      "failed": "failed"
+      "idle": "oczekuje",
+      "pending": "w toku",
+      "done": "gotowe",
+      "failed": "nieudane"
     },
     "steps": {
       "domain": {
-        "title": "Create your first domain",
-        "body": "Provision a Gitea repo for a knowledge surface. opencoo seeds index, log, and schema so the domain is ready to receive ingestion.",
-        "ctaLabel": "+ New domain"
+        "title": "Utwórz pierwszą domenę",
+        "body": "Załóż repozytorium Gitea dla powierzchni wiedzy. opencoo inicjuje index, log i schema, dzięki czemu domena jest gotowa na ingestię.",
+        "ctaLabel": "+ Nowa domena"
       },
       "source": {
-        "title": "Bind your first source",
-        "body": "Connect a Google Drive, Asana, or webhook source so the domain has documents to compile.",
-        "ctaLabel": "+ New source binding"
+        "title": "Powiąż pierwsze źródło",
+        "body": "Podłącz źródło Google Drive, Asana lub webhook, aby domena miała dokumenty do skompilowania.",
+        "ctaLabel": "+ Nowe powiązanie źródła"
       },
       "agent": {
-        "title": "Seed your first agent instance",
-        "body": "Heartbeat, lint, or chat — give a domain a recurring job so opencoo runs on your behalf.",
-        "ctaLabel": "+ New agent instance"
+        "title": "Utwórz pierwszą instancję agenta",
+        "body": "Heartbeat, lint lub chat — daj domenie cykliczne zadanie, aby opencoo działało w twoim imieniu.",
+        "ctaLabel": "+ Nowa instancja agenta"
       },
       "heartbeat": {
-        "title": "Wait for the first heartbeat",
-        "body": "Once the agent runs and produces output, this step turns green. You can leave the wizard open or skip — the next run unblocks the chain either way.",
-        "ctaLabel": "Watching for run…"
+        "title": "Poczekaj na pierwszy raport Heartbeat",
+        "body": "Gdy agent uruchomi się i wyprodukuje wyjście, ten krok zmieni się na zielony. Możesz zostawić kreatora otwartego lub pominąć — następne uruchomienie i tak odblokuje łańcuch.",
+        "ctaLabel": "Czekam na uruchomienie…"
       }
     },
     "palette": {
-      "label": "Run onboarding wizard"
+      "label": "Uruchom kreatora wprowadzenia"
     }
   },
   "auth": {
     "modalTitle": "opencoo",
-    "patPrompt": "Paste your Gitea personal access token to continue.",
-    "patFieldLabel": "personal access token",
-    "patSubmit": "Sign in",
-    "authenticating": "authenticating…",
-    "patEmpty": "Token is required.",
-    "storageNote": "stored in session storage · cleared when this tab closes",
-    "loadingUser": "Resolving identity…",
-    "loginFailed": "Sign-in failed.",
-    "forbidden": "Your account is not in the admin team.",
+    "patPrompt": "Wklej swój token PAT Gitea, aby kontynuować.",
+    "patFieldLabel": "token dostępu osobistego",
+    "patSubmit": "Zaloguj się",
+    "authenticating": "logowanie…",
+    "patEmpty": "Token jest wymagany.",
+    "storageNote": "przechowywany w pamięci sesji · usuwany przy zamknięciu zakładki",
+    "loadingUser": "Rozpoznawanie tożsamości…",
+    "loginFailed": "Logowanie nieudane.",
+    "forbidden": "Twoje konto nie należy do zespołu admin.",
     "loggedInAs": "{{username}}"
   },
   "csrf": {
-    "retrying": "Refreshing CSRF token and retrying…"
+    "retrying": "Odświeżanie tokena CSRF i ponawianie…"
   },
   "locale": {
     "en": "English",
@@ -112,130 +112,129 @@
     "compact": "kompaktowy"
   },
   "domains": {
-    "title": "Domains",
-    "subtitle": "Knowledge surfaces compiled by opencoo.",
-    "empty": "No domains yet — bind a source to get started.",
+    "title": "Domeny",
+    "subtitle": "Powierzchnie wiedzy kompilowane przez opencoo.",
+    "empty": "Brak domen — powiąż źródło, aby zacząć.",
     "emptyState": {
-      "title": "No domains yet",
-      "body": "Create your first knowledge domain. opencoo provisions a Gitea repo, seeds index/log/schema, and the domain becomes the target for source bindings and agent instances.",
-      "ctaLabel": "+ New domain"
+      "title": "Brak domen",
+      "body": "Utwórz pierwszą domenę wiedzy. opencoo zakłada repozytorium Gitea, inicjuje index/log/schema, a domena staje się celem dla powiązań źródeł i instancji agentów.",
+      "ctaLabel": "+ Nowa domena"
     },
     "columns": {
       "slug": "slug",
-      "name": "name",
-      "class": "class",
-      "locale": "locale",
-      "aggregator": "aggregator"
+      "name": "nazwa",
+      "class": "klasa",
+      "locale": "język",
+      "aggregator": "agregator"
     },
-    "showDisabled": "Show disabled",
-    "disabledBadge": "disabled",
-    "newDomain": "+ New domain",
-    "openDetail": "open detail for {{slug}}",
+    "showDisabled": "Pokaż wyłączone",
+    "disabledBadge": "wyłączona",
+    "newDomain": "+ Nowa domena",
+    "openDetail": "otwórz szczegóły dla {{slug}}",
     "create": {
-      "title": "New domain",
-      "subtitle": "Provisions a Gitea repo and seeds index/log/schema.",
-      "submit": "Create",
-      "submitting": "creating…",
+      "title": "Nowa domena",
+      "subtitle": "Tworzy repozytorium Gitea i inicjuje index/log/schema.",
+      "submit": "Utwórz",
+      "submitting": "tworzenie…",
       "fields": {
         "slug": "slug",
-        "displayName": "display name",
-        "class": "class",
-        "locale": "default locale"
+        "displayName": "nazwa wyświetlana",
+        "class": "klasa",
+        "locale": "język domyślny"
       },
       "help": {
-        "slug": "lowercase, digits, hyphens — starts with a letter (1–63 chars)"
+        "slug": "małe litery, cyfry, myślniki — zaczyna się literą (1–63 znaki)"
       },
       "errors": {
-        "slugFormat": "Slug must match ^[a-z][a-z0-9-]{1,62}$.",
-        "slugTaken": "That slug is already taken.",
-        "displayNameRequired": "Display name is required.",
-        "displayNameTooLong": "Display name must be 100 characters or fewer.",
-        "generic": "Could not create domain. Try again or check the audit log."
+        "slugFormat": "Slug musi pasować do ^[a-z][a-z0-9-]{1,62}$.",
+        "slugTaken": "Ten slug jest już zajęty.",
+        "displayNameRequired": "Nazwa wyświetlana jest wymagana.",
+        "displayNameTooLong": "Nazwa wyświetlana musi mieć do 100 znaków.",
+        "generic": "Nie udało się utworzyć domeny. Spróbuj ponownie lub sprawdź dziennik audytu."
       }
     },
     "detail": {
-      "title": "Domain",
-      "subtitle": "Edit metadata, retire, or hard-delete this domain.",
+      "title": "Domena",
+      "subtitle": "Edytuj metadane, wyłącz lub usuń trwale tę domenę.",
       "labels": {
         "slug": "slug",
-        "domainId": "domain id",
-        "class": "class",
-        "displayName": "display name",
-        "locale": "locale",
-        "aggregator": "aggregator",
-        "bindings": "source bindings",
-        "disabledAt": "disabled at"
+        "domainId": "id domeny",
+        "class": "klasa",
+        "displayName": "nazwa wyświetlana",
+        "locale": "język",
+        "aggregator": "agregator",
+        "bindings": "powiązania źródeł",
+        "disabledAt": "wyłączona o"
       },
-      "_todo_translate_w3": "TODO(i18n): the W3 Configuration-section keys below are intentionally left in English to match this file's placeholder-locale convention (see `packages/ui/src/lib/i18n.ts`). The matching English copy in `en.json` is the source of truth; translate the entire `detail.*` subtree in one pass when `pl` is promoted from placeholder.",
       "fields": {
-        "displayName": "display name",
-        "locale": "locale",
-        "aggregator": "aggregator",
-        "retentionDays": "retention (days)",
-        "retentionDaysPlaceholder": "blank = engine default",
-        "governanceCadence": "governance cadence",
-        "reviewRole": "review role",
-        "reviewRolePlaceholder": "blank = no role gating",
-        "worldviewEnabled": "worldview compilation enabled",
-        "llmBudgetMonthlyCapUsd": "monthly llm budget cap (USD)",
-        "llmBudgetMonthlyCapUsdPlaceholder": "blank = no cap"
+        "displayName": "nazwa wyświetlana",
+        "locale": "język",
+        "aggregator": "agregator",
+        "retentionDays": "retencja (dni)",
+        "retentionDaysPlaceholder": "puste = domyślnie z silnika",
+        "governanceCadence": "rytm nadzoru",
+        "reviewRole": "rola recenzenta",
+        "reviewRolePlaceholder": "puste = bez wymagania roli",
+        "worldviewEnabled": "kompilacja worldview włączona",
+        "llmBudgetMonthlyCapUsd": "miesięczny limit budżetu llm (USD)",
+        "llmBudgetMonthlyCapUsdPlaceholder": "puste = bez limitu"
       },
       "config": {
-        "legend": "Configuration"
+        "legend": "Konfiguracja"
       },
       "help": {
-        "retentionDays": "How long to keep this domain's intake + LLM-debug rows before cleanup prunes them. 1–365 days, or blank to fall back to the engine default.",
-        "governanceCadence": "How often a human reviewer is expected to walk this domain's compiled pages — drives the heartbeat agent's surfacing cadence.",
-        "reviewRole": "Free-form label naming the role that signs off on this domain's reviews. Surfaced in the heartbeat and audit log; never used as an authz check.",
-        "worldviewEnabled": "When on, the trigger pipeline enqueues worldview.md recompiles for this domain. Turning off stops future recompiles; in-flight queue jobs run to completion.",
-        "llmBudgetMonthlyCapUsd": "Soft monthly USD cap on LLM spend for this domain. Reports flag overshoots; blank = no cap."
+        "retentionDays": "Jak długo trzymać wpisy przyjęć i debugu LLM tej domeny zanim cleanup je usunie. 1–365 dni, lub puste, aby użyć domyślnej wartości silnika.",
+        "governanceCadence": "Jak często ludzki recenzent ma przejrzeć skompilowane strony tej domeny — steruje rytmem wyświetlania w agencie Heartbeat.",
+        "reviewRole": "Dowolna etykieta nazywająca rolę, która zatwierdza recenzje tej domeny. Pojawia się w Heartbeat i dzienniku audytu; nigdy nie służy jako sprawdzenie uprawnień.",
+        "worldviewEnabled": "Gdy włączone, pipeline triggera kolejkuje rekompilacje worldview.md dla tej domeny. Wyłączenie zatrzymuje kolejne rekompilacje; bieżące zadania w kolejce dokończą się.",
+        "llmBudgetMonthlyCapUsd": "Miękki miesięczny limit wydatków na LLM dla tej domeny w USD. Raporty flagują przekroczenia; puste = bez limitu."
       },
       "actions": {
-        "save": "Save changes",
-        "saving": "saving…",
-        "close": "Close",
-        "cancel": "Cancel",
-        "disable": "Disable",
-        "delete": "Delete permanently",
-        "recompileWorldview": "Recompile worldview",
+        "save": "Zapisz zmiany",
+        "saving": "zapisywanie…",
+        "close": "Zamknij",
+        "cancel": "Anuluj",
+        "disable": "Wyłącz",
+        "delete": "Usuń trwale",
+        "recompileWorldview": "Przekompiluj worldview",
         "openPrompts": "Edytuj prompty dla tej domeny",
-        "confirmDisableTitle": "Disable this domain?",
-        "confirmDisableBody": "Soft-disables the domain. The Gitea repo is kept, but the domain is hidden from listings and ingestion stops dispatching to it. Re-enable is not in v0.1 — to recover you create a fresh domain.",
-        "confirmDisable": "Confirm disable",
-        "confirmDeleteTitle": "Permanently delete this domain?",
-        "confirmDeleteBody": "Removes the domain row from opencoo's database. The Gitea repo is NOT deleted — remove it separately if no longer needed. Append-only audit (page citations, redaction events) referencing this domain stays in place.",
-        "confirmDelete": "Confirm hard delete",
-        "confirmDeleteCheckbox": "I understand this is permanent and the Gitea repo is not removed.",
-        "deleteBlocked": "Disable bindings first — see Sources tab. ({{n}} binding(s) reference this domain.)"
+        "confirmDisableTitle": "Wyłączyć tę domenę?",
+        "confirmDisableBody": "Miękko wyłącza domenę. Repozytorium Gitea pozostaje, ale domena jest ukrywana z list, a ingestia przestaje do niej trafiać. Włączenie z powrotem nie jest w v0.1 — aby odzyskać, utwórz nową domenę.",
+        "confirmDisable": "Potwierdź wyłączenie",
+        "confirmDeleteTitle": "Trwale usunąć tę domenę?",
+        "confirmDeleteBody": "Usuwa wiersz domeny z bazy danych opencoo. Repozytorium Gitea NIE jest usuwane — usuń je osobno, jeśli nie jest już potrzebne. Append-only audyt (cytowania stron, zdarzenia redakcji) odnoszący się do tej domeny pozostaje.",
+        "confirmDelete": "Potwierdź trwałe usunięcie",
+        "confirmDeleteCheckbox": "Rozumiem, że to nieodwracalne, a repozytorium Gitea nie zostanie usunięte.",
+        "deleteBlocked": "Wyłącz najpierw powiązania — patrz zakładka Źródła. ({{n}} powiązań odnosi się do tej domeny.)"
       },
       "recompileWorldview": {
-        "success": "Worldview recompile enqueued"
+        "success": "Rekompilacja worldview dodana do kolejki"
       },
       "errors": {
-        "saveFailed": "Could not save changes. Try again or check the audit log.",
-        "aggregatorAlreadySet": "Another active domain is already the aggregator. Disable that one first.",
-        "disableFailed": "Could not disable domain (server rejected the request).",
-        "deleteFailed": "Could not delete domain (server rejected the request).",
-        "deleteFkRestricted": "This domain has source bindings. Migrate or delete those first.",
-        "recompileWorldviewFailed": "Could not queue a worldview recompile. Try again or check the audit log.",
-        "retentionInvalid": "Retention must be a whole number of days, or blank to clear.",
-        "retentionRange": "Retention must be between 1 and 365 days.",
-        "reviewRoleTooLong": "Review role must be 64 characters or fewer.",
-        "llmBudgetInvalid": "LLM budget cap must be a number, or blank to clear.",
-        "llmBudgetRange": "LLM budget cap must be between 0 and 100,000 USD.",
-        "auth": "Sign-in expired or insufficient permissions — re-paste your PAT.",
-        "transient": "Server is unreachable or returned an error. Try again."
+        "saveFailed": "Nie udało się zapisać zmian. Spróbuj ponownie lub sprawdź dziennik audytu.",
+        "aggregatorAlreadySet": "Inna aktywna domena jest już agregatorem. Wyłącz tamtą najpierw.",
+        "disableFailed": "Nie udało się wyłączyć domeny (serwer odrzucił żądanie).",
+        "deleteFailed": "Nie udało się usunąć domeny (serwer odrzucił żądanie).",
+        "deleteFkRestricted": "Ta domena ma powiązane źródła. Migruj je lub usuń najpierw.",
+        "recompileWorldviewFailed": "Nie udało się zakolejkować rekompilacji worldview. Spróbuj ponownie lub sprawdź dziennik audytu.",
+        "retentionInvalid": "Retencja musi być liczbą całkowitą dni lub pusta, aby wyczyścić.",
+        "retentionRange": "Retencja musi mieścić się w 1–365 dniach.",
+        "reviewRoleTooLong": "Rola recenzenta musi mieć do 64 znaków.",
+        "llmBudgetInvalid": "Limit budżetu LLM musi być liczbą lub pusty, aby wyczyścić.",
+        "llmBudgetRange": "Limit budżetu LLM musi mieścić się w zakresie 0–100 000 USD.",
+        "auth": "Sesja wygasła lub brak uprawnień — wklej PAT ponownie.",
+        "transient": "Serwer nieosiągalny lub zwrócił błąd. Spróbuj ponownie."
       }
     }
   },
   "sources": {
-    "title": "Sources",
-    "subtitle": "Bindings that ingest into a domain.",
-    "empty": "No bindings yet.",
+    "title": "Źródła",
+    "subtitle": "Powiązania zasilające domenę.",
+    "empty": "Brak powiązań.",
     "emptyState": {
-      "title": "No source bindings yet",
-      "body": "Connect a Google Drive, Asana, or webhook source so opencoo has documents to ingest. Each binding ships into a domain you've already created.",
-      "ctaLabel": "+ New source binding"
+      "title": "Brak powiązań źródeł",
+      "body": "Podłącz źródło Google Drive, Asana lub webhook, aby opencoo miało dokumenty do ingestii. Każde powiązanie kieruje do utworzonej wcześniej domeny.",
+      "ctaLabel": "+ Nowe powiązanie źródła"
     },
     "columns": {
       "name": "nazwa",
@@ -257,83 +256,83 @@
       "hoursAgo": "{{n}} godz temu",
       "daysAgo": "{{n}} dni temu"
     },
-    "newBinding": "+ New binding",
+    "newBinding": "+ Nowe powiązanie",
     "create": {
-      "title": "New source binding",
-      "subtitle": "Pick an adapter, target a domain, paste credentials.",
-      "next": "Next",
-      "back": "Back",
-      "submit": "Create binding",
-      "submitting": "creating…",
+      "title": "Nowe powiązanie źródła",
+      "subtitle": "Wybierz adapter, wskaż domenę, wklej dane uwierzytelniające.",
+      "next": "Dalej",
+      "back": "Wstecz",
+      "submit": "Utwórz powiązanie",
+      "submitting": "tworzenie…",
       "fields": {
         "adapter": "adapter",
-        "targetDomain": "target domain",
-        "reviewMode": "review mode"
+        "targetDomain": "domena docelowa",
+        "reviewMode": "tryb recenzji"
       },
       "section": {
-        "auth": "auth credentials",
-        "webhookSecret": "webhook signing secret"
+        "auth": "dane uwierzytelniające",
+        "webhookSecret": "sekret podpisu webhooka"
       },
       "errors": {
-        "requiredField": "Required.",
-        "generic": "Could not create binding. Try again or check the audit log."
+        "requiredField": "Wymagane.",
+        "generic": "Nie udało się utworzyć powiązania. Spróbuj ponownie lub sprawdź dziennik audytu."
       }
     },
     "allowedPaths": {
-      "title": "Allowed wiki paths",
-      "subtitle": "Subtree globs the classifier may write into. Empty or wildcard-only lists are rejected — pick at least one bounded subtree.",
-      "suggestions": "Suggested for this adapter:",
-      "addCustom": "Add custom",
-      "placeholder": "e.g. meetings/**",
-      "empty": "No paths yet. Add a chip from the suggestions or type your own.",
-      "invalidPattern": "Wildcard-only patterns are not allowed."
+      "title": "Dozwolone ścieżki wiki",
+      "subtitle": "Wzorce glob poddrzewa, w które klasyfikator może pisać. Puste listy lub same wieloznaczniki są odrzucane — wskaż co najmniej jedno ograniczone poddrzewo.",
+      "suggestions": "Sugerowane dla tego adaptera:",
+      "addCustom": "Dodaj własne",
+      "placeholder": "np. meetings/**",
+      "empty": "Brak ścieżek. Dodaj chip z sugestii lub wpisz własną.",
+      "invalidPattern": "Wzorce składające się wyłącznie z wieloznaczników są niedozwolone."
     },
     "detail": {
-      "title": "Source binding",
-      "subtitle": "Webhook URL, recent activity, and lifecycle actions.",
+      "title": "Powiązanie źródła",
+      "subtitle": "URL webhooka, ostatnia aktywność i akcje cyklu życia.",
       "labels": {
-        "webhookUrl": "webhook url",
-        "bindingId": "binding id",
-        "domain": "domain",
+        "webhookUrl": "url webhooka",
+        "bindingId": "id powiązania",
+        "domain": "domena",
         "adapter": "adapter",
-        "reviewMode": "review mode",
-        "enabled": "enabled",
-        "pendingEvents": "pending events",
-        "sigFailures": "signature failures (24h)",
-        "lastError": "last error",
+        "reviewMode": "tryb recenzji",
+        "enabled": "włączone",
+        "pendingEvents": "oczekujące zdarzenia",
+        "sigFailures": "błędy podpisu (24h)",
+        "lastError": "ostatni błąd",
         "noLastError": "—",
-        "lastEvent": "last event"
+        "lastEvent": "ostatnie zdarzenie"
       },
       "copy": {
-        "copy": "Copy",
-        "copied": "copied",
-        "manualHint": "Select the URL above and copy manually."
+        "copy": "Kopiuj",
+        "copied": "skopiowano",
+        "manualHint": "Zaznacz powyższy URL i skopiuj ręcznie."
       },
       "actions": {
-        "disable": "Disable",
-        "enable": "Enable",
-        "delete": "Delete",
-        "forget": "Forget source",
-        "scanNow": "Scan now",
-        "retryFailed": "Retry failed jobs",
-        "close": "Close",
-        "confirmDisableTitle": "Disable this binding?",
-        "confirmDisableBody": "Inbound webhook events will still be accepted (HMAC verified, audit row written) but the scanner queue will not dispatch them, so no compile fires.",
-        "confirmDisable": "Confirm disable",
-        "confirmEnableTitle": "Enable this binding?",
-        "confirmEnableBody": "Once re-enabled, queued and incoming events will resume compile dispatch.",
-        "confirmEnable": "Confirm enable",
-        "confirmDeleteTitle": "Delete this binding?",
-        "confirmDeleteBody": "Removes the binding row and clears its webhook events and ingestion intake history. Append-only audit (page citations, redaction events) is retained — if it blocks the delete, disable the binding instead.",
-        "confirmDelete": "Confirm delete",
-        "cancel": "Cancel"
+        "disable": "Wyłącz",
+        "enable": "Włącz",
+        "delete": "Usuń",
+        "forget": "Zapomnij źródło",
+        "scanNow": "Skanuj teraz",
+        "retryFailed": "Ponów nieudane zadania",
+        "close": "Zamknij",
+        "confirmDisableTitle": "Wyłączyć to powiązanie?",
+        "confirmDisableBody": "Przychodzące zdarzenia webhooka nadal będą przyjmowane (HMAC zweryfikowany, wpis audytu zapisany), ale kolejka skanera ich nie wyśle, więc kompilacja nie zostanie uruchomiona.",
+        "confirmDisable": "Potwierdź wyłączenie",
+        "confirmEnableTitle": "Włączyć to powiązanie?",
+        "confirmEnableBody": "Po ponownym włączeniu zakolejkowane i przychodzące zdarzenia wznowią dyspozycję kompilacji.",
+        "confirmEnable": "Potwierdź włączenie",
+        "confirmDeleteTitle": "Usunąć to powiązanie?",
+        "confirmDeleteBody": "Usuwa wiersz powiązania i czyści jego zdarzenia webhooka oraz historię przyjęć ingestii. Append-only audyt (cytowania stron, zdarzenia redakcji) pozostaje — jeśli blokuje usunięcie, wyłącz powiązanie zamiast usuwać.",
+        "confirmDelete": "Potwierdź usunięcie",
+        "cancel": "Anuluj"
       },
       "scanNow": {
-        "success": "Scan queued — see the Activity tab.",
-        "disabled": "Enable the binding before queuing a scan."
+        "success": "Skan dodany do kolejki — patrz zakładka Aktywność.",
+        "disabled": "Włącz powiązanie przed dodaniem skanu do kolejki."
       },
       "retryFailed": {
-        "success": "Re-enqueued {{count}} failed job(s) — see the Activity tab."
+        "success": "Ponownie zakolejkowano {{count}} nieudanych zadań — patrz zakładka Aktywność."
       },
       "intakeState": {
         "title": "stan przyjęć",
@@ -345,51 +344,51 @@
         "retryDisabledTooltip": "Ponowienie pojedynczego zadania trafi w PR-W2."
       },
       "errors": {
-        "patchFailed": "Could not update the binding. Try again or check the audit log.",
-        "disableFailed": "Could not disable binding (server rejected the request).",
-        "enableFailed": "Could not enable binding (server rejected the request).",
-        "deleteFailed": "Could not delete binding (server rejected the request).",
-        "deleteFkRestricted": "This binding has audit history that prevents deletion. Disable it instead.",
-        "scanNowFailed": "Could not queue a scan. Try again or check the audit log.",
-        "scanNowUnavailable": "Scanner queue is not wired in this deployment — check engine logs.",
-        "retryFailedFailed": "Could not re-enqueue failed jobs. Try again or check the audit log.",
-        "retryFailedUnavailable": "Classify-retry surface is not wired in this deployment — check engine logs.",
-        "auth": "Sign-in expired or insufficient permissions — re-paste your PAT.",
-        "transient": "Server is unreachable or returned an error. Try again."
+        "patchFailed": "Nie udało się zaktualizować powiązania. Spróbuj ponownie lub sprawdź dziennik audytu.",
+        "disableFailed": "Nie udało się wyłączyć powiązania (serwer odrzucił żądanie).",
+        "enableFailed": "Nie udało się włączyć powiązania (serwer odrzucił żądanie).",
+        "deleteFailed": "Nie udało się usunąć powiązania (serwer odrzucił żądanie).",
+        "deleteFkRestricted": "To powiązanie ma historię audytu blokującą usunięcie. Wyłącz je zamiast usuwać.",
+        "scanNowFailed": "Nie udało się dodać skanu do kolejki. Spróbuj ponownie lub sprawdź dziennik audytu.",
+        "scanNowUnavailable": "Kolejka skanera nie jest podłączona w tym wdrożeniu — sprawdź logi silnika.",
+        "retryFailedFailed": "Nie udało się ponownie zakolejkować nieudanych zadań. Spróbuj ponownie lub sprawdź dziennik audytu.",
+        "retryFailedUnavailable": "Powierzchnia ponawiania klasyfikacji nie jest podłączona w tym wdrożeniu — sprawdź logi silnika.",
+        "auth": "Sesja wygasła lub brak uprawnień — wklej PAT ponownie.",
+        "transient": "Serwer nieosiągalny lub zwrócił błąd. Spróbuj ponownie."
       }
     }
   },
   "sourceBindingDetail": {
     "edit": {
-      "open": "Edit",
-      "title": "Edit binding",
-      "subtitle": "Operational settings and credential rotation. Both apply to the next scheduled tick or webhook event.",
-      "save": "Save",
-      "saving": "Saving",
-      "cancel": "Cancel",
+      "open": "Edytuj",
+      "title": "Edytuj powiązanie",
+      "subtitle": "Ustawienia operacyjne i rotacja danych uwierzytelniających. Oba obowiązują od następnego tyknięcia harmonogramu lub zdarzenia webhooka.",
+      "save": "Zapisz",
+      "saving": "Zapisywanie",
+      "cancel": "Anuluj",
       "config": {
-        "title": "Operational settings",
-        "subtitle": "Adapter-specific config persisted on the binding row."
+        "title": "Ustawienia operacyjne",
+        "subtitle": "Konfiguracja zależna od adaptera, przechowywana w wierszu powiązania."
       },
       "credentials": {
-        "title": "Rotate credentials",
-        "subtitle": "Saving requires every field — rotation replaces the credential atomically.",
-        "banner": "Rotating credentials does not pause the binding — in-flight events finish on the old key, new events use the new key."
+        "title": "Rotuj dane uwierzytelniające",
+        "subtitle": "Zapis wymaga każdego pola — rotacja atomowo zastępuje dane uwierzytelniające.",
+        "banner": "Rotacja danych uwierzytelniających nie wstrzymuje powiązania — zdarzenia w locie kończą się na starym kluczu, nowe używają nowego klucza."
       },
       "errors": {
-        "configFailed": "Could not save operational settings. Check the field errors below.",
-        "credentialsFailed": "Could not rotate credentials. Check the field errors below.",
-        "credentialsEmpty": "Type at least one credential field before saving.",
-        "webhookSecretNotSupported": "This adapter has no webhook secret to rotate.",
-        "auth": "Sign-in expired or insufficient permissions — re-paste your PAT.",
-        "transient": "Server is unreachable or returned an error. Try again."
+        "configFailed": "Nie udało się zapisać ustawień operacyjnych. Sprawdź błędy pól poniżej.",
+        "credentialsFailed": "Nie udało się obrócić danych uwierzytelniających. Sprawdź błędy pól poniżej.",
+        "credentialsEmpty": "Wpisz przynajmniej jedno pole uwierzytelniające przed zapisaniem.",
+        "webhookSecretNotSupported": "Ten adapter nie ma sekretu webhooka do rotacji.",
+        "auth": "Sesja wygasła lub brak uprawnień — wklej PAT ponownie.",
+        "transient": "Serwer nieosiągalny lub zwrócił błąd. Spróbuj ponownie."
       }
     },
     "allowedPaths": {
-      "title": "Allowed wiki paths",
-      "subtitle": "Subtree globs the classifier may write into. The runtime guard rejects empty or wildcard-only lists.",
-      "editOpen": "Edit",
-      "saveFailed": "Could not save allowed paths. Try again or check the audit log."
+      "title": "Dozwolone ścieżki wiki",
+      "subtitle": "Wzorce glob poddrzewa, w które klasyfikator może pisać. Runtime guard odrzuca puste listy lub same wieloznaczniki.",
+      "editOpen": "Edytuj",
+      "saveFailed": "Nie udało się zapisać dozwolonych ścieżek. Spróbuj ponownie lub sprawdź dziennik audytu."
     },
     "retentionOverride": {
       "title": "Nadpisanie retencji",
@@ -414,27 +413,28 @@
     }
   },
   "llmPolicy": {
-    "title": "LLM policy",
-    "subtitle": "Per-domain provider/model assignments. Diff-and-confirm before apply.",
-    "preview": "Preview diff",
-    "apply": "Apply",
-    "committing": "committing…",
-    "cancel": "Cancel",
-    "empty": "Select a domain to view its policy.",
-    "noChanges": "No changes",
-    "diffTitle": "Sovereignty diff",
-    "diffSubtitle": "current → proposed",
-    "panelCurrent": "current",
-    "panelProposed": "proposed",
-    "timerLabel": "expires in",
-    "timerExpired": "expired",
-    "diffExpired": "Token expired. Re-preview to continue.",
-    "tokenMismatch": "The proposed policy changed since preview. Re-preview to continue.",
-    "applied": "Applied. New policy is active for new pipeline runs.",
+    "title": "Polityka LLM",
+    "subtitle": "Przypisanie dostawcy/modelu per domena. Podgląd różnicy i potwierdzenie przed zastosowaniem.",
+    "preview": "Podgląd różnicy",
+    "apply": "Zastosuj",
+    "committing": "zatwierdzanie…",
+    "cancel": "Anuluj",
+    "empty": "Wybierz domenę, aby zobaczyć jej politykę.",
+    "noChanges": "Brak zmian",
+    "diffTitle": "Różnica suwerenności",
+    "diffSubtitle": "bieżąca → proponowana",
+    "panelCurrent": "bieżąca",
+    "panelProposed": "proponowana",
+    "timerLabel": "wygasa za",
+    "timerExpired": "wygasło",
+    "diffExpired": "Token wygasł. Wyświetl podgląd ponownie, aby kontynuować.",
+    "tokenMismatch": "Proponowana polityka zmieniła się od czasu podglądu. Wyświetl podgląd ponownie, aby kontynuować.",
+    "invalidJson": "Proponowana polityka nie jest poprawnym JSON.",
+    "applied": "Zastosowano. Nowa polityka jest aktywna dla nowych uruchomień pipeline.",
     "editor": {
       "captionProvider": "dostawca",
       "captionModel": "model",
-      "pickModel": "Wybierz model",
+      "pickModel": "wybierz model",
       "advancedToggle": "Zaawansowane (surowy JSON)",
       "localOnly": "tylko lokalnie — odrzuć każde wywołanie dostawcy chmurowego dla tej domeny",
       "ollamaPlaceholder": "np. llama3.2:8b (model pobrany lokalnie)",
@@ -452,23 +452,25 @@
     "subtitleEditor": "Edytor nadpisań per-domena. Wybierz prompt, aby sforkować go z domyślnej wersji.",
     "columns": {
       "name": "nazwa",
-      "locale": "lokalizacja",
+      "locale": "język",
       "version": "wersja"
     },
     "empty": "Brak załadowanych promptów.",
     "groups": {
       "knowledge": "wiedza",
-      "operate": "operacje"
+      "operate": "praca"
     },
     "diffBanner": {
       "title_one": "prompt ma dostępną nową wersję domyślną",
+      "title_few": "prompty mają dostępne nowe wersje domyślne",
+      "title_many": "promptów ma dostępne nowe wersje domyślne",
       "title_other": "prompty mają dostępne nowe wersje domyślne",
       "acknowledge": "potwierdź różnicę"
     },
     "editor": {
       "empty": "Wybierz prompt z lewej, aby zobaczyć lub nadpisać jego treść.",
       "domain": "domena",
-      "locale": "lokalizacja",
+      "locale": "język",
       "baseline": "domyślna",
       "save": "Zapisz",
       "revert": "Wróć do domyślnej",
@@ -483,30 +485,32 @@
       "appliedToast": "Nadpisanie zastosowane. Nowa treść jest aktywna dla pipeline'ów tej domeny.",
       "revertedToast": "Nadpisanie usunięte. Domena używa teraz domyślnej wersji.",
       "revertConfirmTitle": "Usuń nadpisanie",
-      "revertConfirmBody": "To usunie nadpisanie {{name}} dla tej domeny + lokalizacji. Domyślna wersja zaczyna obowiązywać natychmiast. Audit log zapisuje usunięcie; poprzednia treść nie podlega odzyskaniu.",
+      "revertConfirmBody": "To usunie nadpisanie {{name}} dla tej domeny i języka. Domyślna wersja zaczyna obowiązywać natychmiast. Dziennik audytu zapisuje usunięcie; poprzednia treść jest nieodwracalna.",
       "revertAck": "Rozumiem, że treść nadpisania jest nieodwracalnie tracona",
       "revertConfirm": "Usuń nadpisanie",
       "errors": {
         "payloadMismatch": "Treść zmieniła się między podglądem a zapisem. Wyświetl podgląd ponownie, aby kontynuować.",
         "expired": "Token suwerenności wygasł. Wyświetl podgląd ponownie.",
         "signatureMismatch": "Token suwerenności został zmodyfikowany. Wyświetl podgląd ponownie.",
-        "driftFallback": "Domyślna wersja zmieniła się; kliknij Sforkuj ponownie."
+        "driftFallback": "Domyślna wersja zmieniła się; kliknij Sforkuj ponownie z nowej domyślnej."
       }
     },
     "debug": {
       "title": "Co zostało faktycznie wysłane",
       "expand": "rozwiń",
       "collapse": "zwiń",
-      "disabledBanner": "LLM_DEBUG_LOG=1 nie jest ustawione na tym wdrożeniu. Ustaw zmienną środowiskową i zrestartuj, aby zapisywać treści przygotowywane przez router LLM.",
+      "disabledBanner": "LLM_DEBUG_LOG=1 nie jest ustawione w tym wdrożeniu. Ustaw zmienną środowiskową i zrestartuj, aby zapisywać treści przygotowywane przez router LLM.",
       "emptyBanner": "Brak zapisanych uruchomień dla tego promptu × domeny."
     }
   },
   "common": {
-    "save": "Save",
-    "cancel": "Cancel",
-    "loading": "Loading…",
-    "retry": "Retry",
-    "error": "Something went wrong."
+    "save": "Zapisz",
+    "cancel": "Anuluj",
+    "loading": "Wczytywanie…",
+    "retry": "Ponów",
+    "error": "Coś poszło nie tak.",
+    "yes": "tak",
+    "no": "nie"
   },
   "tooltip": {
     "about": "O parametrze {{term}}"
@@ -527,8 +531,8 @@
   },
   "help": {
     "reviewMode": {
-      "label": "tryb przeglądu",
-      "body": "Sposób, w jaki dokumenty z tego źródła trafiają do wiki. `auto` zapisuje je bezpośrednio; `review` umieszcza każdą stronę w zakładce Review do zatwierdzenia przez człowieka; `approve` jest wariantem ściślejszym — strona musi też przejść Lint, zanim trafi do przeglądu. Surowsze tryby spowalniają przepływ, ale wcześniej wychwytują błędne kierowanie do domeny."
+      "label": "tryb recenzji",
+      "body": "Sposób, w jaki dokumenty z tego powiązania trafiają do wiki. `auto` zapisuje je bezpośrednio; `review` umieszcza każdą stronę w zakładce Przegląd do zatwierdzenia przez człowieka; `approve` jest wariantem ściślejszym — strona musi też przejść Lint, zanim trafi do przeglądu. Surowsze tryby spowalniają przepływ, ale wcześniej wychwytują błędne kierowanie do domeny."
     },
     "allowedPaths": {
       "label": "dozwolone ścieżki",
@@ -543,155 +547,155 @@
       "body": "Gdy włączone, pipeline triggera kolejkuje rekompilacje pliku `worldview.md` dla tej domeny, dzięki czemu agenci mają zwięzłe, skompilowane przez Thinkera podsumowanie w swoim system prompcie. Wyłączenie zatrzymuje kolejne rekompilacje; istniejący plik worldview pozostaje w Gitea do czasu ręcznego usunięcia."
     },
     "governanceCadence": {
-      "label": "rytm governance",
-      "body": "Jak często ludzki reviewer ma przejrzeć skompilowane strony tej domeny. Steruje rytmem wyświetlania w agencie Heartbeat i pojawia się na osi Reports. Wybierz `weekly` dla domen o wysokiej dynamice, `quarterly` dla archiwalnych."
+      "label": "rytm nadzoru",
+      "body": "Jak często ludzki recenzent ma przejrzeć skompilowane strony tej domeny. Steruje rytmem wyświetlania w agencie Heartbeat i pojawia się na osi Raportów. Wybierz `weekly` dla domen o wysokiej dynamice, `quarterly` dla archiwalnych."
     }
   },
   "credentialForm": {
-    "required": "required",
-    "optional": "optional",
-    "requiredError": "Required.",
-    "encryptedNote": "stored encrypted",
-    "saving": "saving…"
+    "required": "wymagane",
+    "optional": "opcjonalne",
+    "requiredError": "Wymagane.",
+    "encryptedNote": "przechowywane w postaci zaszyfrowanej",
+    "saving": "zapisywanie…"
   },
   "activity": {
-    "title": "Activity",
+    "title": "Aktywność",
     "emptyState": {
-      "title": "No activity yet",
-      "body": "Activity will stream here as agents run and sources fire. Once a heartbeat compiles or a binding scans, lifecycle events land in the feed below."
+      "title": "Brak aktywności",
+      "body": "Aktywność będzie się pojawiać tu, gdy agenci działają, a źródła generują zdarzenia. Gdy Heartbeat skompiluje raport lub powiązanie wykona skan, zdarzenia cyklu życia pojawią się w strumieniu poniżej."
     },
     "tabs": {
-      "feed": "feed",
-      "runs": "runs",
-      "pipelines": "pipelines"
+      "feed": "strumień",
+      "runs": "uruchomienia",
+      "pipelines": "pipeline'y"
     },
     "feed": {
-      "connecting": "connecting…",
-      "live": "live",
-      "authExpired": "auth expired",
-      "empty": "No events yet.",
-      "dlq": "delivery failed",
-      "dlqAlert": "output delivery DLQ —",
-      "dlqDeliveryId": "delivery-id",
+      "connecting": "łączenie…",
+      "live": "na żywo",
+      "authExpired": "sesja wygasła",
+      "empty": "Brak zdarzeń.",
+      "dlq": "dostarczenie nieudane",
+      "dlqAlert": "DLQ dostarczeń wyjścia —",
+      "dlqDeliveryId": "id-dostarczenia",
       "intakeFailed": "przyjęcie nie powiodło się",
-      "intakeFailedRow": "binding",
+      "intakeFailedRow": "powiązanie",
       "intakeFailedClass": "klasa",
       "intakeFailedRecentCount": "podobne (1h)",
       "authFailed": {
-        "title": "Sign-in expired",
-        "body": "Re-paste your PAT to reconnect to the activity feed.",
-        "action": "Re-paste PAT"
+        "title": "Sesja wygasła",
+        "body": "Wklej PAT ponownie, aby wznowić podgląd strumienia aktywności.",
+        "action": "Wklej PAT ponownie"
       }
     },
     "runs": {
-      "empty": "No runs yet."
+      "empty": "Brak uruchomień."
     },
     "pipelines": {
-      "empty": "No pipelines wired."
+      "empty": "Brak podłączonych pipeline'ów."
     }
   },
   "review": {
-    "title": "Review",
+    "title": "Przegląd",
     "emptyState": {
-      "title": "No review items pending",
-      "body": "Review queue is empty. As source bindings request approval, lint findings surface, or the Surfacer proposes automation candidates, items will appear in the sub-tabs below."
+      "title": "Brak elementów do przeglądu",
+      "body": "Kolejka przeglądu jest pusta. Gdy powiązania źródeł poproszą o zatwierdzenie, pojawią się wyniki Linta, lub Surfacer zaproponuje kandydatów do automatyzacji, elementy pojawią się w pod-zakładkach poniżej."
     },
     "tabs": {
-      "sourceBindings": "source bindings",
-      "lintFindings": "lint findings",
-      "candidates": "surfacer candidates"
+      "sourceBindings": "powiązania źródeł",
+      "lintFindings": "wyniki linta",
+      "candidates": "kandydaci Surfacera"
     },
-    "upcoming": "skill candidates (phase-b) and marketplace updates (phase-c) ship later",
+    "upcoming": "kandydaci umiejętności (faza-b) i aktualizacje marketplace (faza-c) trafią później",
     "sourceBindings": {
-      "empty": "No bindings need review.",
-      "approve": "approve",
+      "empty": "Brak powiązań wymagających przeglądu.",
+      "approve": "zatwierdź",
       "columns": {
-        "name": "name",
+        "name": "nazwa",
         "status": "status",
-        "pending": "pending events",
-        "mode": "review mode",
-        "actions": "actions"
+        "pending": "oczekujące zdarzenia",
+        "mode": "tryb recenzji",
+        "actions": "akcje"
       }
     },
     "sovereigntyConfirm": {
-      "title": "LLM policy — sovereignty diff",
-      "body": "Approving \"{{name}}\" may change the effective LLM routing for this binding. Confirm to continue.",
-      "confirm": "Confirm"
+      "title": "Polityka LLM — różnica suwerenności",
+      "body": "Zatwierdzenie „{{name}}” może zmienić efektywne kierowanie LLM dla tego powiązania. Potwierdź, aby kontynuować.",
+      "confirm": "Potwierdź"
     },
     "lintFindings": {
-      "empty": "No lint findings.",
-      "acknowledge": "ack",
+      "empty": "Brak wyników linta.",
+      "acknowledge": "potwierdź",
       "columns": {
-        "kind": "kind",
-        "path": "path",
-        "detail": "detail",
-        "actions": "actions"
+        "kind": "rodzaj",
+        "path": "ścieżka",
+        "detail": "szczegóły",
+        "actions": "akcje"
       }
     },
     "candidates": {
-      "empty": "No proposed candidates.",
-      "approve": "approve",
-      "reject": "reject",
-      "conflict": "already decided — reload",
+      "empty": "Brak proponowanych kandydatów.",
+      "approve": "zatwierdź",
+      "reject": "odrzuć",
+      "conflict": "decyzja już podjęta — odśwież",
       "columns": {
-        "proposal": "proposal",
-        "sourcePages": "source pages",
-        "created": "created",
-        "actions": "actions"
+        "proposal": "propozycja",
+        "sourcePages": "strony źródłowe",
+        "created": "utworzono",
+        "actions": "akcje"
       }
     }
   },
   "reports": {
-    "title": "Reports",
+    "title": "Raporty",
     "tabs": {
       "heartbeat": "heartbeat",
-      "redaction": "redaction events"
+      "redaction": "zdarzenia redakcji"
     },
     "heartbeat": {
-      "empty": "No heartbeat reports yet.",
-      "noInstance": "(no instance)",
+      "empty": "Brak raportów Heartbeat.",
+      "noInstance": "(brak instancji)",
       "priorityLabel": "P{{n}}:",
-      "errorPrefix": "Could not load heartbeats:",
-      "errorHelp": "Re-check that your PAT is still valid, then refresh."
+      "errorPrefix": "Nie udało się załadować heartbeatów:",
+      "errorHelp": "Sprawdź, czy twój PAT jest nadal ważny, a następnie odśwież."
     },
     "diagnostics": {
-      "title": "Heartbeat status",
-      "loading": "Checking heartbeat preconditions…",
-      "errorPrefix": "Could not load diagnostics:",
-      "healthy": "Heartbeat chain looks healthy — runs are completing with output. No reports in the visible window yet.",
+      "title": "Status Heartbeat",
+      "loading": "Sprawdzanie warunków wstępnych Heartbeat…",
+      "errorPrefix": "Nie udało się załadować diagnostyki:",
+      "healthy": "Łańcuch Heartbeat wygląda zdrowo — uruchomienia kończą się z wyjściem. Brak raportów w bieżącym oknie.",
       "noInstance": {
-        "label": "No heartbeat instance configured.",
-        "cta": "Create heartbeat instance"
+        "label": "Brak skonfigurowanej instancji Heartbeat.",
+        "cta": "Utwórz instancję Heartbeat"
       },
       "disabled": {
-        "label": "Heartbeat instance exists but is disabled.",
-        "cta": "Open Agents tab"
+        "label": "Instancja Heartbeat istnieje, ale jest wyłączona.",
+        "cta": "Otwórz zakładkę Agenci"
       },
       "noOutputChannels": {
-        "label": "Heartbeat instance has no output channels bound.",
-        "cta": "Open Agents tab"
+        "label": "Instancja Heartbeat nie ma podłączonych kanałów wyjścia.",
+        "cta": "Otwórz zakładkę Agenci"
       },
       "noRuns": {
-        "label": "Heartbeat instance has never completed a run.",
-        "cta": "Open Agents tab"
+        "label": "Instancja Heartbeat nigdy nie ukończyła uruchomienia.",
+        "cta": "Otwórz zakładkę Agenci"
       },
       "outputNull": {
-        "label": "Heartbeat run completed but produced no output. Last run: {{when}}.",
-        "cta": "View run details"
+        "label": "Uruchomienie Heartbeat zakończyło się, ale nie wyprodukowało wyjścia. Ostatnie uruchomienie: {{when}}.",
+        "cta": "Zobacz szczegóły uruchomienia"
       },
       "runInFlight": {
-        "label": "Heartbeat run is still in progress. Started: {{when}}.",
-        "cta": "Watch in Activity"
+        "label": "Uruchomienie Heartbeat trwa. Rozpoczęto: {{when}}.",
+        "cta": "Obserwuj w Aktywności"
       },
       "runFailed": {
-        "label": "Most recent run ended as {{status}}. Last run: {{when}}.",
-        "cta": "View run details"
+        "label": "Najnowsze uruchomienie zakończyło się jako {{status}}. Ostatnie uruchomienie: {{when}}.",
+        "cta": "Zobacz szczegóły uruchomienia"
       }
     },
     "redaction": {
-      "empty": "No redaction events yet.",
-      "errorPrefix": "Could not load redaction events:",
-      "errorHelp": "Re-check that your PAT is still valid, then refresh.",
+      "empty": "Brak zdarzeń redakcji.",
+      "errorPrefix": "Nie udało się załadować zdarzeń redakcji:",
+      "errorHelp": "Sprawdź, czy twój PAT jest nadal ważny, a następnie odśwież.",
       "columns": {
         "category": "kategoria",
         "pipeline": "pipeline",
@@ -703,57 +707,57 @@
     }
   },
   "debug": {
-    "bannerLabel": "LLM_DEBUG_LOG=1 · prompts and responses are mirroring to llm_usage_debug"
+    "bannerLabel": "LLM_DEBUG_LOG=1 · prompty i odpowiedzi są kopiowane do llm_usage_debug"
   },
   "agentsRunNow": {
     "labels": {
-      "runNow": "Run now",
-      "refreshNow": "Refresh now",
-      "rerunLint": "Re-run lint",
-      "queued": "Queued · {sec}s",
-      "running": "Running · {sec}s"
+      "runNow": "Uruchom teraz",
+      "refreshNow": "Odśwież teraz",
+      "rerunLint": "Uruchom Lint ponownie",
+      "queued": "W kolejce · {sec}s",
+      "running": "Uruchamianie · {sec}s"
     },
     "tooltips": {
-      "rateLimited": "Rate limited — try again in {sec}s",
-      "dispatcherUnavailable": "Agent dispatcher offline. Check engine logs."
+      "rateLimited": "Ograniczenie tempa — spróbuj ponownie za {sec}s",
+      "dispatcherUnavailable": "Dyspozytor agentów offline. Sprawdź logi silnika."
     },
     "errors": {
-      "dispatchFailed": "Could not start the agent. Try again or check the audit log.",
-      "auth": "Sign-in expired or insufficient permissions — re-paste your PAT."
+      "dispatchFailed": "Nie udało się uruchomić agenta. Spróbuj ponownie lub sprawdź dziennik audytu.",
+      "auth": "Sesja wygasła lub brak uprawnień — wklej PAT ponownie."
     },
     "heartbeatRefresh": {
-      "subtitle": "Trigger a fresh heartbeat compile for this domain."
+      "subtitle": "Wyzwól świeżą kompilację Heartbeat dla tej domeny."
     },
     "lintRerun": {
-      "subtitle": "Re-run lint on the current findings' domain."
+      "subtitle": "Uruchom Lint ponownie na domenie bieżących wyników."
     },
     "activityCard": {
-      "title": "Scheduled agents",
-      "subtitle": "Per-instance recurring jobs. Use Run now to fire on demand.",
-      "empty": "No scheduled agents wired.",
+      "title": "Zaplanowani agenci",
+      "subtitle": "Cykliczne zadania per instancja. Użyj „Uruchom teraz”, aby wyzwolić na żądanie.",
+      "empty": "Brak zaplanowanych agentów.",
       "columns": {
         "agent": "agent",
-        "instance": "instance",
-        "schedule": "schedule",
-        "lastFire": "last fired",
-        "actions": "actions"
+        "instance": "instancja",
+        "schedule": "harmonogram",
+        "lastFire": "ostatnio uruchomiony",
+        "actions": "akcje"
       }
     }
   },
   "forgetImpact": {
     "title": "Zapomnij źródło",
-    "lead": "Trwale usunie wkład tego źródła z wiki.",
+    "lead": "To trwale usunie wkład tego źródła z wiki.",
     "loading": "Liczenie wpływu…",
-    "summary": "Wpływ: {{recompile}} stron przekompiluje, {{deletes}} stron usunie się całkowicie, {{citations}} cytowań usuniętych.",
+    "summary": "Wpływ: {{recompile}} stron do rekompilacji, {{deletes}} stron usuniętych całkowicie, {{citations}} cytowań usuniętych.",
     "capUsed": "Dzienny limit usunięć: {{used}}/{{cap}} wykorzystane dziś",
-    "capExceeded": "Nie można zapomnieć — przekroczyłoby dziś limit usunięć ({{cap}}/dzień). Poczekaj na reset.",
-    "acknowledge": "Rozumiem, że {{recompile}} stron zostanie przekompilowanych, a {{deletes}} usunięte na stałe",
+    "capExceeded": "Nie można zapomnieć — przekroczyłoby dziś limit usunięć ({{cap}}/dzień). Poczekaj na reset limitu.",
+    "acknowledge": "Rozumiem, że {{recompile}} stron zostanie przekompilowanych, a {{deletes}} usunięte trwale",
     "cancel": "Anuluj",
     "confirm": "Zapomnij źródło",
     "confirming": "Zapominanie…",
     "errors": {
       "loadFailed": "Nie udało się załadować wpływu. Spróbuj ponownie.",
-      "confirmFailed": "Nie udało się zapomnieć źródła. Spróbuj ponownie lub sprawdź audit log.",
+      "confirmFailed": "Nie udało się zapomnieć źródła. Spróbuj ponownie lub sprawdź dziennik audytu.",
       "capExceeded": "Osiągnięto dzienny limit usunięć. Spróbuj po północy UTC.",
       "auth": "Sesja wygasła lub brak uprawnień — wklej PAT ponownie.",
       "transient": "Serwer nieosiągalny lub zwrócił błąd. Spróbuj ponownie."
@@ -778,168 +782,170 @@
       "custom": "Własny cron"
     },
     "errors": {
-      "cronInvalid": "Nie udało się przeparsować cron.",
-      "cronInvalidWithReason": "Nie udało się przeparsować cron: {{reason}}",
+      "cronInvalid": "Nie udało się przeparsować wzorca cron.",
+      "cronInvalidWithReason": "Nie udało się przeparsować wzorca cron: {{reason}}",
       "saveFailed": "Nie udało się zapisać harmonogramu. Spróbuj ponownie.",
       "schedulerUnavailable": "Harmonogram nieaktywny. Sprawdź logi silnika.",
       "auth": "Sesja wygasła lub brak uprawnień — wklej PAT ponownie."
     }
   },
   "audit": {
-    "title": "Audit log",
-    "subtitle": "Append-only record of every state-changing admin action.",
-    "scopeAside": "Records who changed what, when. Reads are also recorded so the trail can't be mined silently. Metadata is sanitised at write time — secret bytes never reach this view.",
+    "title": "Dziennik audytu",
+    "subtitle": "Append-only zapis każdej akcji administracyjnej zmieniającej stan.",
+    "scopeAside": "Zapisuje, kto co zmienił i kiedy. Odczyty również są rejestrowane, aby ślad nie mógł być przeczesywany niezauważenie. Metadane są oczyszczane przy zapisie — bajty sekretów nigdy nie docierają do tego widoku.",
     "emptyState": {
-      "title": "No audit entries yet",
-      "body": "Audit history will populate as operators make changes. Every state-changing admin action is recorded here, sanitised at write time so secret bytes never reach this view."
+      "title": "Brak wpisów audytu",
+      "body": "Historia audytu zapełni się, gdy operatorzy wprowadzą zmiany. Każda akcja administracyjna zmieniająca stan jest tu rejestrowana, oczyszczana przy zapisie — bajty sekretów nigdy nie docierają do tego widoku."
     },
     "filters": {
-      "action": "action",
-      "actorPlaceholder": "username substring or user UUID",
-      "resourcePlaceholder": "slug, binding id, or domain id",
-      "from": "from",
-      "to": "to",
-      "actionAll": "any action",
-      "actionSelected_one": "{{n}} action",
-      "actionSelected_other": "{{n}} actions",
-      "clear": "Clear filters"
+      "action": "akcja",
+      "actorPlaceholder": "fragment nazwy użytkownika lub UUID użytkownika",
+      "resourcePlaceholder": "slug, id powiązania lub id domeny",
+      "from": "od",
+      "to": "do",
+      "actionAll": "dowolna akcja",
+      "actionSelected_one": "{{n}} akcja",
+      "actionSelected_few": "{{n}} akcje",
+      "actionSelected_many": "{{n}} akcji",
+      "actionSelected_other": "{{n}} akcji",
+      "clear": "Wyczyść filtry"
     },
     "columns": {
-      "time": "time",
-      "action": "action",
-      "actor": "actor",
-      "resource": "resource"
+      "time": "czas",
+      "action": "akcja",
+      "actor": "wykonawca",
+      "resource": "zasób"
     },
-    "empty": "No audit-log rows match the current filters.",
-    "loadError": "Could not load audit log. Try again.",
+    "empty": "Żaden wiersz dziennika audytu nie pasuje do bieżących filtrów.",
+    "loadError": "Nie udało się załadować dziennika audytu. Spróbuj ponownie.",
     "row": {
-      "expand": "Show details",
-      "collapse": "Hide details",
-      "metadata": "metadata",
-      "copy": "Copy JSON",
-      "copied": "copied",
-      "copyFailed": "Copy failed",
-      "showFull": "Show full payload",
-      "showLess": "Truncate",
-      "truncatedNote": "Payload truncated at {{kb}} KB.",
+      "expand": "Pokaż szczegóły",
+      "collapse": "Ukryj szczegóły",
+      "metadata": "metadane",
+      "copy": "Kopiuj JSON",
+      "copied": "skopiowano",
+      "copyFailed": "Kopiowanie nieudane",
+      "showFull": "Pokaż pełny ładunek",
+      "showLess": "Skróć",
+      "truncatedNote": "Ładunek skrócony do {{kb}} KB.",
       "ipPrefix": "ip:",
       "uaPrefix": "ua:"
     },
     "pagination": {
-      "prev": "Prev",
-      "next": "Next",
-      "page": "Page {{page}}"
+      "prev": "Poprzednia",
+      "next": "Następna",
+      "page": "Strona {{page}}"
     }
   },
   "cost": {
-    "title": "Cost",
-    "subtitle": "Per-domain spend, projected month-end, tier split.",
-    "loadError": "Could not load cost summary. Try again.",
-    "loading": "Loading cost data…",
-    "empty": "No usage recorded yet.",
+    "title": "Koszty",
+    "subtitle": "Wydatki per domena, prognoza na koniec miesiąca, podział na poziomy.",
+    "loadError": "Nie udało się załadować podsumowania kosztów. Spróbuj ponownie.",
+    "loading": "Wczytywanie danych kosztów…",
+    "empty": "Brak zarejestrowanego użycia.",
     "header": {
-      "thisMonth": "this month",
-      "projectedEom": "projected month-end",
-      "vsCap": "vs cap",
-      "noCap": "no cap set",
-      "live": "live spending"
+      "thisMonth": "ten miesiąc",
+      "projectedEom": "prognoza na koniec miesiąca",
+      "vsCap": "wobec limitu",
+      "noCap": "brak limitu",
+      "live": "wydatki na żywo"
     },
     "burndown": {
-      "title": "Burn-down per domain",
-      "subtitle": "Month-to-date usage against the per-domain monthly cap.",
-      "noCap": "no cap",
-      "paused": "paused"
+      "title": "Burn-down per domena",
+      "subtitle": "Użycie od początku miesiąca wobec miesięcznego limitu per domena.",
+      "noCap": "brak limitu",
+      "paused": "wstrzymane"
     },
     "tierSplit": {
-      "title": "Spend by tier",
-      "subtitle": "Three-tier split for the selected period.",
-      "thinker": "thinker",
-      "worker": "worker",
-      "light": "light"
+      "title": "Wydatki wg poziomu",
+      "subtitle": "Podział na trzy poziomy dla wybranego okresu.",
+      "thinker": "Thinker",
+      "worker": "Worker",
+      "light": "Light"
     },
     "table": {
-      "title": "Top buckets",
-      "key": "key",
-      "totalUsd": "cost",
-      "tokensIn": "tokens in",
-      "tokensOut": "tokens out",
-      "runs": "runs",
-      "truncated": "showing top {{n}}"
+      "title": "Najwyższe pozycje",
+      "key": "klucz",
+      "totalUsd": "koszt",
+      "tokensIn": "tokeny we",
+      "tokensOut": "tokeny wy",
+      "runs": "uruchomienia",
+      "truncated": "pokazano top {{n}}"
     },
     "selectors": {
-      "period": "period",
-      "groupBy": "group by",
-      "day": "day",
-      "week": "week",
-      "month": "month",
-      "domain": "domain",
+      "period": "okres",
+      "groupBy": "grupuj wg",
+      "day": "dzień",
+      "week": "tydzień",
+      "month": "miesiąc",
+      "domain": "domena",
       "model": "model",
-      "tier": "tier",
+      "tier": "poziom",
       "agent": "agent"
     }
   },
   "agents": {
-    "title": "Agents",
-    "subtitle": "Schedule cadence, enable/disable, and bind output channels per agent instance.",
-    "empty": "No agent instances yet — seed via the opencoo CLI.",
+    "title": "Agenci",
+    "subtitle": "Ustawiaj rytm harmonogramu, włączaj/wyłączaj i powiązuj kanały wyjścia per instancja agenta.",
+    "empty": "Brak instancji agentów — utwórz przez CLI opencoo.",
     "emptyState": {
-      "title": "No agent instances yet",
-      "body": "Seed a heartbeat, lint, or chat agent for a domain. Instances carry the cadence, prompt overrides, and output channel bindings that decide what opencoo runs on your behalf.",
-      "ctaLabel": "+ New agent instance"
+      "title": "Brak instancji agentów",
+      "body": "Utwórz instancję heartbeat, lint lub chat dla domeny. Instancje niosą rytm, nadpisania promptów i powiązania kanałów wyjścia — decydują, co opencoo uruchamia w twoim imieniu.",
+      "ctaLabel": "+ Nowa instancja agenta"
     },
-    "newInstanceStub": "+ New agent instance (CLI)",
-    "newInstance": "+ New agent instance",
-    "openAriaLabel": "Open agent instance {{name}}",
+    "newInstanceStub": "+ Nowa instancja agenta (CLI)",
+    "newInstance": "+ Nowa instancja agenta",
+    "openAriaLabel": "Otwórz instancję agenta {{name}}",
     "columns": {
-      "name": "name",
+      "name": "nazwa",
       "definitionSlug": "agent",
-      "schedule": "schedule",
-      "enabled": "enabled",
-      "boundChannels": "bound channels",
-      "lastRun": "last run"
+      "schedule": "harmonogram",
+      "enabled": "włączony",
+      "boundChannels": "powiązane kanały",
+      "lastRun": "ostatnie uruchomienie"
     }
   },
   "multiSelectDomains": {
-    "empty": "No active domains available — create one on the Domains tab first."
+    "empty": "Brak aktywnych domen — utwórz jedną najpierw w zakładce Domeny."
   },
   "agentInstance": {
     "detail": {
-      "title": "Agent instance",
-      "close": "Close",
-      "enable": "Enable",
-      "disable": "Disable",
+      "title": "Instancja agenta",
+      "close": "Zamknij",
+      "enable": "Włącz",
+      "disable": "Wyłącz",
       "labels": {
         "definitionSlug": "agent",
-        "name": "name",
-        "lastRun": "last run",
-        "boundChannels": "bound channels"
+        "name": "nazwa",
+        "lastRun": "ostatnie uruchomienie",
+        "boundChannels": "powiązane kanały"
       },
-      "outputChannels": "Output channels",
-      "outputChannelsEmpty": "No output channels available — add one in the Outputs tab first.",
-      "saveOutputChannels": "Save channels",
-      "enabled": "Enabled",
-      "scheduleCron": "Schedule (cron)",
-      "scheduleCronHint": "5-field UTC cron pattern. Example: 0 6 * * 1-5 (every weekday 06:00 UTC).",
-      "saveSchedule": "Save schedule",
-      "name": "Name",
-      "saveName": "Save name",
-      "scope": "Scope domains",
-      "scopeEmpty": "No domains in scope",
-      "editScope": "Edit",
-      "saveScope": "Save scope",
-      "cancelScopeEdit": "Cancel",
-      "scopeSaved": "Scope saved.",
-      "locale": "Locale",
-      "localeSaved": "Locale saved.",
-      "nameSaved": "Name saved.",
-      "memory": "Memory",
-      "clearMemory": "Clear memory",
-      "memoryClearHint": "Wipes this instance's persisted memory. The agent re-seeds from scratch on the next run.",
-      "memoryClearConfirmBody": "Clearing memory removes the agent's accumulated context. Useful when a stuck instance carries stale state into every run; irreversible.",
-      "memoryClearAck": "I understand this cannot be undone.",
-      "cancelMemoryClear": "Cancel",
-      "confirmMemoryClear": "Confirm clear",
-      "memoryCleared": "Memory cleared ({{bytes}} bytes wiped).",
+      "outputChannels": "Kanały wyjścia",
+      "outputChannelsEmpty": "Brak dostępnych kanałów wyjścia — dodaj jeden najpierw w zakładce Wyjścia.",
+      "saveOutputChannels": "Zapisz kanały",
+      "enabled": "Włączony",
+      "scheduleCron": "Harmonogram (cron)",
+      "scheduleCronHint": "5-polowy wzorzec cron w UTC. Przykład: 0 6 * * 1-5 (każdy dzień roboczy o 06:00 UTC).",
+      "saveSchedule": "Zapisz harmonogram",
+      "name": "Nazwa",
+      "saveName": "Zapisz nazwę",
+      "scope": "Domeny w zasięgu",
+      "scopeEmpty": "Brak domen w zasięgu",
+      "editScope": "Edytuj",
+      "saveScope": "Zapisz zasięg",
+      "cancelScopeEdit": "Anuluj",
+      "scopeSaved": "Zasięg zapisany.",
+      "locale": "Język",
+      "localeSaved": "Język zapisany.",
+      "nameSaved": "Nazwa zapisana.",
+      "memory": "Pamięć",
+      "clearMemory": "Wyczyść pamięć",
+      "memoryClearHint": "Czyści zapamiętany kontekst tej instancji. Agent zaczyna od zera przy następnym uruchomieniu.",
+      "memoryClearConfirmBody": "Wyczyszczenie pamięci usuwa zgromadzony kontekst agenta. Przydatne, gdy zablokowana instancja przenosi stary stan między uruchomieniami; nieodwracalne.",
+      "memoryClearAck": "Rozumiem, że tej operacji nie można cofnąć.",
+      "cancelMemoryClear": "Anuluj",
+      "confirmMemoryClear": "Potwierdź wyczyszczenie",
+      "memoryCleared": "Pamięć wyczyszczona ({{bytes}} bajtów usuniętych).",
       "prompts": "Prompty agenta",
       "promptsUnknownDefinition": "Brak zmapowanych promptów dla tej definicji agenta.",
       "promptEdit": "Edytuj",
@@ -952,97 +958,97 @@
       },
       "promptInstanceRevertedToast": "Nadpisanie instancji usunięte. Instancja korzysta teraz z nadpisania domeny (lub domyślnej wersji).",
       "bindOutputs": {
-        "success": "Output channels saved."
+        "success": "Kanały wyjścia zapisane."
       },
       "enabledToggled": {
-        "on": "Instance enabled.",
-        "off": "Instance disabled."
+        "on": "Instancja włączona.",
+        "off": "Instancja wyłączona."
       },
-      "scheduleSaved": "Schedule saved.",
+      "scheduleSaved": "Harmonogram zapisany.",
       "errors": {
-        "nameCollision": "Another instance under this agent already uses that name.",
-        "scopeRequired": "Select at least one domain in scope.",
-        "unknownScopeDomainIds": "One or more selected domains no longer exist.",
-        "duplicateScopeDomainIds": "Duplicate domain in scope — pick each at most once."
+        "nameCollision": "Inna instancja tego agenta używa już takiej nazwy.",
+        "scopeRequired": "Wybierz co najmniej jedną domenę w zasięgu.",
+        "unknownScopeDomainIds": "Jedna lub więcej wybranych domen już nie istnieje.",
+        "duplicateScopeDomainIds": "Powtórzona domena w zasięgu — wybierz każdą najwyżej raz."
       }
     },
     "create": {
-      "title": "New agent instance",
-      "subtitle": "Seeds the agent_instances row dispatcher reads on next run.",
-      "submit": "Create instance",
-      "submitting": "creating…",
+      "title": "Nowa instancja agenta",
+      "subtitle": "Zakłada wiersz agent_instances, który dyspozytor odczytuje przy następnym uruchomieniu.",
+      "submit": "Utwórz instancję",
+      "submitting": "tworzenie…",
       "fields": {
-        "definitionSlug": "agent definition",
-        "name": "name",
-        "scopeDomainIds": "scope domains",
-        "locale": "locale",
-        "scheduleCron": "schedule (cron, optional)",
-        "enabled": "enabled on create"
+        "definitionSlug": "definicja agenta",
+        "name": "nazwa",
+        "scopeDomainIds": "domeny w zasięgu",
+        "locale": "język",
+        "scheduleCron": "harmonogram (cron, opcjonalny)",
+        "enabled": "włączona przy utworzeniu"
       },
       "help": {
-        "name": "1–100 chars. Unique per (agent definition, name).",
-        "scope": "Domains this instance reads / writes. At least one; at most 20.",
-        "scheduleCron": "5-field UTC cron pattern, e.g. 0 8 * * 1-5. Leave blank for an unscheduled instance."
+        "name": "1–100 znaków. Unikalna per (definicja agenta, nazwa).",
+        "scope": "Domeny, z których ta instancja czyta i do których pisze. Co najmniej jedna; maksymalnie 20.",
+        "scheduleCron": "5-polowy wzorzec cron w UTC, np. 0 8 * * 1-5. Zostaw puste dla instancji bez harmonogramu."
       },
       "errors": {
-        "nameRequired": "Name is required.",
-        "nameTooLong": "Name must be 100 characters or fewer.",
-        "nameCollision": "Another instance under this agent already uses that name.",
-        "scopeRequired": "Select at least one domain in scope.",
-        "scopeTooMany": "At most 20 domains in scope.",
-        "unknownScopeDomainIds": "These domains no longer exist: {{ids}}",
-        "duplicateScopeDomainIds": "Duplicate domain in scope — pick each at most once.",
-        "invalidCron": "Cron pattern is invalid. Use 5 space-separated fields.",
-        "generic": "Could not create agent instance. Try again or check the audit log."
+        "nameRequired": "Nazwa jest wymagana.",
+        "nameTooLong": "Nazwa musi mieć do 100 znaków.",
+        "nameCollision": "Inna instancja tego agenta używa już takiej nazwy.",
+        "scopeRequired": "Wybierz co najmniej jedną domenę w zasięgu.",
+        "scopeTooMany": "Maksymalnie 20 domen w zasięgu.",
+        "unknownScopeDomainIds": "Te domeny już nie istnieją: {{ids}}",
+        "duplicateScopeDomainIds": "Powtórzona domena w zasięgu — wybierz każdą najwyżej raz.",
+        "invalidCron": "Wzorzec cron jest nieprawidłowy. Użyj 5 pól oddzielonych spacjami.",
+        "generic": "Nie udało się utworzyć instancji agenta. Spróbuj ponownie lub sprawdź dziennik audytu."
       }
     }
   },
   "errors": {
-    "bindOutputsFailed": "Could not save changes. Try again or check the audit log.",
-    "transient": "Transient error. Try again in a moment."
+    "bindOutputsFailed": "Nie udało się zapisać zmian. Spróbuj ponownie lub sprawdź dziennik audytu.",
+    "transient": "Błąd przejściowy. Spróbuj ponownie za chwilę."
   },
   "outputs": {
-    "title": "Outputs",
-    "subtitle": "Delivery channels agents send their JSON output to.",
-    "empty": "No output channels yet — add one to enable agent deliveries.",
+    "title": "Wyjścia",
+    "subtitle": "Kanały dostarczania, na które agenci wysyłają swoje wyjście JSON.",
+    "empty": "Brak kanałów wyjścia — dodaj jeden, aby umożliwić dostarczanie przez agentów.",
     "emptyState": {
-      "title": "No output channels yet",
-      "body": "Set up an Asana or webhook delivery target. Agents send their compiled JSON to bound channels — without one, heartbeats compile silently and never reach an operator.",
-      "ctaLabel": "+ New output channel"
+      "title": "Brak kanałów wyjścia",
+      "body": "Skonfiguruj cel dostarczania w Asana lub przez webhook. Agenci wysyłają skompilowany JSON na powiązane kanały — bez nich raporty Heartbeat kompilują się po cichu i nigdy nie docierają do operatora.",
+      "ctaLabel": "+ Nowy kanał wyjścia"
     },
-    "newChannel": "+ New output channel",
+    "newChannel": "+ Nowy kanał wyjścia",
     "columns": {
-      "name": "name",
+      "name": "nazwa",
       "adapter": "adapter",
-      "enabled": "enabled",
-      "createdAt": "created"
+      "enabled": "włączony",
+      "createdAt": "utworzony"
     },
-    "enabledYes": "enabled",
-    "enabledNo": "disabled",
+    "enabledYes": "włączony",
+    "enabledNo": "wyłączony",
     "create": {
-      "title": "New output channel",
+      "title": "Nowy kanał wyjścia",
       "adapter": "adapter",
-      "name": "name",
+      "name": "nazwa",
       "namePlaceholder": "daily-report",
-      "submit": "Create channel",
-      "cancel": "Cancel",
-      "saving": "saving…",
-      "credSection": "credentials",
-      "configSection": "operational settings"
+      "submit": "Utwórz kanał",
+      "cancel": "Anuluj",
+      "saving": "zapisywanie…",
+      "credSection": "dane uwierzytelniające",
+      "configSection": "ustawienia operacyjne"
     },
     "detail": {
-      "title": "Output channel",
-      "close": "Close",
-      "disable": "Disable",
-      "enable": "Enable",
-      "delete": "Delete",
-      "deleteConfirm": "Delete this channel? Bindings on agent instances become dangling.",
-      "deleting": "deleting…",
-      "openAriaLabel": "Open output channel {{name}}",
+      "title": "Kanał wyjścia",
+      "close": "Zamknij",
+      "disable": "Wyłącz",
+      "enable": "Włącz",
+      "delete": "Usuń",
+      "deleteConfirm": "Usunąć ten kanał? Powiązania na instancjach agentów staną się wiszące.",
+      "deleting": "usuwanie…",
+      "openAriaLabel": "Otwórz kanał wyjścia {{name}}",
       "labels": {
-        "name": "name",
+        "name": "nazwa",
         "adapter": "adapter",
-        "state": "state"
+        "state": "stan"
       }
     },
     "bulkDelete": {
@@ -1053,9 +1059,11 @@
       "confirmTitle_one": "Usunąć {{count}} kanał?",
       "confirmTitle_few": "Usunąć {{count}} kanały?",
       "confirmTitle_many": "Usunąć {{count}} kanałów?",
+      "confirmTitle_other": "Usunąć {{count}} kanałów?",
       "confirmBody_one": "Usunięcie {{count}} kanału jest nieodwracalne. Instancje agentów wciąż z nim powiązane pominą dostarczanie przy następnym uruchomieniu.",
       "confirmBody_few": "Usunięcie {{count}} kanałów jest nieodwracalne. Instancje agentów wciąż powiązane z usuniętym kanałem pominą dostarczanie przy następnym uruchomieniu.",
       "confirmBody_many": "Usunięcie {{count}} kanałów jest nieodwracalne. Instancje agentów wciąż powiązane z usuniętym kanałem pominą dostarczanie przy następnym uruchomieniu.",
+      "confirmBody_other": "Usunięcie {{count}} kanałów jest nieodwracalne. Instancje agentów wciąż powiązane z usuniętym kanałem pominą dostarczanie przy następnym uruchomieniu.",
       "confirmCheckboxLabel": "Rozumiem, że tej operacji nie można cofnąć.",
       "successToast": "Usunięto {{deleted}}, pominięto {{skipped}}",
       "selectAllAriaLabel": "Zaznacz wszystkie kanały",
@@ -1068,17 +1076,17 @@
     }
   },
   "routes": {
-    "activity": { "h1": "Activity" },
-    "review": { "h1": "Review" },
+    "activity": { "h1": "Aktywność" },
+    "review": { "h1": "Przegląd" },
     "reports": {
-      "h1": "Reports",
-      "lede": "Today's signals from the agents you've configured."
+      "h1": "Raporty",
+      "lede": "Dzisiejsze sygnały od agentów, których skonfigurowałeś."
     },
     "prompts": {
-      "lede": "The instructions your agents follow. Adapt them per domain or per instance."
+      "lede": "Instrukcje, którymi kierują się twoi agenci. Dostosuj je per domena lub per instancja."
     },
     "domains": {
-      "lede": "Each domain is its own wiki, its own LLM policy, its own access. Where your data lives."
+      "lede": "Każda domena to własne wiki, własna polityka LLM, własny dostęp. Tam żyją twoje dane."
     }
   }
 }

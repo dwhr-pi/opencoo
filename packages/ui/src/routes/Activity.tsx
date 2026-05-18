@@ -40,6 +40,7 @@ import {
   type SubscribeToAgentRuns,
 } from "../lib/agent-runs-subscription.js";
 import { fetchAdmin, fetchOptsFor } from "../lib/api.js";
+import { formatDateTime, formatTime } from "../lib/intl-format.js";
 import { clearPat } from "../lib/pat-store.js";
 import { openSseClient } from "../lib/sse.js";
 import type { AgentRun, Pipeline } from "../types.js";
@@ -524,7 +525,7 @@ function FeedView(props: { onAuthFailed?: () => void }): JSX.Element {
 // ─── Runs sub-view ────────────────────────────────────────────────────────────
 
 function RunsView(props: { fetchImpl?: typeof fetch }): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<readonly AgentRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Wave-16 PR-B1 proof-of-use site. The deferred-skeleton hook
@@ -649,7 +650,7 @@ function RunsView(props: { fetchImpl?: typeof fetch }): JSX.Element {
                 {run.latencyMs}ms
               </td>
               <td style={{ padding: "8px 8px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-3)" }}>
-                {run.startedAt !== null ? new Date(run.startedAt).toLocaleTimeString() : "—"}
+                {run.startedAt !== null ? formatTime(run.startedAt, i18n.language) : "—"}
               </td>
             </tr>
           );
@@ -690,7 +691,7 @@ function ScheduledAgentsView(props: {
   /** @internal Test seam — see HeartbeatView for the same pattern. */
   subscribeToAgentRuns?: SubscribeToAgentRuns;
 }): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [schedules, setSchedules] = useState<readonly ScheduleEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // PR-R6 — which agent INSTANCE currently has the cadence editor
@@ -841,7 +842,7 @@ function ScheduledAgentsView(props: {
                 }}
               >
                 {s.lastFireAt !== null
-                  ? new Date(s.lastFireAt).toLocaleString()
+                  ? formatDateTime(s.lastFireAt, i18n.language)
                   : "—"}
               </span>
               {/* PR-R6 — Edit schedule toggle. Default chrome
